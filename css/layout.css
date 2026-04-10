@@ -1,0 +1,971 @@
+/* =========================================================
+   LAYOUT.CSS
+   Estructura general de Bitácoras de Clase - Musicala
+   Single View App Layout
+   ========================================================= */
+
+/* =========================
+   PAGE FOUNDATION
+   ========================= */
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* =========================
+   APP SHELL
+   ========================= */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main,
+.app-content,
+.workspace {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Root real de render */
+#app,
+[data-app-root] {
+  width: 100%;
+  min-width: 0;
+  min-height: calc(100vh - 132px);
+}
+
+/* =========================
+   TOPBAR
+   ========================= */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(34, 10, 99, 0.08);
+  box-shadow: 0 10px 30px rgba(34, 10, 99, 0.05);
+}
+
+.topbar__brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.topbar__brand-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* =========================
+   MAIN WORKSPACE
+   ========================= */
+.workspace {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 1.4rem;
+}
+
+/* =========================
+   LEGACY PANEL SUPPORT
+   ========================= */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.panel__body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+#search-view-root,
+#profile-view-root,
+#editor-view-root {
+  min-height: 100%;
+  min-width: 0;
+}
+
+/* =========================
+   FOOTER
+   ========================= */
+.app-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.95rem 1.5rem 1.1rem;
+  border-top: 1px solid rgba(34, 10, 99, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.app-footer__left,
+.app-footer__right {
+  min-width: 0;
+}
+
+.app-footer__text {
+  margin: 0;
+  font-size: 0.83rem;
+  line-height: 1.45;
+  color: var(--text-light, #98a2b3);
+  font-weight: 600;
+}
+
+/* =========================
+   GENERIC LAYOUT HELPERS
+   ========================= */
+.section-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.section-block + .section-block {
+  margin-top: 1rem;
+}
+
+.inline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.cluster--between {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.stack-lg {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.grid-auto-fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+/* =========================================================
+   SINGLE VIEW APP - BASE
+   ========================================================= */
+.view-shell {
+  width: 100%;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 1.5rem 0 2rem;
+}
+
+.view-shell--search,
+.view-shell--profile,
+.view-shell--editor,
+.view-shell--settings {
+  min-height: calc(100vh - 168px);
+}
+
+.view-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.4rem;
+}
+
+.view-header__content,
+.view-header__main {
+  min-width: 0;
+  max-width: 940px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.view-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* =========================================================
+   SEARCH VIEW LAYOUT
+   ========================================================= */
+.search-toolbar {
+  margin-bottom: 1.1rem;
+}
+
+.search-toolbar__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.search-toolbar__field {
+  min-width: 0;
+}
+
+.search-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.search-summary {
+  margin-top: 0.95rem;
+}
+
+.search-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.search-layout--single {
+  grid-template-columns: 1fr;
+}
+
+.search-results-panel,
+.search-preview-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.search-results-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.search-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: 104px;
+}
+
+.students-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  min-width: 0;
+}
+
+.student-preview__content {
+  min-height: 240px;
+}
+
+.search-toolbar__field,
+.search-summary,
+.students-results,
+.student-preview__content {
+  min-width: 0;
+}
+
+/* =========================================================
+   PROFILE VIEW LAYOUT
+   ========================================================= */
+.profile-layout {
+  display: grid;
+  grid-template-columns: minmax(380px, 1.08fr) minmax(320px, 0.92fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.profile-card {
+  min-width: 0;
+}
+
+.profile-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.profile-side {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  position: sticky;
+  top: 104px;
+}
+
+.profile-summary,
+.profile-history {
+  min-width: 0;
+}
+
+/* =========================================================
+   EDITOR VIEW LAYOUT
+   ========================================================= */
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.52fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.editor-layout--stack {
+  grid-template-columns: 1fr;
+}
+
+.editor-student {
+  min-width: 0;
+  position: sticky;
+  top: 104px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.editor-main {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.editor-main--full {
+  grid-template-columns: 1fr;
+}
+
+.editor-form,
+.editor-history {
+  min-width: 0;
+}
+
+.editor-form__header {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 1.1rem;
+}
+
+.editor-form__body {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.editor-form__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.editor-form__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.editor-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.editor-history__header,
+.profile-history__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* =========================================================
+   GENERIC INTERNAL BLOCKS
+   ========================================================= */
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-header__content {
+  min-width: 0;
+}
+
+.panel-header__title {
+  margin: 0;
+}
+
+.panel-header__eyebrow {
+  margin: 0 0 0.3rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.form-grid--sidebar {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.split-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+}
+
+.content-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* =========================================================
+   EMPTY / LOADING WRAPPERS
+   ========================================================= */
+.empty-state-card {
+  max-width: 760px;
+  margin: 3rem auto;
+}
+
+.empty-state-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+/* =========================================================
+   LARGE SCREENS
+   ========================================================= */
+@media (min-width: 1440px) {
+  .workspace {
+    padding: 1.5rem;
+  }
+
+  .view-shell {
+    max-width: 1540px;
+    padding: 1.7rem 0 2.3rem;
+  }
+
+  .topbar {
+    padding-left: 1.75rem;
+    padding-right: 1.75rem;
+  }
+
+  .app-footer {
+    padding-left: 1.75rem;
+    padding-right: 1.75rem;
+  }
+
+  .search-layout {
+    grid-template-columns: minmax(0, 1.52fr) minmax(360px, 0.82fr);
+  }
+
+  .profile-layout {
+    grid-template-columns: minmax(420px, 1.12fr) minmax(360px, 0.88fr);
+  }
+
+  .editor-layout {
+    grid-template-columns: minmax(340px, 0.86fr) minmax(0, 1.56fr);
+  }
+}
+
+/* =========================================================
+   LAPTOP / TABLET LANDSCAPE
+   ========================================================= */
+@media (max-width: 1200px) {
+  .workspace {
+    padding: 1.1rem;
+  }
+
+  .search-layout,
+  .profile-layout,
+  .editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .search-preview-panel,
+  .profile-side,
+  .editor-student {
+    position: static;
+    top: auto;
+  }
+
+  .search-preview-panel,
+  .profile-side,
+  .editor-main,
+  .profile-main {
+    min-width: 0;
+  }
+}
+
+/* =========================================================
+   TABLET
+   ========================================================= */
+@media (max-width: 900px) {
+  #app,
+  [data-app-root] {
+    min-height: calc(100vh - 120px);
+  }
+
+  .topbar {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 0.95rem 1rem;
+  }
+
+  .topbar__actions {
+    justify-content: flex-start;
+  }
+
+  .workspace {
+    padding: 1rem;
+  }
+
+  .view-shell {
+    padding: 1rem 0 1.6rem;
+  }
+
+  .view-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .view-header__actions {
+    justify-content: flex-start;
+  }
+
+  .search-toolbar__grid {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .search-toolbar__actions {
+    justify-content: flex-start;
+  }
+
+  .form-grid,
+  .form-grid--3,
+  .split-row {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-form__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .editor-form__actions {
+    justify-content: flex-start;
+  }
+
+  .editor-history__header,
+  .profile-history__header,
+  .panel-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+@media (max-width: 640px) {
+  .topbar {
+    padding: 0.9rem 0.9rem;
+    gap: 0.85rem;
+  }
+
+  .workspace {
+    padding: 0.8rem;
+  }
+
+  .view-shell {
+    padding: 0.9rem 0 1.4rem;
+  }
+
+  .search-toolbar__actions,
+  .view-header__actions,
+  .editor-form__actions,
+  .empty-state-card__actions {
+    width: 100%;
+  }
+
+  .search-toolbar__actions > *,
+  .view-header__actions > *,
+  .editor-form__actions > *,
+  .empty-state-card__actions > * {
+    flex: 1 1 100%;
+  }
+
+  .student-preview__content {
+    min-height: 180px;
+  }
+
+  .app-footer {
+    padding: 0.85rem 1rem 1rem;
+    gap: 0.45rem;
+  }
+}
+
+/* =========================================================
+   SHORT HEIGHT SCREENS
+   ========================================================= */
+@media (max-height: 760px) and (min-width: 1201px) {
+  .view-shell--search,
+  .view-shell--profile,
+  .view-shell--editor,
+  .view-shell--settings {
+    min-height: calc(100vh - 150px);
+  }
+
+  .search-preview-panel,
+  .profile-side,
+  .editor-student {
+    top: 92px;
+  }
+}
+
+/* =========================================================
+   WORKSPACE REFINEMENT OVERRIDES
+   ========================================================= */
+.topbar {
+  grid-template-columns: 1fr;
+  padding: 0.85rem 1.25rem;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid rgba(17, 45, 78, 0.08);
+  box-shadow: 0 10px 24px rgba(17, 37, 61, 0.05);
+}
+
+.topbar__inner {
+  width: min(100%, 1440px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.topbar__brand {
+  gap: 0.85rem;
+}
+
+.topbar__actions {
+  gap: 1rem;
+}
+
+.topbar__nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem;
+  border-radius: 999px;
+  background: #f4f7fb;
+  border: 1px solid var(--border);
+}
+
+.workspace {
+  max-width: 1440px;
+  padding: 1rem 1.25rem 1.4rem;
+}
+
+.app-hero {
+  display: none;
+}
+
+.app-content {
+  display: contents;
+}
+
+#app,
+[data-app-root] {
+  min-height: calc(100vh - 96px);
+}
+
+.view-shell {
+  max-width: 1440px;
+  padding: 0.35rem 0 1.2rem;
+}
+
+.view-shell--search,
+.view-shell--profile,
+.view-shell--editor,
+.view-shell--settings {
+  min-height: calc(100vh - 112px);
+}
+
+.settings-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.settings-summary-card,
+.settings-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.view-header {
+  align-items: end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.view-header__content {
+  gap: 0.35rem;
+  max-width: 760px;
+}
+
+.view-header__actions {
+  gap: 0.6rem;
+}
+
+.search-layout {
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr);
+  gap: 1rem;
+}
+
+.search-layout--single {
+  grid-template-columns: 1fr;
+}
+
+.search-results-panel,
+.search-preview-panel,
+.editor-form,
+.editor-history,
+.editor-student,
+.profile-card,
+.profile-summary,
+.profile-history {
+  min-width: 0;
+}
+
+.search-preview-panel,
+.profile-side,
+.editor-student {
+  top: 88px;
+}
+
+.editor-layout {
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.82fr);
+  gap: 1rem;
+}
+
+.editor-main {
+  order: 1;
+}
+
+.editor-student {
+  order: 2;
+}
+
+.editor-form__header {
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.editor-history__header,
+.profile-history__header,
+.panel-header {
+  margin-bottom: 0.85rem;
+}
+
+.app-footer {
+  padding: 0.6rem 1.25rem 0.8rem;
+  background: transparent;
+  border-top: 0;
+  box-shadow: none;
+}
+
+.app-footer__inner {
+  width: min(100%, 1440px);
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .editor-layout,
+  .search-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-student {
+    order: 1;
+  }
+
+  .editor-main {
+    order: 2;
+  }
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    padding: 0.85rem 0.9rem;
+  }
+
+  .topbar__inner {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .topbar__actions {
+    justify-content: space-between;
+  }
+
+  .workspace {
+    padding: 0.85rem 0.9rem 1rem;
+  }
+
+  .app-footer {
+    padding: 0.6rem 0.9rem 0.8rem;
+  }
+
+  .app-footer__inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar__actions,
+  .topbar__nav {
+    width: 100%;
+  }
+
+  .topbar__nav {
+    justify-content: space-between;
+  }
+}
+
+/* =========================================================
+   EDITOR VISUAL POLISH
+   ========================================================= */
+.view-shell--editor .view-header {
+  max-width: none;
+  margin: 0 0 1.25rem;
+  padding: 0.2rem 0 0.95rem;
+  align-items: end;
+  border-bottom: 1px solid rgba(17, 37, 61, 0.08);
+}
+
+.workspace:has(.view-shell--editor),
+.workspace--single:has(.view-shell--editor),
+#app:has(.view-shell--editor),
+[data-app-root]:has(.view-shell--editor) {
+  max-width: none;
+}
+
+.view-shell--editor {
+  max-width: none;
+}
+
+.view-shell--editor .view-header__content {
+  max-width: 620px;
+}
+
+.view-shell--editor .view-title {
+  letter-spacing: -0.04em;
+}
+
+.editor-layout--stack {
+  gap: 1.1rem;
+  grid-template-columns: 1fr;
+}
+
+.editor-main--full {
+  gap: 1.1rem;
+  width: 100%;
+}
+
+.view-shell--editor .editor-main--full {
+  max-width: none;
+}
+
+.view-shell--editor .editor-layout--stack,
+.view-shell--editor .editor-layout--stack .editor-main,
+.view-shell--editor .editor-layout--stack .editor-main--full,
+.view-shell--editor .editor-form--musicala {
+  width: 100%;
+  max-width: none;
+}
