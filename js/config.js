@@ -106,7 +106,9 @@ const FEATURE_FLAGS = Object.freeze({
 });
 
 const FIRESTORE_CONFIG = Object.freeze({
+  studentsCollection: "students",
   bitacorasCollection: "bitacoras",
+  studentRoutesCollection: "student_routes",
   appConfigCollection: "app_config",
   catalogsDocumentId: "catalogos",
 });
@@ -274,6 +276,14 @@ export function canUseFirestoreBitacoras() {
 
 export function getBitacorasCollectionName() {
   return CONFIG.firestore.bitacorasCollection || "bitacoras";
+}
+
+export function getStudentsCollectionName() {
+  return CONFIG.firestore.studentsCollection || "students";
+}
+
+export function getStudentRoutesCollectionName() {
+  return CONFIG.firestore.studentRoutesCollection || "student_routes";
 }
 
 export function getAppConfigCollectionName() {

@@ -36,17 +36,69 @@ const appModules = {
   views: new Map(),
   initialized: false,
   currentUnmount: null,
+  currentViewModule: null,
   authUnsubscribe: null,
   navigationRequestId: 0,
 };
 
+const ROUTE_UI = Object.freeze({
+  [CONFIG.routes.search]: {
+    kicker: "Flujo rápido",
+    title: "Encuentra al estudiante y entra directo al proceso",
+    text:
+      "Búsqueda optimizada para móvil: menos pasos, mejor lectura y acceso más claro a perfil y bitácora.",
+    chip: "Búsqueda",
+    themeColor: "#eef4ff",
+  },
+  [CONFIG.routes.profile]: {
+    kicker: "Vista del proceso",
+    title: "Perfil claro para revisar información y avances",
+    text:
+      "Consulta datos clave, ruta de aprendizaje e historial reciente sin perder contexto en pantallas pequeñas.",
+    chip: "Perfil",
+    themeColor: "#f1ecff",
+  },
+  [CONFIG.routes.editor]: {
+    kicker: "Registro docente",
+    title: "Bitácora lista para escribir, adjuntar y guardar",
+    text:
+      "La vista prioriza escritura, componentes y acciones principales para que el registro sea rápido desde el celular.",
+    chip: "Bitácora",
+    themeColor: "#fdf0fb",
+  },
+  [CONFIG.routes.libraries]: {
+    kicker: "Recursos",
+    title: "Bibliotecas artísticas en un solo lugar",
+    text:
+      "Accede rápido al material por área con una navegación más limpia y visible.",
+    chip: "Bibliotecas",
+    themeColor: "#effcff",
+  },
+  [CONFIG.routes.settings]: {
+    kicker: "Administración",
+    title: "Ajustes del sistema con mejor orden visual",
+    text:
+      "Catálogos, docentes y accesos quedan organizados en superficies más claras y fáciles de recorrer.",
+    chip: "Configuración",
+    themeColor: "#faf5ff",
+  },
+});
+
 const dom = {
+  shell: null,
   root: null,
-  nav: null,
+  navs: [],
   status: null,
   statusText: null,
-  topbarActions: null,
+  authSlot: null,
   authButton: null,
+  routeKicker: null,
+  routeTitle: null,
+  routeText: null,
+  routeChip: null,
+  routeContext: null,
+  version: null,
+  themeColorMeta: null,
 };
 
 document.addEventListener("DOMContentLoaded", initApp);
@@ -58,6 +110,7 @@ async function initApp() {
   try {
     cacheDom();
     normalizeStaticUiText();
+    enforcePrimaryFlowNav();
     ensureRoot();
     hydrateStateFromStorage();
     initAuth();
@@ -79,16 +132,26 @@ async function initApp() {
 }
 
 function cacheDom() {
+  dom.shell = document.querySelector("[data-app-shell]") || null;
   dom.root =
+    document.querySelector("#app-view-frame") ||
     document.querySelector("[data-app-root]") ||
     document.querySelector("#app") ||
     null;
 
-  dom.nav = document.querySelector("[data-app-nav]") || null;
+  dom.navs = [...document.querySelectorAll("[data-app-nav]")];
   dom.status = document.querySelector("[data-app-status]") || null;
   dom.statusText =
     dom.status?.querySelector(".status-badge__text") || dom.status || null;
-  dom.topbarActions = document.querySelector(".topbar__actions") || null;
+  dom.authSlot = document.querySelector("[data-auth-slot]") || null;
+  dom.routeKicker = document.querySelector("[data-app-route-kicker]") || null;
+  dom.routeTitle = document.querySelector("[data-app-route-title]") || null;
+  dom.routeText = document.querySelector("[data-app-route-text]") || null;
+  dom.routeChip = document.querySelector("[data-app-route-chip]") || null;
+  dom.routeContext = document.querySelector("[data-app-route-context]") || null;
+  dom.version = document.querySelector("#app-version") || null;
+  dom.themeColorMeta =
+    document.querySelector('meta[name="theme-color"]') || null;
   ensureAuthButton();
 }
 
@@ -104,9 +167,9 @@ function ensureRoot() {
 }
 
 function ensureAuthButton() {
-  if (!dom.topbarActions) return;
+  if (!dom.authSlot) return;
 
-  const existing = dom.topbarActions.querySelector("[data-auth-button]");
+  const existing = dom.authSlot.querySelector("[data-auth-button]");
   if (existing) {
     dom.authButton = existing;
     return;
@@ -119,25 +182,75 @@ function ensureAuthButton() {
   button.dataset.action = "login-google";
   button.textContent = "Entrar con Google";
 
-  dom.topbarActions.appendChild(button);
+  dom.authSlot.appendChild(button);
   dom.authButton = button;
 }
 
 function normalizeStaticUiText() {
-  const settingsButton = document.querySelector('[data-route="settings"]');
-  const settingsLabel = settingsButton?.querySelector(".nav-chip__label");
+  const labels = {
+    [CONFIG.routes.search]: {
+      title: "Ir a búsqueda",
+      navLabel: "Búsqueda",
+      bottomLabel: "Buscar",
+    },
+    [CONFIG.routes.profile]: {
+      title: "Ir al perfil",
+      navLabel: "Perfil",
+      bottomLabel: "Perfil",
+    },
+    [CONFIG.routes.editor]: {
+      title: "Ir a la bitácora",
+      navLabel: "Bitácora",
+      bottomLabel: "Bitácora",
+    },
+    [CONFIG.routes.libraries]: {
+      title: "Ir a bibliotecas",
+      navLabel: "Bibliotecas",
+      bottomLabel: "Biblioteca",
+    },
+    [CONFIG.routes.settings]: {
+      title: "Ir a configuración",
+      navLabel: "Configuración",
+      bottomLabel: "Ajustes",
+    },
+  };
 
-  if (settingsButton) {
-    settingsButton.title = "Ir a configuracion";
-  }
+  document.querySelectorAll("[data-route]").forEach((button) => {
+    const route = button.dataset.route || "";
+    const copy = labels[route];
+    if (!copy) return;
 
-  if (settingsLabel) {
-    settingsLabel.textContent = "Configuracion";
+    button.title = copy.title;
+
+    const navLabel = button.querySelector(".nav-chip__label");
+    if (navLabel) {
+      navLabel.textContent = copy.navLabel;
+    }
+
+    const bottomLabel = button.querySelector(".bottom-nav__label");
+    if (bottomLabel) {
+      bottomLabel.textContent = copy.bottomLabel;
+    }
+  });
+
+  if (dom.version) {
+    dom.version.textContent = `v${CONFIG.app.version}`;
   }
+}
+
+function enforcePrimaryFlowNav() {
+  document
+    .querySelectorAll(
+      "[data-route='profile'], [data-route='editor']"
+    )
+    .forEach((button) => {
+      button.remove();
+    });
 }
 
 function bindGlobalEvents() {
   document.addEventListener("click", handleGlobalClick);
+  document.addEventListener("keydown", handleGlobalKeydown);
 }
 
 function bindHashRouting() {
@@ -152,6 +265,16 @@ function bindHashRouting() {
       replaceHash: true,
     });
   });
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+
+  const actionableTarget = event.target.closest("[data-action]");
+  if (!actionableTarget || actionableTarget.tagName === "BUTTON") return;
+
+  event.preventDefault();
+  actionableTarget.click();
 }
 
 async function handleGlobalClick(event) {
@@ -203,6 +326,7 @@ async function handleGlobalClick(event) {
 function handleStateChange(state) {
   updateDocumentTitle(state);
   updateNavState(state);
+  updateRouteSpotlight(state);
   updateStatus(state);
   updateAuthButton(state);
 }
@@ -249,10 +373,14 @@ async function handleObservedAuthUser(user) {
       const email = String(user?.email || "").trim().toLowerCase();
       const isBootstrapAdmin = bootstrapAdmins.includes(email);
       const explicitRole = String(accessProfile?.role || "").trim().toLowerCase();
+      const allowedTeacherAccessProfile =
+        isAllowedTeacherAccessProfile(accessProfile);
       const allowedStudentAccessProfile = isAllowedStudentAccessProfile(accessProfile);
       const deniedStudentAccessProfile = isDeniedStudentAccessProfile(accessProfile);
       const shouldCheckTeacher =
-        !isBootstrapAdmin && explicitRole !== CONFIG.roles.admin;
+        !isBootstrapAdmin &&
+        explicitRole !== CONFIG.roles.admin &&
+        !allowedTeacherAccessProfile;
       const matchedTeacher = shouldCheckTeacher
         ? await findTeacherByEmail(email)
         : null;
@@ -275,7 +403,7 @@ async function handleObservedAuthUser(user) {
           ? CONFIG.roles.admin
           : explicitRole === CONFIG.roles.admin
           ? CONFIG.roles.admin
-          : explicitRole === CONFIG.roles.teacher || matchedTeacher
+          : allowedTeacherAccessProfile || matchedTeacher
           ? CONFIG.roles.teacher
           : matchedStudent || canUseSyncedStudentProfile
           ? CONFIG.roles.student
@@ -289,7 +417,7 @@ async function handleObservedAuthUser(user) {
         active:
           isBootstrapAdmin ||
           explicitRole === CONFIG.roles.admin ||
-          explicitRole === CONFIG.roles.teacher ||
+          Boolean(allowedTeacherAccessProfile) ||
           matchedTeacher
             ? true
             : Boolean(matchedStudent || canUseSyncedStudentProfile),
@@ -337,6 +465,10 @@ async function handleObservedAuthUser(user) {
         await navigateTo(getDefaultViewForUser(mergedUser), {
           replaceHash: true,
         });
+      } else if (!appModules.currentViewModule) {
+        await navigateTo(currentView, {
+          replaceHash: true,
+        });
       }
       return;
     } catch (error) {
@@ -351,6 +483,14 @@ async function handleObservedAuthUser(user) {
 
   setAuthUser(null);
   logDebug("Sin sesion activa en Firebase Auth.");
+}
+
+function isAllowedTeacherAccessProfile(accessProfile = null) {
+  const safeRole = String(accessProfile?.role || "").trim().toLowerCase();
+
+  return safeRole === CONFIG.roles.teacher && accessProfile?.active !== false
+    ? accessProfile
+    : null;
 }
 
 function isAllowedStudentAccessProfile(accessProfile = null) {
@@ -601,6 +741,7 @@ async function navigateTo(viewName, options = {}) {
       if (!isCurrentNavigationRequest(navigationRequestId)) return;
     }
 
+    appModules.currentViewModule = viewModule;
     logDebug(`Vista cargada: ${safeView}`);
   } catch (error) {
     if (!isCurrentNavigationRequest(navigationRequestId)) {
@@ -628,7 +769,28 @@ async function navigateTo(viewName, options = {}) {
 }
 
 async function runCurrentUnmount() {
-  if (typeof appModules.currentUnmount !== "function") return;
+  const activeViewModule = appModules.currentViewModule;
+
+  if (activeViewModule && typeof activeViewModule.beforeLeave === "function") {
+    try {
+      await activeViewModule.beforeLeave({
+        root: dom.root,
+        state: getState(),
+        config: CONFIG,
+      });
+    } catch (error) {
+      console.warn(
+        "[BitÃ¡coras App] Error ejecutando beforeLeave() de la vista anterior:",
+        error
+      );
+    }
+  }
+
+  if (typeof appModules.currentUnmount !== "function") {
+    appModules.currentUnmount = null;
+    appModules.currentViewModule = null;
+    return;
+  }
 
   try {
     await appModules.currentUnmount();
@@ -636,6 +798,7 @@ async function runCurrentUnmount() {
     console.warn("[Bitácoras App] Error limpiando la vista anterior:", error);
   } finally {
     appModules.currentUnmount = null;
+    appModules.currentViewModule = null;
   }
 }
 
@@ -702,10 +865,10 @@ function renderRouteLoadingState(viewName) {
   if (!dom.root) return;
 
   const labels = {
-    [CONFIG.routes.search]: "Busqueda",
+    [CONFIG.routes.search]: "Búsqueda",
     [CONFIG.routes.profile]: "Perfil",
-    [CONFIG.routes.editor]: "Bitacora",
-    [CONFIG.routes.settings]: "Configuracion",
+    [CONFIG.routes.editor]: "Bitácora",
+    [CONFIG.routes.settings]: "Configuración",
     [CONFIG.routes.libraries]: "Bibliotecas",
   };
 
@@ -728,6 +891,7 @@ function updateDocumentTitle(state) {
     [CONFIG.routes.search]: "Búsqueda",
     [CONFIG.routes.profile]: "Perfil",
     [CONFIG.routes.editor]: "Bitácora",
+    [CONFIG.routes.libraries]: "Bibliotecas",
     [CONFIG.routes.settings]: "Configuración",
   };
 
@@ -735,25 +899,60 @@ function updateDocumentTitle(state) {
 }
 
 function updateNavState(state) {
-  if (!dom.nav) return;
+  if (!dom.navs.length) return;
 
   const currentView = state?.app?.currentView || "";
   const authUser = state?.auth?.user || null;
 
-  dom.nav.querySelectorAll("[data-route]").forEach((button) => {
-    const route = button.dataset.route || "";
-    const allowed = canAccessRoute(authUser, route);
-    const isActive = button.dataset.route === currentView;
-    button.hidden = !allowed;
-    button.disabled = !allowed;
-    button.classList.toggle("is-active", isActive);
+  dom.navs.forEach((nav) => {
+    nav.querySelectorAll("[data-route]").forEach((button) => {
+      const route = button.dataset.route || "";
+      const allowed = canAccessRoute(authUser, route);
+      const isActive = button.dataset.route === currentView;
+      button.hidden = !allowed;
+      button.disabled = !allowed;
+      button.classList.toggle("is-active", isActive);
 
-    if (isActive) {
-      button.setAttribute("aria-current", "page");
-    } else {
-      button.removeAttribute("aria-current");
-    }
+      if (isActive) {
+        button.setAttribute("aria-current", "page");
+      } else {
+        button.removeAttribute("aria-current");
+      }
+    });
   });
+}
+
+function updateRouteSpotlight(state) {
+  const currentView = state?.app?.currentView || CONFIG.app.defaultRoute;
+  const meta = ROUTE_UI[currentView] || ROUTE_UI[CONFIG.routes.search];
+
+  if (dom.shell) {
+    dom.shell.dataset.currentRoute = currentView;
+  }
+
+  if (dom.routeKicker) {
+    dom.routeKicker.textContent = meta.kicker;
+  }
+
+  if (dom.routeTitle) {
+    dom.routeTitle.textContent = meta.title;
+  }
+
+  if (dom.routeText) {
+    dom.routeText.textContent = meta.text;
+  }
+
+  if (dom.routeChip) {
+    dom.routeChip.textContent = meta.chip;
+  }
+
+  if (dom.routeContext) {
+    dom.routeContext.textContent = getRouteContextLabel(state, currentView);
+  }
+
+  if (dom.themeColorMeta) {
+    dom.themeColorMeta.setAttribute("content", meta.themeColor || "#ffffff");
+  }
 }
 
 function updateStatus(state) {
@@ -860,9 +1059,7 @@ async function handleLogin() {
     console.error("[Bitácoras App] Error iniciando sesión:", error);
     setAppError(error?.message || "No se pudo iniciar sesión con Google.");
   } finally {
-    if (isCurrentNavigationRequest(navigationRequestId)) {
-      setAppLoading(false);
-    }
+    setAppLoading(false);
   }
 }
 
@@ -875,9 +1072,7 @@ async function handleLogout() {
     console.error("[Bitácoras App] Error cerrando sesión:", error);
     setAppError(error?.message || "No se pudo cerrar la sesión.");
   } finally {
-    if (isCurrentNavigationRequest(navigationRequestId)) {
-      setAppLoading(false);
-    }
+    setAppLoading(false);
   }
 }
 
@@ -954,6 +1149,47 @@ function escapeHtml(value) {
 function logDebug(...args) {
   if (!CONFIG.debug) return;
   console.log("[Bitácoras App]", ...args);
+}
+
+function getRouteContextLabel(state, currentView) {
+  const access = resolveUserAccess(state?.auth?.user);
+  const selectedStudent = getSelectedStudentLabel(state?.students?.selected);
+  const groupedCount = Array.isArray(state?.search?.selectedStudentIds)
+    ? state.search.selectedStudentIds.length
+    : 0;
+
+  if (currentView === CONFIG.routes.search) {
+    return groupedCount > 0
+      ? `${groupedCount} en selección`
+      : "Listo para clase";
+  }
+
+  if (
+    currentView === CONFIG.routes.profile ||
+    currentView === CONFIG.routes.editor
+  ) {
+    return selectedStudent || "Sin estudiante";
+  }
+
+  if (currentView === CONFIG.routes.settings) {
+    return access?.role ? getRoleLabel(access.role) : "Administración";
+  }
+
+  if (currentView === CONFIG.routes.libraries) {
+    return "Recursos activos";
+  }
+
+  return "Musicala";
+}
+
+function getSelectedStudentLabel(student) {
+  return String(
+    student?.nombre ||
+      student?.name ||
+      student?.estudiante ||
+      student?.studentName ||
+      ""
+  ).trim();
 }
 
 export { initApp, navigateTo };
