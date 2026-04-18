@@ -1,6 +1,18 @@
-// js/api/students.api.js
-
-import { CONFIG, getApiUrl } from "../config.js";
+import { CONFIG, getApiUrl, getStudentsCollectionName } from "../config.js";
+import {
+  collection,
+  db,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  normalizeTimestamps,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+  writeBatch,
+} from "../firebase.client.js";
 import {
   isPlainObject,
   normalizeText,
@@ -11,6 +23,9 @@ const DEFAULT_TIMEOUT =
   Number.isFinite(CONFIG?.api?.timeoutMs) && CONFIG.api.timeoutMs > 0
     ? CONFIG.api.timeoutMs
     : 20000;
+
+const STUDENTS_COLLECTION = getStudentsCollectionName();
+const FIRESTORE_BATCH_LIMIT = 400;
 
 function createApiError(message, extra = {}) {
   const error = new Error(message);
@@ -26,10 +41,6 @@ function withTimeout(ms = DEFAULT_TIMEOUT) {
     signal: controller.signal,
     clear: () => window.clearTimeout(timeoutId),
   };
-}
-
-function isNonEmptyString(value) {
-  return typeof value === "string" && value.trim() !== "";
 }
 
 function normalizeScalar(value) {
@@ -68,23 +79,14 @@ export function isStudentAllowedToLogIn(studentOrStatus) {
 }
 
 function buildUrl(baseUrl, queryParams = {}) {
-  if (!isNonEmptyString(baseUrl)) {
-    throw createApiError("La URL base del endpoint no es válida.", {
+  if (!baseUrl) {
+    throw createApiError("La URL base del endpoint no es valida.", {
       code: "INVALID_URL",
       baseUrl,
     });
   }
 
-  let url;
-  try {
-    url = new URL(baseUrl);
-  } catch (error) {
-    throw createApiError("La URL del endpoint no tiene un formato válido.", {
-      code: "INVALID_URL_FORMAT",
-      baseUrl,
-      cause: error,
-    });
-  }
+  const url = new URL(baseUrl);
 
   Object.entries(queryParams).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
@@ -98,7 +100,7 @@ async function parseJsonResponse(response) {
   const rawText = await response.text();
 
   if (!rawText || !rawText.trim()) {
-    throw createApiError("La respuesta del servidor llegó vacía.", {
+    throw createApiError("La respuesta del servidor llego vacia.", {
       code: "EMPTY_RESPONSE",
       status: response.status,
     });
@@ -107,7 +109,7 @@ async function parseJsonResponse(response) {
   try {
     return JSON.parse(rawText);
   } catch (error) {
-    throw createApiError("La respuesta del servidor no es JSON válido.", {
+    throw createApiError("La respuesta del servidor no es JSON valido.", {
       code: "INVALID_JSON",
       status: response.status,
       responseText: rawText,
@@ -124,15 +126,13 @@ async function requestJson(url, options = {}) {
 
   const { signal, clear } = withTimeout(timeoutMs);
 
-  const headers = {
-    Accept: "application/json",
-    ...(options.headers || {}),
-  };
-
   try {
     const response = await fetch(url, {
       method: options.method || "GET",
-      headers,
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {}),
+      },
       body: options.body,
       signal,
       redirect: "follow",
@@ -141,7 +141,7 @@ async function requestJson(url, options = {}) {
 
     const payload = await parseJsonResponse(response);
 
-    if (!response.ok) {
+    if (!response.ok || payload?.ok === false || payload?.success === false) {
       throw createApiError(
         payload?.message ||
           payload?.error ||
@@ -155,24 +155,10 @@ async function requestJson(url, options = {}) {
       );
     }
 
-    if (payload?.ok === false || payload?.success === false) {
-      throw createApiError(
-        payload?.message ||
-          payload?.error ||
-          "El servidor respondió con un error.",
-        {
-          code: "API_ERROR",
-          status: response.status,
-          payload,
-          url,
-        }
-      );
-    }
-
     return payload;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw createApiError("La solicitud tardó demasiado y fue cancelada.", {
+      throw createApiError("La solicitud tardo demasiado y fue cancelada.", {
         code: "REQUEST_TIMEOUT",
         url,
       });
@@ -183,7 +169,7 @@ async function requestJson(url, options = {}) {
     }
 
     throw createApiError(
-      "Ocurrió un error inesperado al consultar el servidor.",
+      "Ocurrio un error inesperado al consultar el servidor.",
       {
         code: "UNKNOWN_REQUEST_ERROR",
         cause: error,
@@ -203,7 +189,6 @@ function resolveStudentsEndpoint() {
       'No se pudo resolver el endpoint "students" desde config.js.',
       {
         code: "MISSING_STUDENTS_ENDPOINT",
-        config: CONFIG,
       }
     );
   }
@@ -219,23 +204,6 @@ function resolveStudentProfileEndpoint() {
       'No se pudo resolver el endpoint "studentProfile" desde config.js.',
       {
         code: "MISSING_STUDENT_PROFILE_ENDPOINT",
-        config: CONFIG,
-      }
-    );
-  }
-
-  return url;
-}
-
-function resolveTeachersEndpoint() {
-  const url = getApiUrl("teachers");
-
-  if (!url) {
-    throw createApiError(
-      'No se pudo resolver el endpoint "teachers" desde config.js.',
-      {
-        code: "MISSING_TEACHERS_ENDPOINT",
-        config: CONFIG,
       }
     );
   }
@@ -244,103 +212,24 @@ function resolveTeachersEndpoint() {
 }
 
 function extractStudentsCollection(payload) {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (!isPlainObject(payload)) {
-    throw createApiError(
-      "La respuesta de estudiantes tiene un formato inválido.",
-      {
-        code: "INVALID_STUDENTS_FORMAT",
-        payload,
-      }
-    );
-  }
-
-  if (Array.isArray(payload.data)) {
-    return payload.data;
-  }
-
-  if (Array.isArray(payload.students)) {
-    return payload.students;
-  }
-
+  if (Array.isArray(payload)) return payload;
+  if (!isPlainObject(payload)) return [];
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.students)) return payload.students;
+  if (Array.isArray(payload.results)) return payload.results;
   if (isPlainObject(payload.data) && Array.isArray(payload.data.students)) {
     return payload.data.students;
   }
-
-  if (Array.isArray(payload.results)) {
-    return payload.results;
-  }
-
-  return [];
-}
-
-function extractTeachersCollection(payload) {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (!isPlainObject(payload)) {
-    throw createApiError(
-      "La respuesta de docentes tiene un formato inválido.",
-      {
-        code: "INVALID_TEACHERS_FORMAT",
-        payload,
-      }
-    );
-  }
-
-  if (Array.isArray(payload.data)) {
-    return payload.data;
-  }
-
-  if (Array.isArray(payload.teachers)) {
-    return payload.teachers;
-  }
-
-  if (isPlainObject(payload.data) && Array.isArray(payload.data.teachers)) {
-    return payload.data.teachers;
-  }
-
-  if (Array.isArray(payload.results)) {
-    return payload.results;
-  }
-
   return [];
 }
 
 function extractSingleStudent(payload) {
-  if (Array.isArray(payload)) {
-    return payload.length ? payload[0] : null;
-  }
-
-  if (!isPlainObject(payload)) {
-    throw createApiError(
-      "La respuesta del perfil del estudiante tiene un formato inválido.",
-      {
-        code: "INVALID_STUDENT_PROFILE_FORMAT",
-        payload,
-      }
-    );
-  }
-
-  if (isPlainObject(payload.data)) {
-    return payload.data;
-  }
-
-  if (isPlainObject(payload.student)) {
-    return payload.student;
-  }
-
-  if (isPlainObject(payload.profile)) {
-    return payload.profile;
-  }
-
-  if (isPlainObject(payload.result)) {
-    return payload.result;
-  }
+  if (Array.isArray(payload)) return payload.length ? payload[0] : null;
+  if (!isPlainObject(payload)) return null;
+  if (isPlainObject(payload.data)) return payload.data;
+  if (isPlainObject(payload.student)) return payload.student;
+  if (isPlainObject(payload.profile)) return payload.profile;
+  if (isPlainObject(payload.result)) return payload.result;
 
   if (
     "studentKey" in payload ||
@@ -379,112 +268,264 @@ function normalizeStudentIdentifier(studentRef) {
 }
 
 function normalizeStudentQueryOptions(options = {}) {
-  const query =
-    options.query ??
-    options.q ??
-    options.search ??
-    "";
-
+  const queryValue = normalizeText(
+    options.query ?? options.q ?? options.search ?? ""
+  );
   const includeInactive =
     typeof options.includeInactive === "boolean"
       ? options.includeInactive
       : true;
-
-  const status =
-    options.estado ||
-    options.status ||
-    (includeInactive ? "todos" : "");
+  const statusValue = normalizeText(
+    options.estado || options.status || (includeInactive ? "todos" : "")
+  );
+  const areaValue = normalizeText(options.arte || options.area);
 
   return {
-    q: normalizeScalar(query),
-    estado: normalizeScalar(status),
-    arte: normalizeScalar(options.arte || options.area),
+    q: queryValue,
+    estado: statusValue,
+    arte: areaValue,
     includeInactive,
   };
 }
 
-function normalizeTeacherQueryOptions(options = {}) {
-  const query =
-    options.query ??
-    options.q ??
-    options.search ??
-    "";
+function normalizeStudentRecord(student = {}) {
+  const normalized = normalizeTimestamps(isPlainObject(student) ? student : {});
+  const rawStudentKey = normalizeScalar(
+    normalized.studentKey ||
+      normalized.id ||
+      normalized.studentId ||
+      normalized.documento ||
+      normalized.sourceRow
+  );
 
-  const includeInactive =
-    typeof options.includeInactive === "boolean"
-      ? options.includeInactive
-      : false;
+  if (!rawStudentKey) return null;
+
+  const email = normalizeScalar(
+    normalized.email ||
+      normalized.correo ||
+      normalized.correoElectronico ||
+      normalized.mail
+  ).toLowerCase();
+
+  const processes = Array.isArray(normalized.processes)
+    ? normalized.processes
+        .map((process, index) => normalizeProcessRecord(process, rawStudentKey, index))
+        .filter(Boolean)
+    : [];
+
+  const firstProcess = processes[0] || null;
 
   return {
-    q: normalizeScalar(query),
-    includeInactive,
+    ...normalized,
+    id: rawStudentKey,
+    studentId: rawStudentKey,
+    studentKey: rawStudentKey,
+    nombre: normalizeScalar(normalized.nombre || normalized.name),
+    email,
+    correo: email || normalizeScalar(normalized.correo),
+    correoElectronico:
+      email || normalizeScalar(normalized.correoElectronico),
+    edad: normalized.edad ?? normalized.age ?? "",
+    estado: normalizeScalar(normalized.estado || normalized.status),
+    interesesMusicales: normalizeScalar(
+      normalized.interesesMusicales || normalized.intereses
+    ),
+    area:
+      normalizeScalar(normalized.area) ||
+      normalizeScalar(firstProcess?.arte),
+    programa:
+      normalizeScalar(normalized.programa) ||
+      normalizeScalar(firstProcess?.label),
+    instrumento:
+      normalizeScalar(normalized.instrumento) ||
+      normalizeScalar(firstProcess?.detalle),
+    modalidad: normalizeScalar(normalized.modalidad),
+    docente: normalizeScalar(normalized.docente || normalized.teacher),
+    acudiente: normalizeScalar(normalized.acudiente || normalized.responsable),
+    sede: normalizeScalar(normalized.sede),
+    source: normalizeScalar(normalized.source || "firebase_students"),
+    syncOrigin: normalizeScalar(normalized.syncOrigin),
+    processes,
   };
 }
 
-/**
- * Obtiene la lista cruda de estudiantes desde Apps Script.
- * Mantiene el contrato flexible, pero alineado al backend actual.
- *
- * Parámetros útiles:
- * - query / q / search
- * - estado
- * - arte
- * - includeInactive
- */
+function normalizeProcessRecord(process = {}, studentKey = "", index = 0) {
+  if (!isPlainObject(process)) return null;
+
+  const arte = normalizeScalar(process.arte || process.area);
+  const detalle = normalizeScalar(process.detalle || process.instrumento);
+  const label =
+    normalizeScalar(process.label) ||
+    [arte, detalle].filter(Boolean).join(" - ");
+
+  if (!arte && !detalle && !label) return null;
+
+  return {
+    processKey:
+      normalizeScalar(process.processKey) || `${studentKey}_process_${index + 1}`,
+    arte,
+    detalle,
+    label,
+  };
+}
+
+function matchesStatusFilter(student, statusValue, includeInactive) {
+  if (!includeInactive && !isStudentAllowedToLogIn(student)) {
+    return false;
+  }
+
+  if (!statusValue || statusValue === "todos") return true;
+  return normalizeStudentStatus(student) === statusValue;
+}
+
+function matchesAreaFilter(student, areaValue) {
+  if (!areaValue) return true;
+
+  if (normalizeText(student.area) === areaValue) return true;
+
+  return Array.isArray(student.processes)
+    ? student.processes.some((process) => normalizeText(process.arte) === areaValue)
+    : false;
+}
+
+function matchesStudentQuery(student, queryValue) {
+  if (!queryValue) return true;
+
+  const hayMatch =
+    normalizeText(student.nombre).includes(queryValue) ||
+    normalizeText(student.interesesMusicales).includes(queryValue) ||
+    normalizeText(student.email).includes(queryValue) ||
+    normalizeText(student.docente).includes(queryValue) ||
+    normalizeText(student.acudiente).includes(queryValue) ||
+    normalizeText(student.programa).includes(queryValue) ||
+    normalizeText(student.instrumento).includes(queryValue) ||
+    normalizeText(student.documento).includes(queryValue) ||
+    (Array.isArray(student.processes)
+      ? student.processes.some((process) =>
+          [
+            process.arte,
+            process.detalle,
+            process.label,
+          ].some((value) => normalizeText(value).includes(queryValue))
+        )
+      : false);
+
+  return hayMatch;
+}
+
+function sortStudents(students = []) {
+  return [...students].sort((a, b) =>
+    normalizeScalar(a.nombre).localeCompare(normalizeScalar(b.nombre), "es", {
+      sensitivity: "base",
+    })
+  );
+}
+
+async function listStudentsFromFirestore() {
+  const snapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
+  return snapshot.docs
+    .map((docSnap) => normalizeStudentRecord({ id: docSnap.id, ...docSnap.data() }))
+    .filter(Boolean);
+}
+
+async function getStudentDocFromFirestore(studentRef) {
+  const studentKey = normalizeStudentIdentifier(studentRef);
+  if (!studentKey) return null;
+
+  const snapshot = await getDoc(doc(db, STUDENTS_COLLECTION, studentKey));
+  if (!snapshot.exists()) return null;
+
+  return normalizeStudentRecord({ id: snapshot.id, ...snapshot.data() });
+}
+
+async function getStudentByEmailFromFirestore(email) {
+  const safeEmail = normalizeScalar(email).toLowerCase();
+  if (!safeEmail) return null;
+
+  const snapshot = await getDocs(
+    query(collection(db, STUDENTS_COLLECTION), where("email", "==", safeEmail), limit(1))
+  );
+
+  if (!snapshot?.docs?.length) return null;
+  const first = snapshot.docs[0];
+  return normalizeStudentRecord({ id: first.id, ...first.data() });
+}
+
 export async function getStudents(options = {}) {
-  const endpoint = resolveStudentsEndpoint();
-  const queryParams = normalizeStudentQueryOptions(options);
+  const filters = normalizeStudentQueryOptions(options);
+  const students = await listStudentsFromFirestore();
 
-  const url = buildUrl(endpoint, queryParams);
-
-  const payload = await requestJson(url, {
-    timeoutMs: options.timeoutMs,
-  });
-
-  return extractStudentsCollection(payload);
+  return sortStudents(
+    students.filter(
+      (student) =>
+        matchesStatusFilter(student, filters.estado, filters.includeInactive) &&
+        matchesAreaFilter(student, filters.arte) &&
+        matchesStudentQuery(student, filters.q)
+    )
+  );
 }
 
-/**
- * Obtiene el payload completo de estudiantes.
- * Útil si alguna capa necesita total, ok, data, etc.
- */
 export async function getStudentsResponse(options = {}) {
-  const endpoint = resolveStudentsEndpoint();
-  const queryParams = normalizeStudentQueryOptions(options);
+  const students = await getStudents(options);
 
-  const url = buildUrl(endpoint, queryParams);
-
-  return requestJson(url, {
-    timeoutMs: options.timeoutMs,
-  });
+  return {
+    ok: true,
+    total: students.length,
+    data: students,
+    students,
+    source: "firestore",
+  };
 }
 
-export async function getTeachers(options = {}) {
-  const endpoint = resolveTeachersEndpoint();
-  const queryParams = normalizeTeacherQueryOptions(options);
+export async function getStudentProfile(studentRef) {
+  const student = await getStudentDocFromFirestore(studentRef);
+  return student || null;
+}
+
+export async function getStudentByEmail(email) {
+  const student = await getStudentByEmailFromFirestore(email);
+  return student || null;
+}
+
+export async function getStudentProfileResponse(studentRef, options = {}) {
+  const student = await getStudentProfile(studentRef, options);
+
+  return {
+    ok: true,
+    data: student,
+    student,
+    profile: student,
+    result: student,
+    source: "firestore",
+  };
+}
+
+export async function getStudentsFromSheet(options = {}) {
+  const endpoint = resolveStudentsEndpoint();
+  const queryParams = normalizeStudentQueryOptions(options);
   const url = buildUrl(endpoint, queryParams);
   const payload = await requestJson(url, {
     timeoutMs: options.timeoutMs,
   });
 
-  return extractTeachersCollection(payload);
+  return extractStudentsCollection(payload)
+    .map(normalizeStudentRecord)
+    .filter(Boolean);
 }
 
-export async function getTeachersResponse(options = {}) {
-  const endpoint = resolveTeachersEndpoint();
-  const queryParams = normalizeTeacherQueryOptions(options);
-  const url = buildUrl(endpoint, queryParams);
+export async function getStudentsResponseFromSheet(options = {}) {
+  const students = await getStudentsFromSheet(options);
 
-  return requestJson(url, {
-    timeoutMs: options.timeoutMs,
-  });
+  return {
+    ok: true,
+    total: students.length,
+    data: students,
+    students,
+    source: "apps_script",
+  };
 }
 
-/**
- * Obtiene el perfil crudo de un estudiante específico.
- * El backend actual espera studentKey.
- */
-export async function getStudentProfile(studentRef, options = {}) {
+export async function getStudentProfileFromSheet(studentRef, options = {}) {
   const studentKey = normalizeStudentIdentifier(studentRef);
 
   if (!studentKey) {
@@ -498,7 +539,6 @@ export async function getStudentProfile(studentRef, options = {}) {
   }
 
   const endpoint = resolveStudentProfileEndpoint();
-
   const url = buildUrl(endpoint, {
     studentKey,
     ...(isPlainObject(options.queryParams) ? options.queryParams : {}),
@@ -508,26 +548,10 @@ export async function getStudentProfile(studentRef, options = {}) {
     timeoutMs: options.timeoutMs,
   });
 
-  const student = extractSingleStudent(payload);
-
-  if (!student) {
-    return null;
-  }
-
-  if (!isPlainObject(student)) {
-    throw createApiError(
-      "El perfil del estudiante no tiene un formato de objeto válido.",
-      {
-        code: "INVALID_STUDENT_PROFILE_OBJECT",
-        payload,
-      }
-    );
-  }
-
-  return student;
+  return normalizeStudentRecord(extractSingleStudent(payload));
 }
 
-export async function getStudentByEmail(email, options = {}) {
+export async function getStudentByEmailFromSheet(email, options = {}) {
   const safeEmail = normalizeScalar(email).toLowerCase();
 
   if (!safeEmail) {
@@ -541,7 +565,6 @@ export async function getStudentByEmail(email, options = {}) {
   }
 
   const endpoint = resolveStudentProfileEndpoint();
-
   const url = buildUrl(endpoint, {
     email: safeEmail,
     ...(isPlainObject(options.queryParams) ? options.queryParams : {}),
@@ -551,52 +574,136 @@ export async function getStudentByEmail(email, options = {}) {
     timeoutMs: options.timeoutMs,
   });
 
-  const student = extractSingleStudent(payload);
-
-  if (!student) {
-    return null;
-  }
-
-  if (!isPlainObject(student)) {
-    throw createApiError(
-      "El perfil del estudiante por email no tiene un formato de objeto valido.",
-      {
-        code: "INVALID_STUDENT_EMAIL_PROFILE_OBJECT",
-        payload,
-      }
-    );
-  }
-
-  return student;
+  return normalizeStudentRecord(extractSingleStudent(payload));
 }
 
-/**
- * Igual que getStudentProfile pero devuelve el payload completo.
- * Sirve para debugging o para futuras necesidades del service/view.
- */
-export async function getStudentProfileResponse(studentRef, options = {}) {
-  const studentKey = normalizeStudentIdentifier(studentRef);
+function createEmptyStudentSyncReport() {
+  return {
+    totalStudentsRead: 0,
+    validStudents: 0,
+    created: 0,
+    updated: 0,
+    unchanged: 0,
+    skippedInvalid: 0,
+    synced: 0,
+    source: "apps_script_to_firestore",
+  };
+}
 
-  if (!studentKey) {
-    throw createApiError(
-      "Se requiere studentKey para consultar el perfil del estudiante.",
-      {
-        code: "MISSING_STUDENT_KEY",
-        studentRef,
-      }
-    );
+function chunkArray(items = [], size = FIRESTORE_BATCH_LIMIT) {
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
   }
 
-  const endpoint = resolveStudentProfileEndpoint();
+  return chunks;
+}
 
-  const url = buildUrl(endpoint, {
-    studentKey,
-    ...(isPlainObject(options.queryParams) ? options.queryParams : {}),
-  });
+function hasStudentChanges(existingStudent, nextStudent) {
+  if (!existingStudent) return true;
 
-  return requestJson(url, {
+  const keys = [
+    "nombre",
+    "email",
+    "correo",
+    "correoElectronico",
+    "edad",
+    "estado",
+    "interesesMusicales",
+    "curso",
+    "area",
+    "programa",
+    "instrumento",
+    "modalidad",
+    "sede",
+    "docente",
+    "acudiente",
+    "sourceRow",
+  ];
+
+  for (const key of keys) {
+    if (toStringSafe(existingStudent[key]) !== toStringSafe(nextStudent[key])) {
+      return true;
+    }
+  }
+
+  const existingProcesses = JSON.stringify(existingStudent.processes || []);
+  const nextProcesses = JSON.stringify(nextStudent.processes || []);
+
+  return existingProcesses !== nextProcesses;
+}
+
+export async function syncStudentsFromSheetToFirestore(options = {}) {
+  const report = createEmptyStudentSyncReport();
+  const studentsFromSheet = await getStudentsFromSheet({
+    includeInactive: true,
+    estado: "todos",
     timeoutMs: options.timeoutMs,
   });
+
+  report.totalStudentsRead = studentsFromSheet.length;
+
+  const existingStudents = await listStudentsFromFirestore();
+  const existingById = new Map(
+    existingStudents.map((student) => [student.studentKey || student.id, student])
+  );
+
+  const operations = [];
+
+  studentsFromSheet.forEach((student) => {
+    const normalized = normalizeStudentRecord(student);
+
+    if (!normalized?.studentKey) {
+      report.skippedInvalid += 1;
+      return;
+    }
+
+    report.validStudents += 1;
+
+    const existing = existingById.get(normalized.studentKey) || null;
+    const payload = {
+      ...normalized,
+      source: "students_sheet_sync",
+      syncOrigin: "settings_view",
+      updatedAt: serverTimestamp(),
+    };
+
+    if (!existing) {
+      payload.createdAt = serverTimestamp();
+    }
+
+    if (!hasStudentChanges(existing, normalized)) {
+      report.unchanged += 1;
+      return;
+    }
+
+    operations.push({
+      id: normalized.studentKey,
+      payload,
+    });
+
+    if (existing) {
+      report.updated += 1;
+    } else {
+      report.created += 1;
+    }
+  });
+
+  for (const chunk of chunkArray(operations)) {
+    const batch = writeBatch(db);
+
+    chunk.forEach((operation) => {
+      batch.set(doc(db, STUDENTS_COLLECTION, operation.id), operation.payload, {
+        merge: true,
+      });
+    });
+
+    await batch.commit();
+  }
+
+  report.synced = report.created + report.updated;
+  return report;
 }
 
 export {
@@ -604,18 +711,22 @@ export {
   buildUrl,
   requestJson,
   extractStudentsCollection,
-  extractTeachersCollection,
   extractSingleStudent,
   normalizeStudentIdentifier,
+  normalizeStudentRecord,
 };
 
 export default {
   getStudents,
   getStudentsResponse,
-  getTeachers,
-  getTeachersResponse,
   getStudentProfile,
   getStudentProfileResponse,
+  getStudentByEmail,
+  getStudentsFromSheet,
+  getStudentsResponseFromSheet,
+  getStudentProfileFromSheet,
+  getStudentByEmailFromSheet,
+  syncStudentsFromSheetToFirestore,
   normalizeStudentStatus,
   isStudentAllowedToLogIn,
 };

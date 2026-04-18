@@ -17,6 +17,7 @@ import {
   toArraySafe,
   toStringSafe,
 } from "../utils/shared.js";
+import { syncTeacherAccessUsers } from "./users.api.js";
 
 const APP_CONFIG_COLLECTION = getAppConfigCollectionName();
 const CATALOGS_DOCUMENT_ID = getCatalogsDocumentId();
@@ -84,9 +85,13 @@ function normalizeTeachers(values = []) {
 
 function normalizeCatalogsDocument(data = {}) {
   const normalized = normalizeTimestamps(isPlainObject(data) ? data : {});
+  const docentes = normalizeTeachers(normalized.docentes);
 
   return {
-    docentes: normalizeTeachers(normalized.docentes),
+    docentes,
+    teacherAccessEmails: uniqueByString(
+      docentes.map((teacher) => toStringSafe(teacher.email).toLowerCase())
+    ),
     categorias: normalizeCatalogStringList(normalized.categorias),
     componenteCorporal: normalizeCatalogStringList(normalized.componenteCorporal),
     componenteTecnico: normalizeCatalogStringList(normalized.componenteTecnico),
@@ -128,6 +133,8 @@ export async function saveCatalogs(input = {}) {
     },
     { merge: true }
   );
+
+  await syncTeacherAccessUsers(normalized.docentes);
 
   return normalized;
 }
