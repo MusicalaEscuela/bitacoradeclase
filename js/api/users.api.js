@@ -2,6 +2,7 @@ import {
   collection,
   db,
   doc,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -10,12 +11,24 @@ import {
   where,
   writeBatch,
 } from "../firebase.client.js";
-import { getStudents, isStudentAllowedToLogIn } from "./students.api.js";
+import {
+  getStudentsFromSheet,
+  isStudentAllowedToLogIn,
+} from "./students.api.js";
 import { toStringSafe } from "../utils/shared.js";
 
 const USERS_COLLECTION = "users";
 const STUDENT_ROLE = "student";
+const TEACHER_ROLE = "teacher";
 const FIRESTORE_BATCH_LIMIT = 400;
+
+function normalizeAccessEmail(email) {
+  return toStringSafe(email).toLowerCase();
+}
+
+export function buildUserAccessDocId(value) {
+  return normalizeAccessEmail(value);
+}
 
 function isPermissionDeniedError(error) {
   const code = toStringSafe(error?.code).toLowerCase();
@@ -29,27 +42,31 @@ function isPermissionDeniedError(error) {
 
 function normalizeUserAccess(docSnap) {
   const data = docSnap?.data?.() || {};
+  const fallbackEmail =
+    docSnap?.id && String(docSnap.id).includes("@") ? docSnap.id : "";
 
   return {
     id: docSnap?.id || "",
     uid: toStringSafe(data.uid),
-    email: toStringSafe(data.email).toLowerCase(),
+    email: normalizeAccessEmail(data.email || fallbackEmail),
     role: toStringSafe(data.role || data.rol).toLowerCase(),
     studentId: toStringSafe(data.studentId || data.studentKey || data.estudianteId),
     studentKey: toStringSafe(data.studentKey || data.studentId || data.estudianteId),
     displayName: toStringSafe(data.displayName || data.name || data.nombre),
     studentStatus: toStringSafe(data.studentStatus || data.estado || data.status),
-    active: data.active === true,
+    active: data.active !== false,
+    source: toStringSafe(data.source),
+    syncOrigin: toStringSafe(data.syncOrigin),
   };
 }
 
 function normalizeStudentAccessSource(student = {}) {
-  const email = toStringSafe(
+  const email = normalizeAccessEmail(
     student.email ||
       student.correo ||
       student.correoElectronico ||
       student.mail
-  ).toLowerCase();
+  );
   const studentKey = toStringSafe(
     student.studentKey || student.id || student.studentId || student.sourceRow
   );
@@ -62,9 +79,30 @@ function normalizeStudentAccessSource(student = {}) {
     studentId: studentKey,
     studentKey,
     displayName,
-    studentStatus: toStringSafe(student.estado || student.status || student.estadoActual),
+    studentStatus: toStringSafe(
+      student.estado || student.status || student.estadoActual
+    ),
     active: true,
     raw: student,
+  };
+}
+
+function normalizeTeacherAccessSource(teacher = {}, index = 0) {
+  const email = normalizeAccessEmail(
+    teacher.email ||
+      teacher.correo ||
+      teacher.correoElectronico ||
+      teacher.mail
+  );
+  const displayName = toStringSafe(
+    teacher.alias || teacher.nombre || teacher.name || `Docente ${index + 1}`
+  );
+
+  return {
+    email,
+    displayName,
+    active: teacher.activo !== false,
+    raw: teacher,
   };
 }
 
@@ -72,20 +110,22 @@ function isStudentRecordActive(student = {}) {
   return isStudentAllowedToLogIn(student);
 }
 
-function buildStudentUserDocId(studentSource) {
-  const base =
-    toStringSafe(studentSource.studentKey) || toStringSafe(studentSource.email);
+async function getUserAccessByDocId(docId) {
+  const safeDocId = toStringSafe(docId);
+  if (!safeDocId) return null;
 
-  return `student_${String(base)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")}`;
+  const snapshot = await getDoc(doc(db, USERS_COLLECTION, safeDocId));
+  if (!snapshot.exists()) return null;
+
+  return normalizeUserAccess(snapshot);
 }
 
 async function findOneByField(field, value) {
-  const safeValue = toStringSafe(value);
+  const safeValue =
+    field === "email"
+      ? normalizeAccessEmail(value)
+      : toStringSafe(value);
+
   if (!safeValue) return null;
 
   const snapshot = await getDocs(
@@ -96,9 +136,41 @@ async function findOneByField(field, value) {
   return normalizeUserAccess(snapshot.docs[0]);
 }
 
+function scoreUserAccessProfile(profile = {}) {
+  let score = 0;
+
+  if (profile.email && profile.id === buildUserAccessDocId(profile.email)) {
+    score += 4;
+  }
+
+  if (profile.active) score += 2;
+  if (profile.role) score += 1;
+  if (profile.studentId) score += 1;
+
+  return score;
+}
+
+function dedupeUserAccessProfiles(users = []) {
+  const bestByKey = new Map();
+
+  users.forEach((user) => {
+    if (!user) return;
+
+    const key = user.email || user.id;
+    if (!key) return;
+
+    const current = bestByKey.get(key);
+    if (!current || scoreUserAccessProfile(user) >= scoreUserAccessProfile(current)) {
+      bestByKey.set(key, user);
+    }
+  });
+
+  return [...bestByKey.values()];
+}
+
 async function listAllUserAccessProfiles() {
   const snapshot = await getDocs(collection(db, USERS_COLLECTION));
-  return snapshot.docs.map(normalizeUserAccess);
+  return dedupeUserAccessProfiles(snapshot.docs.map(normalizeUserAccess));
 }
 
 function createEmptySyncReport() {
@@ -126,7 +198,7 @@ function chunkArray(items = [], size = FIRESTORE_BATCH_LIMIT) {
   return chunks;
 }
 
-function hasStudentAccessChanges(existingUser, nextPayload) {
+function hasAccessChanges(existingUser, nextPayload) {
   if (!existingUser) return true;
 
   return (
@@ -136,11 +208,13 @@ function hasStudentAccessChanges(existingUser, nextPayload) {
     existingUser.studentKey !== nextPayload.studentKey ||
     existingUser.displayName !== nextPayload.displayName ||
     existingUser.studentStatus !== nextPayload.studentStatus ||
-    existingUser.active !== nextPayload.active
+    existingUser.active !== nextPayload.active ||
+    existingUser.source !== nextPayload.source ||
+    existingUser.syncOrigin !== nextPayload.syncOrigin
   );
 }
 
-async function commitStudentAccessOperations(operations = []) {
+async function commitAccessOperations(operations = []) {
   if (!operations.length) return;
 
   const chunks = chunkArray(operations, FIRESTORE_BATCH_LIMIT);
@@ -159,11 +233,7 @@ async function commitStudentAccessOperations(operations = []) {
         payload.createdAt = serverTimestamp();
       }
 
-      batch.set(
-        ref,
-        payload,
-        { merge: true }
-      );
+      batch.set(ref, payload, { merge: true });
     });
 
     await batch.commit();
@@ -172,9 +242,14 @@ async function commitStudentAccessOperations(operations = []) {
 
 export async function getUserAccessProfile(authUser = null) {
   const uid = toStringSafe(authUser?.uid);
-  const email = toStringSafe(authUser?.email).toLowerCase();
+  const email = normalizeAccessEmail(authUser?.email);
 
   try {
+    if (email) {
+      const byDocId = await getUserAccessByDocId(buildUserAccessDocId(email));
+      if (byDocId) return byDocId;
+    }
+
     if (uid) {
       const byUid = await findOneByField("uid", uid);
       if (byUid) return byUid;
@@ -207,7 +282,7 @@ export async function listStudentAccessUsers() {
 
 export async function syncStudentAccessUsersFromSheet(options = {}) {
   const report = createEmptySyncReport();
-  const students = await getStudents({
+  const students = await getStudentsFromSheet({
     includeInactive: true,
     estado: "todos",
     timeoutMs: options.timeoutMs,
@@ -244,13 +319,11 @@ export async function syncStudentAccessUsersFromSheet(options = {}) {
     report.validStudents += 1;
 
     const existingUser =
-      existingByStudentId.get(source.studentId) || existingByEmail.get(source.email) || null;
+      existingByStudentId.get(source.studentId) ||
+      existingByEmail.get(source.email) ||
+      null;
 
-    if (
-      existingUser &&
-      existingUser.role &&
-      existingUser.role !== STUDENT_ROLE
-    ) {
+    if (existingUser && existingUser.role && existingUser.role !== STUDENT_ROLE) {
       report.conflicts += 1;
       return;
     }
@@ -268,17 +341,16 @@ export async function syncStudentAccessUsersFromSheet(options = {}) {
       syncOrigin: "settings_view",
     };
 
-    if (!hasStudentAccessChanges(existingUser, payload)) {
+    if (!hasAccessChanges(existingUser, payload)) {
       report.unchanged += 1;
       return;
     }
 
-    const docId = existingUser?.id || buildStudentUserDocId(source);
+    const docId = buildUserAccessDocId(source.email);
     operations.push({
       docId,
       payload,
-      isCreate: !existingUser,
-      createdAt: existingUser?.createdAt || undefined,
+      isCreate: !existingUser || existingUser.id !== docId,
     });
 
     if (existingUser) {
@@ -296,30 +368,105 @@ export async function syncStudentAccessUsersFromSheet(options = {}) {
     }
   });
 
-  await commitStudentAccessOperations(operations);
+  await commitAccessOperations(operations);
 
   report.synced = report.created + report.updated;
   return report;
 }
 
+export async function syncTeacherAccessUsers(teachers = []) {
+  const existingUsers = await listAllUserAccessProfiles();
+  const existingTeachersByEmail = new Map();
+
+  existingUsers
+    .filter((user) => user.role === TEACHER_ROLE)
+    .forEach((user) => {
+      if (user.email) {
+        existingTeachersByEmail.set(user.email, user);
+      }
+    });
+
+  const seenEmails = new Set();
+  const operations = [];
+
+  teachers.forEach((teacher, index) => {
+    const source = normalizeTeacherAccessSource(teacher, index);
+    if (!source.email) return;
+
+    seenEmails.add(source.email);
+
+    const existingUser = existingTeachersByEmail.get(source.email) || null;
+    const payload = {
+      email: source.email,
+      role: TEACHER_ROLE,
+      studentId: "",
+      studentKey: "",
+      displayName: source.displayName,
+      studentStatus: "",
+      active: source.active,
+      source: "catalogs_teachers_sync",
+      syncOrigin: "catalogs_save",
+    };
+
+    if (!hasAccessChanges(existingUser, payload)) {
+      return;
+    }
+
+    const docId = buildUserAccessDocId(source.email);
+    operations.push({
+      docId,
+      payload,
+      isCreate: !existingUser || existingUser.id !== docId,
+    });
+  });
+
+  existingTeachersByEmail.forEach((user, email) => {
+    if (seenEmails.has(email)) return;
+
+    const payload = {
+      email,
+      role: TEACHER_ROLE,
+      studentId: "",
+      studentKey: "",
+      displayName: user.displayName,
+      studentStatus: "",
+      active: false,
+      source: "catalogs_teachers_sync",
+      syncOrigin: "catalogs_save",
+    };
+
+    if (!hasAccessChanges(user, payload)) {
+      return;
+    }
+
+    operations.push({
+      docId: buildUserAccessDocId(email),
+      payload,
+      isCreate: user.id !== buildUserAccessDocId(email),
+    });
+  });
+
+  await commitAccessOperations(operations);
+}
+
 export async function upsertUserAccessProfile(docId, payload = {}) {
-  const safeDocId = toStringSafe(docId);
+  const safeDocId =
+    buildUserAccessDocId(docId) || toStringSafe(docId);
+
   if (!safeDocId) {
     throw new Error("Se requiere docId para guardar el perfil de acceso.");
   }
 
-  await batchlessSetUserAccessProfile_(safeDocId, payload);
-  return safeDocId;
-}
-
-async function batchlessSetUserAccessProfile_(docId, payload = {}) {
   await setDoc(
-    doc(db, USERS_COLLECTION, docId),
+    doc(db, USERS_COLLECTION, safeDocId),
     {
       ...payload,
+      email: normalizeAccessEmail(payload.email || safeDocId),
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     },
     { merge: true }
   );
+
+  return safeDocId;
 }
