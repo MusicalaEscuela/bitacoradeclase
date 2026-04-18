@@ -65,8 +65,8 @@ function buildMarkup(config) {
           <p class="view-eyebrow">${escapeHtml(title)}</p>
           <h1 class="view-title">Bibliotecas Artisticas</h1>
           <p class="view-description">
-            Reune en un solo lugar las bibliotecas de las diferentes artes para
-            que docentes y estudiantes entren rapido al material que necesitan.
+            Reune en un solo lugar las bibliotecas de cada arte para entrar
+            rapido al material que docentes y estudiantes necesitan.
           </p>
         </div>
       </header>

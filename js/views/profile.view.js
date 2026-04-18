@@ -1,4 +1,4 @@
-// js/views/profile.view.js
+﻿// js/views/profile.view.js
 
 import { CONFIG } from "../config.js";
 import { canViewStudent, resolveUserAccess } from "../authz.js";
@@ -12,6 +12,7 @@ import {
   clearAppError,
   setBitacorasForStudent,
   setBitacorasLoading,
+  setProfileLoading,
   setSelectedStudent,
   setStudentGoals,
   setStudentProfile,
@@ -19,6 +20,10 @@ import {
 } from "../state.js";
 import { getBitacorasByStudent } from "../api/bitacoras.api.js";
 import { getStudentProfile } from "../api/students.api.js";
+import {
+  getStudentRouteRecord,
+  saveStudentRouteRecord,
+} from "../api/student-routes.api.js";
 import {
   escapeHtml,
   firstNonEmpty,
@@ -44,114 +49,373 @@ let unsubscribeView = null;
 let currentNavigateTo = null;
 let currentSubscribe = null;
 let currentProfileStudentKey = null;
-
-const LEARNING_ROUTE_PRESET = Object.freeze([
-  {
-    id: "exp1-corporal-postura",
-    component: "corporal",
-    experience: 1,
-    order: 1,
-    title: "Postura base y respiracion consciente",
-    description: "Reconoce postura, relajacion inicial y pulso corporal en clase.",
-  },
-  {
-    id: "exp1-tecnico-do-mayor",
-    component: "tecnico",
-    experience: 1,
-    order: 1,
-    title: "Escala de Do mayor",
-    description: "Ejecuta la escala de Do mayor con digitacion y tempo guiado.",
-  },
-  {
-    id: "exp1-teorico-notas",
-    component: "teorico",
-    experience: 1,
-    order: 1,
-    title: "Lectura inicial de notas y figuras",
-    description: "Relaciona notas basicas, pulso y figuras de duracion simples.",
-  },
-  {
-    id: "exp1-obras-frase",
-    component: "obras",
-    experience: 1,
-    order: 1,
-    title: "Primera obra corta completa",
-    description: "Interpreta una obra breve manteniendo inicio, desarrollo y cierre.",
-  },
-  {
-    id: "exp2-corporal-pulso",
-    component: "corporal",
-    experience: 2,
-    order: 2,
-    title: "Disociacion y pulso estable",
-    description: "Mantiene pulso corporal mientras coordina manos o desplazamientos.",
-  },
-  {
-    id: "exp2-tecnico-arpegios",
-    component: "tecnico",
-    experience: 2,
-    order: 2,
-    title: "Arpegios y cambios de patron",
-    description: "Resuelve arpegios basicos o cambios de patron sin detenerse.",
-  },
-  {
-    id: "exp2-teorico-compas",
-    component: "teorico",
-    experience: 2,
-    order: 2,
-    title: "Compas y subdivision",
-    description: "Identifica compas, subdivision y acentos de una pieza sencilla.",
-  },
-  {
-    id: "exp2-obras-expresion",
-    component: "obras",
-    experience: 2,
-    order: 2,
-    title: "Obra con dinamicas y memoria",
-    description: "Interpreta repertorio corto con dinamicas basicas y seguridad.",
-  },
-  {
-    id: "exp3-corporal-autonomia",
-    component: "corporal",
-    experience: 3,
-    order: 3,
-    title: "Preparacion corporal autonoma",
-    description: "Inicia su calentamiento sin depender de guia constante.",
-  },
-  {
-    id: "exp3-tecnico-velocidad",
-    component: "tecnico",
-    experience: 3,
-    order: 3,
-    title: "Escalas y tecnica con mayor fluidez",
-    description: "Sostiene tecnica con precision, limpieza y control de tempo.",
-  },
-  {
-    id: "exp3-teorico-analisis",
-    component: "teorico",
-    experience: 3,
-    order: 3,
-    title: "Analisis basico de repertorio",
-    description: "Reconoce forma, tonalidad o recursos basicos en su repertorio.",
-  },
-  {
-    id: "exp3-obras-presentacion",
-    component: "obras",
-    experience: 3,
-    order: 3,
-    title: "Repertorio listo para muestra",
-    description: "Presenta una obra completa con intencion musical y continuidad.",
-  },
-]);
+let historyExpansionState = new Map();
 
 const ROUTE_COMPONENTS = Object.freeze([
   { id: "corporal", label: "Componente corporal" },
   { id: "tecnico", label: "Componente tecnico" },
   { id: "teorico", label: "Componente teorico" },
   { id: "obras", label: "Componente de obras" },
+  { id: "repertorio", label: "Componente repertorio" },
 ]);
 
 const ROUTE_EXPERIENCES = Object.freeze([1, 2, 3]);
+
+const GUITAR_ROUTE_PRESET = Object.freeze([
+  {
+    id: "exp1-tecnica-gimnasia-dactilar",
+    component: "tecnico",
+    experience: 1,
+    order: 1,
+    title: "Tecnica: gimnasia dactilar (individuales, dobles, intermedios, alternados)",
+    description: "Incluye ejercicios numerados 1 al 17.",
+  },
+  {
+    id: "exp1-tecnica-spider-petrucci",
+    component: "tecnico",
+    experience: 1,
+    order: 1,
+    title: "Tecnica: Spider y Petrucci",
+    description: "Petrucci: Ex 1 part 1, Ex 5 part 1, Example 9, Ex 11 Fragments, Example 17.",
+  },
+  {
+    id: "exp1-patrones-tabla-mano-derecha",
+    component: "tecnico",
+    experience: 1,
+    order: 1,
+    title: "Patrones: tabla y mano derecha",
+    description: "Tabla de patrones (1 al 30) y patrones de mano derecha (1 al 12).",
+  },
+  {
+    id: "exp1-teoria-claves-sol-fa",
+    component: "teorico",
+    experience: 1,
+    order: 1,
+    title: "Teoria: clave de Sol y clave de Fa",
+    description: "Lineas, espacios y lineas/espacios (1 al 5) en ambas claves.",
+  },
+  {
+    id: "exp1-ritmo-inicial",
+    component: "teorico",
+    experience: 1,
+    order: 1,
+    title: "Ritmo inicial",
+    description: "Ejercicios iniciales 1 al 10, motivos ritmicos 1 al 30, Studying Rhythm 1 al 10.",
+  },
+  {
+    id: "exp2-metodo-govan",
+    component: "tecnico",
+    experience: 2,
+    order: 2,
+    title: "Metodo Govan",
+    description: "Items 2.1, 2.2, 2.3, 2.7 y 2.9.",
+  },
+  {
+    id: "exp2-escalas-mayores-menores-posicion-1",
+    component: "tecnico",
+    experience: 2,
+    order: 2,
+    title: "Escalas mayores y menores (1ra posicion)",
+    description: "Mayores: C, G, D, A, E. Menores: Cm, Gm, Dm, Am, Em.",
+  },
+  {
+    id: "exp2-mapa-y-2-octavas",
+    component: "tecnico",
+    experience: 2,
+    order: 2,
+    title: "Mapa 1ra posicion y escalas menores 2 octavas",
+    description: "Mapa 1ra posicion: C, G, D, A, E. Menores 2 octavas: Cm, Gm, Dm, Am, Em.",
+  },
+  {
+    id: "exp2-escalas-mayores-segunda-digitacion",
+    component: "tecnico",
+    experience: 2,
+    order: 2,
+    title: "Escalas mayores (2da digitacion)",
+    description: "F, B, C#, F#, Ab.",
+  },
+  {
+    id: "exp2-conceptos-musicales",
+    component: "teorico",
+    experience: 3,
+    order: 3,
+    title: "Conceptos musicales fundamentales",
+    description: "Musica, notas, instrumento, digitacion, sonido, pilares, alteraciones, cifrado, partitura, claves, metricas y armadura.",
+  },
+  {
+    id: "exp3-acordes-e-inversiones",
+    component: "tecnico",
+    experience: 3,
+    order: 3,
+    title: "Acordes, inversiones y arpegios mayores",
+    description: "Mayores, menores, inversiones mayores y arpegios mayores (G, D, A, E, C).",
+  },
+  {
+    id: "exp3-independencia-disociacion-estilos",
+    component: "tecnico",
+    experience: 3,
+    order: 3,
+    title: "Independencia y disociacion aplicada",
+    description: "Acompanamientos iniciales (1 al 10), disociacion (acordes, marcha, waltz, arpegio, bajo Alberti) y estilos/metodos.",
+  },
+  {
+    id: "exp3-estructuras-musicales",
+    component: "teorico",
+    experience: 3,
+    order: 3,
+    title: "Estructuras musicales",
+    description: "Escala cromatica, triadas, escalas mayores/menores, circulo de quintas, enlace de acordes y acordes de septima.",
+  },
+]);
+
+const PIANO_LEARNING_ROUTE = Object.freeze({
+  instrumento: "Piano",
+  componentes: [
+    {
+      nombre: "Técnico",
+      secciones: [
+        {
+          nombre: "Técnica",
+          items: [
+            { nombre: "Gimnasia dactilar individuales", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
+            { nombre: "Gimnasia dactilar dobles", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
+            { nombre: "Gimnasia dactilar intermedios", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
+            { nombre: "Gimnasia dactilar alternados", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
+          ],
+        },
+        {
+          nombre: "Patrones",
+          items: [
+            { nombre: "Tabla de patrones", tipo: "progressive", niveles: Array.from({ length: 30 }, (_, i) => i + 1) },
+            { nombre: "Patrones móviles", tipo: "progressive", niveles: Array.from({ length: 10 }, (_, i) => i + 1) },
+            { nombre: "Schmitt", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Hanon", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+          ],
+        },
+        {
+          nombre: "Escalas",
+          items: [
+            { nombre: "Escalas mayores 1er dig", tipo: "checklist", valores: ["C", "G", "D", "A", "E"] },
+            { nombre: "Escalas menores 1er dig", tipo: "checklist", valores: ["Cm", "Gm", "Dm", "Am", "Em"] },
+            { nombre: "Escalas mayores 2 octavas", tipo: "checklist", valores: ["C", "G", "D", "A", "E"] },
+            { nombre: "Escalas menores 2 octavas", tipo: "checklist", valores: ["Cm", "Gm", "Dm", "Am", "Em"] },
+            { nombre: "Escalas mayores 2da dig", tipo: "checklist", valores: ["F", "B", "C#", "F#", "Ab"] },
+          ],
+        },
+        {
+          nombre: "Acordes",
+          items: [
+            { nombre: "Acordes mayores", tipo: "checklist", valores: ["G", "D", "A", "E", "C", "B", "C#", "Ab", "Eb", "Bb", "F#", "F"] },
+            { nombre: "Acordes menores", tipo: "checklist", valores: ["Gm", "Dm", "Am", "Em", "Cm", "Bm", "C#m", "Abm", "Ebm", "Bbm", "F#m", "Fm"] },
+            { nombre: "Inversiones mayores", tipo: "checklist", valores: ["G", "D", "A", "E", "C", "B", "C#", "Ab", "Eb", "Bb", "F#", "F"] },
+            { nombre: "Arpegios mayores", tipo: "checklist", valores: ["G", "D", "A", "E", "C"] },
+          ],
+        },
+        {
+          nombre: "Independencia",
+          items: [
+            { nombre: "Ejercicios iniciales", tipo: "progressive", niveles: Array.from({ length: 13 }, (_, i) => i + 1) },
+            { nombre: "Ejercicios de disociación", tipo: "checklist", valores: ["Acordes", "Marcha", "Waltz", "Arpegio", "Bajo Alberti"] },
+            { nombre: "Rock Hanon", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Blues Hanon", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Salsa Hanon", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Czerny Colombiano", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+          ],
+        },
+      ],
+    },
+    {
+      nombre: "Teórico",
+      secciones: [
+        {
+          nombre: "Teoría",
+          items: [
+            { nombre: "Líneas clave sol", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Espacios clave sol", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Líneas y espacios clave sol", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Líneas clave fa", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Espacios clave fa", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Líneas y espacios clave fa", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+          ],
+        },
+        {
+          nombre: "Ritmo",
+          items: [
+            { nombre: "Ejercicios iniciales", tipo: "progressive", niveles: Array.from({ length: 9 }, (_, i) => i + 1) },
+            { nombre: "Motivos rítmicos", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
+            { nombre: "Studying Rhythm", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
+          ],
+        },
+        {
+          nombre: "Conceptos musicales",
+          items: [
+            { nombre: "¿Qué es la música?", tipo: "single" },
+            { nombre: "Nombre de notas musicales", tipo: "single" },
+            { nombre: "Explicación del instrumento", tipo: "single" },
+            { nombre: "Digitación en el instrumento", tipo: "single" },
+            { nombre: "Sonido (timbre, duración, altura, intensidad)", tipo: "multi" },
+            { nombre: "Pilares de la música (melodía, armonía, ritmo)", tipo: "multi" },
+            { nombre: "Alteraciones (sostenidos, bemoles, becuadros)", tipo: "multi" },
+            { nombre: "Cifrado", tipo: "single" },
+            { nombre: "Partitura (pentagrama, sistema, compás)", tipo: "multi" },
+            { nombre: "Clave (sol, fa, do)", tipo: "multi" },
+            { nombre: "Métricas (4/4, 3/4, 2/4)", tipo: "multi" },
+            { nombre: "Armadura", tipo: "single" },
+          ],
+        },
+        {
+          nombre: "Estructuras",
+          items: [
+            { nombre: "Escala cromática", tipo: "single" },
+            { nombre: "Triadas mayores (4-3)", tipo: "single" },
+            { nombre: "Triadas menores (3-4)", tipo: "single" },
+            { nombre: "Escalas mayores", tipo: "single" },
+            { nombre: "Círculo de quintas", tipo: "single" },
+            { nombre: "Enlace de acordes", tipo: "single" },
+            { nombre: "Escalas menores", tipo: "single" },
+            { nombre: "Acordes de séptima", tipo: "single" },
+            { nombre: "Armonía", tipo: "single" },
+          ],
+        },
+      ],
+    },
+    {
+      nombre: "Repertorio",
+      secciones: [
+        {
+          nombre: "Canciones",
+          items: [
+            { nombre: "Melodía manos separadas", tipo: "single" },
+            { nombre: "Melodía manos juntas", tipo: "single" },
+            { nombre: "Melodía + bajo", tipo: "single" },
+            { nombre: "Melodía + acordes", tipo: "single" },
+            { nombre: "Acordes manos separadas", tipo: "single" },
+            { nombre: "Acordes manos juntas", tipo: "single" },
+            { nombre: "Bajo + acorde", tipo: "single" },
+            { nombre: "Acompañamiento con acordes", tipo: "single" },
+          ],
+        },
+        {
+          nombre: "Método",
+          items: [
+            { nombre: "Waltz", tipo: "single" },
+            { nombre: "Marcha", tipo: "single" },
+            { nombre: "Swing", tipo: "single" },
+            { nombre: "Suzuki I", tipo: "progressive", niveles: [1, 2, 3, 4, 5, 6, 7, 8] },
+            { nombre: "Suzuki II", tipo: "progressive" },
+            { nombre: "Bastien I", tipo: "progressive" },
+            { nombre: "Bastien II", tipo: "progressive" },
+          ],
+        },
+        {
+          nombre: "Repertorio",
+          items: [{ nombre: "Repertorio libre", tipo: "list" }],
+        },
+        {
+          nombre: "Estudios",
+          items: [
+            { nombre: "Op. 70 - Berens", tipo: "progressive", niveles: Array.from({ length: 30 }, (_, i) => i + 1) },
+            { nombre: "Op. 50 - Cramer", tipo: "progressive" },
+            { nombre: "Op. 299 - Czerny", tipo: "progressive" },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+function toLearningRouteComponentId(componentName = "") {
+  const normalized = toStringSafe(componentName)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (normalized.includes("tecnico")) return "tecnico";
+  if (normalized.includes("teorico")) return "teorico";
+  if (normalized.includes("repertorio")) return "repertorio";
+  return normalized || "general";
+}
+
+function normalizeRouteLevels(item = {}) {
+  if (Array.isArray(item?.niveles) && item.niveles.length) {
+    return item.niveles;
+  }
+
+  if (Array.isArray(item?.valores) && item.valores.length) {
+    return item.valores;
+  }
+
+  return [1];
+}
+
+function buildGoalsFromLearningRoute(learningRoute, presetId = "route") {
+  if (!learningRoute || !Array.isArray(learningRoute.componentes)) return [];
+
+  const goals = [];
+
+  learningRoute.componentes.forEach((component, componentIndex) => {
+    const componentId = toLearningRouteComponentId(component?.nombre);
+    const componentLabel = toStringSafe(component?.nombre) || "Componente";
+    const experience = Math.min(componentIndex + 1, ROUTE_EXPERIENCES.length);
+    let order = 1;
+
+    (component?.secciones || []).forEach((section, sectionIndex) => {
+      const sectionLabel = toStringSafe(section?.nombre) || `Sección ${sectionIndex + 1}`;
+
+      (section?.items || []).forEach((item, itemIndex) => {
+        const itemLabel = toStringSafe(item?.nombre) || `Item ${itemIndex + 1}`;
+        const itemType = toStringSafe(item?.tipo).toLowerCase();
+
+        if (itemType === "progressive" || itemType === "checklist") {
+          normalizeRouteLevels(item).forEach((step) => {
+            goals.push({
+              id: `${presetId}-${componentId}-s${sectionIndex + 1}-i${itemIndex + 1}-${toStringSafe(step).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+              component: componentId,
+              componentLabel,
+              section: sectionLabel,
+              experience,
+              order: order++,
+              title: `${sectionLabel}: ${itemLabel} · ${step}`,
+              description: `Progresión ${learningRoute.instrumento} · ${componentLabel}`,
+            });
+          });
+          return;
+        }
+
+        goals.push({
+          id: `${presetId}-${componentId}-s${sectionIndex + 1}-i${itemIndex + 1}`,
+          component: componentId,
+          componentLabel,
+          section: sectionLabel,
+          experience,
+          order: order++,
+          title: `${sectionLabel}: ${itemLabel}`,
+          description: `Progresión ${learningRoute.instrumento} · ${componentLabel}`,
+        });
+      });
+    });
+  });
+
+  return goals;
+}
+
+const PIANO_ROUTE_PRESET = Object.freeze({
+  id: "piano_ruta_v1",
+  routeName: "Ruta de aprendizaje - Piano",
+  goals: buildGoalsFromLearningRoute(PIANO_LEARNING_ROUTE, "piano_ruta_v1"),
+});
+
+const ROUTE_PRESETS = Object.freeze({
+  guitarra: Object.freeze({
+    id: "guitarra_objetivos_v1",
+    routeName: "Ruta de aprendizaje - Guitarra",
+    goals: GUITAR_ROUTE_PRESET,
+  }),
+  piano: PIANO_ROUTE_PRESET,
+});
+
+const routePresetCache = new Map();
+const routeExpansionState = new Map();
 
 export async function beforeEnter({ payload, navigateTo } = {}) {
   clearAppError();
@@ -184,7 +448,7 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   if (access.role !== CONFIG.roles.student) {
     await ensureStudentBitacorasLoaded(student);
   }
-  ensureLearningRouteInitialized(student);
+  await ensureLearningRouteLoaded(student);
 }
 
 async function ensureStudentLoadedForProfile(studentRef) {
@@ -250,6 +514,7 @@ export async function render({
   root.innerHTML = buildProfileMarkup(student, safeState, safeConfig);
 
   bindProfileEvents(student);
+  applyProfileFocusLayout(student);
   renderReactiveBlocks(getState(), safeConfig, currentProfileStudentKey);
   setupSubscription(safeConfig, currentProfileStudentKey);
 }
@@ -303,6 +568,8 @@ function buildProfileMarkup(student, state, config) {
   const isAuthenticated = Boolean(state?.auth?.isAuthenticated);
   const access = resolveUserAccess(state?.auth?.user);
   const isStudentView = access.role === CONFIG.roles.student;
+  const studentId = getStudentIdentity(student);
+  const routeExpanded = studentId ? routeExpansionState.get(studentId) === true : false;
   const title =
     config?.app?.name ||
     config?.appName ||
@@ -316,9 +583,8 @@ function buildProfileMarkup(student, state, config) {
           <p class="view-eyebrow">${escapeHtml(title)}</p>
           <h1 class="view-title">Perfil del estudiante</h1>
           <p class="view-description">
-            Revisen la información principal del estudiante y consulten su historial
-            sin ponerse a perseguir datos por toda la interfaz como si el sistema
-            jugara a las escondidas.
+            Revisa la informacion principal del estudiante, su ruta de
+            aprendizaje y las ultimas bitacoras desde una sola vista.
           </p>
         </div>
 
@@ -366,8 +632,24 @@ function buildProfileMarkup(student, state, config) {
                 <p class="panel-header__eyebrow">Ruta</p>
                 <h2 class="panel-header__title">Ruta de aprendizaje</h2>
                 <p class="panel__description">
-                  Ejemplo progresivo por componentes para visualizar avances, experiencia actual y logros del proceso.
+                  Resumen del estado actual y objetivos en curso. Abre la ruta completa solo cuando necesites ver todo el detalle.
                 </p>
+              </div>
+              <div class="panel-header__actions">
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-route-action="toggle-full"
+                >
+                  ${routeExpanded ? "Ocultar ruta completa" : "Ver ruta completa"}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-route-action="refresh-route"
+                >
+                  Recargar ruta
+                </button>
               </div>
             </header>
 
@@ -395,7 +677,7 @@ function buildProfileMarkup(student, state, config) {
             <header class="panel-header profile-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Últimas bitácoras</h2>
+                <h2 class="panel-header__title">Última bitácora</h2>
               </div>
 
               <button
@@ -408,7 +690,7 @@ function buildProfileMarkup(student, state, config) {
             </header>
 
             <div id="profile-history-content">
-              ${renderHistoryPreview(bitacoras, config, isAuthenticated)}
+              ${renderHistoryPreview(student, bitacoras, config, isAuthenticated)}
             </div>
           </section>
         </aside>
@@ -466,23 +748,49 @@ function bindProfileEvents(student) {
 
       if (action === "open-editor") {
         goToEditor(student);
+        return;
+      }
+
+      if (action === "open-full-history") {
+        toggleHistoryExpanded(student, actionButton, true);
+        return;
       }
 
       if (action === "open-group-editor") {
         goToEditor(student, { mode: CONFIG.modes.group });
+        return;
+      }
+
+      if (action === "toggle-full-history") {
+        toggleHistoryExpanded(student, actionButton);
       }
     });
   }
 
+  viewRoot.addEventListener("click", async (event) => {
+    const actionButton = event.target.closest("[data-route-action]");
+    if (!actionButton) return;
+
+    const action = actionButton.getAttribute("data-route-action");
+    if (action === "toggle-full") {
+      toggleRouteExpanded(student, actionButton);
+      return;
+    }
+
+    if (action === "refresh-route") {
+      await reloadLearningRoute(student);
+    }
+  });
+
   if (routeContainer) {
-    routeContainer.addEventListener("change", (event) => {
+    routeContainer.addEventListener("change", async (event) => {
       const checkbox = event.target.closest("[data-route-goal-check]");
       if (!checkbox) return;
 
       const goalId = checkbox.getAttribute("data-route-goal-check");
       if (!goalId || !checkbox.checked) return;
 
-      completeLearningGoal(student, goalId);
+      await completeLearningGoal(student, goalId);
     });
   }
 }
@@ -545,8 +853,15 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
     historyContainer.innerHTML =
       access.role === CONFIG.roles.student
         ? renderStudentHistoryLocked()
-        : renderHistoryPreview(bitacoras, config);
+        : renderHistoryPreview(
+            student,
+            bitacoras,
+            config,
+            Boolean(state?.auth?.isAuthenticated)
+          );
   }
+
+  applyProfileFocusLayout(student);
 }
 
 function renderStudentHistoryLocked() {
@@ -655,25 +970,184 @@ function renderSummary(student, bitacoras = []) {
   `;
 }
 
-function ensureLearningRouteInitialized(student) {
+async function ensureLearningRouteLoaded(student, options = {}) {
   const studentId = getStudentIdentity(student);
   if (!studentId) return;
+  const forceReload = Boolean(options?.forceReload);
 
+  const access = resolveUserAccess(getState()?.auth?.user);
   const currentRoute = getStudentRoute(studentId);
-  if (currentRoute?.presetId === "musicala_base_v1" && Array.isArray(currentRoute?.history)) {
-    if (Array.isArray(getStudentGoals(studentId)) && getStudentGoals(studentId).length) {
-      return;
-    }
+  const currentGoals = getStudentGoals(studentId);
+
+  if (!forceReload && currentRoute?.presetId && Array.isArray(currentGoals) && currentGoals.length) {
+    return;
   }
 
-  const seededRoute = buildDefaultRouteState(student, currentRoute);
-  setStudentRoute(studentId, seededRoute);
-  setStudentGoals(studentId, buildStudentGoalsFromRoute(seededRoute));
+  setProfileLoading(true);
+
+  try {
+    const persistedRoute = await getStudentRouteRecord(studentId);
+    const nextRoute = buildDefaultRouteState(student, persistedRoute || currentRoute);
+
+    setStudentRoute(studentId, nextRoute);
+    setStudentGoals(studentId, buildStudentGoalsFromRoute(nextRoute, student));
+
+    if (!persistedRoute && access.canEditRoutes) {
+      const savedRoute = await persistLearningRoute(student, nextRoute);
+      setStudentRoute(studentId, savedRoute);
+      setStudentGoals(studentId, buildStudentGoalsFromRoute(savedRoute, student));
+    }
+  } catch (error) {
+    console.error("Error cargando la ruta de aprendizaje:", error);
+
+    const fallbackRoute = buildDefaultRouteState(student, currentRoute);
+    setStudentRoute(studentId, fallbackRoute);
+    setStudentGoals(studentId, buildStudentGoalsFromRoute(fallbackRoute, student));
+
+    setAppError(
+      error?.message || "No se pudo cargar la ruta de aprendizaje."
+    );
+  } finally {
+    setProfileLoading(false);
+  }
+}
+
+async function persistLearningRoute(student, route) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) {
+    throw new Error("No se pudo resolver el estudiante para guardar la ruta.");
+  }
+
+  const savedRoute = await saveStudentRouteRecord(studentId, route, { student });
+  return buildDefaultRouteState(student, savedRoute);
+}
+
+function normalizeArtKey(student) {
+  const rawValue = firstNonEmpty(
+    student?.area,
+    student?.instrumento,
+    student?.programa,
+    student?.processes?.[0]?.arte,
+    student?.processes?.[0]?.label
+  );
+
+  const normalized = toStringSafe(rawValue)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!normalized) return "general";
+  if (normalized.includes("guitarra")) return "guitarra";
+  if (normalized.includes("canto")) return "canto";
+  if (normalized.includes("danza")) return "danza";
+  if (normalized.includes("teatro")) return "teatro";
+  if (normalized.includes("plast")) return "artes-plasticas";
+  return normalized;
+}
+
+function getTitleFromArtKey(artKey) {
+  return artKey
+    .split("-")
+    .filter(Boolean)
+    .map((piece) => piece.charAt(0).toUpperCase() + piece.slice(1))
+    .join(" ");
+}
+
+function buildGenericRoutePreset(artKey, artLabel) {
+  const goals = [];
+
+  ROUTE_EXPERIENCES.forEach((experience) => {
+    goals.push(
+      {
+        id: `${artKey}-exp${experience}-corporal`,
+        component: "corporal",
+        experience,
+        order: experience,
+        title: `Presencia corporal (Experiencia ${experience})`,
+        description: `Fortalece postura, respiracion y preparacion corporal en ${artLabel}.`,
+      },
+      {
+        id: `${artKey}-exp${experience}-tecnico`,
+        component: "tecnico",
+        experience,
+        order: experience,
+        title: `Tecnica base (Experiencia ${experience})`,
+        description: `Consolida recursos tecnicos de ${artLabel} con control y continuidad.`,
+      },
+      {
+        id: `${artKey}-exp${experience}-teorico`,
+        component: "teorico",
+        experience,
+        order: experience,
+        title: `Comprension del lenguaje (Experiencia ${experience})`,
+        description: `Relaciona conceptos teoricos aplicados al proceso de ${artLabel}.`,
+      },
+      {
+        id: `${artKey}-exp${experience}-obras`,
+        component: "obras",
+        experience,
+        order: experience,
+        title: `Montaje y presentacion (Experiencia ${experience})`,
+        description: `Integra tecnica y expresion en repertorio o montaje de ${artLabel}.`,
+      }
+    );
+  });
+
+  return {
+    id: `${artKey}_base_v1`,
+    routeName: `Ruta de aprendizaje - ${artLabel}`,
+    goals,
+  };
+}
+
+function resolveRoutePreset(student, baseRoute = {}) {
+  const byId = toStringSafe(baseRoute?.presetId);
+  const builtIn = Object.values(ROUTE_PRESETS).find((preset) => preset.id === byId);
+  if (builtIn) return builtIn;
+
+  const instrumentHints = [
+    student?.instrumento,
+    student?.programa,
+    student?.area,
+    student?.processes?.[0]?.detalle,
+    student?.processes?.[0]?.label,
+    student?.processes?.[0]?.arte,
+  ]
+    .map((value) =>
+      toStringSafe(value)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+    )
+    .join(" ");
+
+  if (instrumentHints.includes("piano")) {
+    return ROUTE_PRESETS.piano;
+  }
+
+  const artKey = normalizeArtKey(student);
+  if (ROUTE_PRESETS[artKey]) return ROUTE_PRESETS[artKey];
+  if (routePresetCache.has(artKey)) return routePresetCache.get(artKey);
+
+  const genericPreset = buildGenericRoutePreset(artKey, getTitleFromArtKey(artKey) || "Proceso");
+  routePresetCache.set(artKey, genericPreset);
+  return genericPreset;
 }
 
 function buildDefaultRouteState(student, baseRoute = {}) {
+  const preset = resolveRoutePreset(student, baseRoute);
+  const routeComponents = getRouteComponentsForPreset(preset);
+  const presetGoalIds = new Set(preset.goals.map((goal) => goal.id));
   const completedGoalIds = Array.isArray(baseRoute?.completedGoalIds)
-    ? [...new Set(baseRoute.completedGoalIds.map((item) => toStringSafe(item)).filter(Boolean))]
+    ? [
+        ...new Set(
+          baseRoute.completedGoalIds
+            .map((item) => toStringSafe(item))
+            .filter((goalId) => goalId && presetGoalIds.has(goalId))
+        ),
+      ]
     : [];
 
   const history = Array.isArray(baseRoute?.history)
@@ -688,14 +1162,18 @@ function buildDefaultRouteState(student, baseRoute = {}) {
         .filter((entry) => entry.goalId)
     : [];
 
-  const experience = deriveCurrentExperience(completedGoalIds);
-  const progress = buildRouteProgress(completedGoalIds);
-  const nextByComponent = getNextGoalsByComponent(completedGoalIds);
+  const experience = deriveCurrentExperience(completedGoalIds, preset);
+  const progress = buildRouteProgress(completedGoalIds, preset);
+  const nextByComponent = getNextGoalsByComponent(
+    completedGoalIds,
+    preset,
+    routeComponents
+  );
 
   return {
     ...(baseRoute && typeof baseRoute === "object" ? baseRoute : {}),
-    presetId: "musicala_base_v1",
-    routeName: "Ruta base Musicala",
+    presetId: preset.id,
+    routeName: preset.routeName,
     focusArea:
       getReadableValue(student.area || student.instrumento || student.programa, "Proceso general"),
     completedGoalIds,
@@ -704,18 +1182,19 @@ function buildDefaultRouteState(student, baseRoute = {}) {
     stage: `Experiencia ${experience}`,
     activeGoalIds: nextByComponent.map((goal) => goal.id),
     milestones: progress.milestones,
-    recommendations: buildRouteRecommendations(nextByComponent),
+    recommendations: buildRouteRecommendations(nextByComponent, routeComponents),
     updatedAt: getTimestamp(new Date().toISOString()) ? new Date().toISOString() : null,
   };
 }
 
-function buildStudentGoalsFromRoute(route = {}) {
+function buildStudentGoalsFromRoute(route = {}, student = null) {
+  const preset = resolveRoutePreset(student, route);
   const completedIds = new Set(
     Array.isArray(route.completedGoalIds) ? route.completedGoalIds : []
   );
   const activeIds = new Set(Array.isArray(route.activeGoalIds) ? route.activeGoalIds : []);
 
-  return LEARNING_ROUTE_PRESET.map((goal) => ({
+  return preset.goals.map((goal) => ({
     id: goal.id,
     title: goal.title,
     component: goal.component,
@@ -732,15 +1211,16 @@ function buildStudentGoalsFromRoute(route = {}) {
   }));
 }
 
-function buildRouteProgress(completedGoalIds = []) {
+function buildRouteProgress(completedGoalIds = [], preset) {
+  const safePreset = preset || { goals: GUITAR_ROUTE_PRESET };
   const completed = new Set(completedGoalIds);
-  const totalGoals = LEARNING_ROUTE_PRESET.length;
-  const completedGoals = LEARNING_ROUTE_PRESET.filter((goal) =>
+  const totalGoals = safePreset.goals.length;
+  const completedGoals = safePreset.goals.filter((goal) =>
     completed.has(goal.id)
   ).length;
 
   const milestones = ROUTE_EXPERIENCES.map((experience) => {
-    const goals = LEARNING_ROUTE_PRESET.filter(
+    const goals = safePreset.goals.filter(
       (goal) => goal.experience === experience
     );
     const completedGoalsInExperience = goals.filter((goal) =>
@@ -751,7 +1231,7 @@ function buildRouteProgress(completedGoalIds = []) {
       experience,
       total: goals.length,
       completed: completedGoalsInExperience,
-      unlocked: experience <= deriveCurrentExperience(completedGoalIds),
+      unlocked: experience <= deriveCurrentExperience(completedGoalIds, safePreset),
       done: completedGoalsInExperience === goals.length,
     };
   });
@@ -764,12 +1244,13 @@ function buildRouteProgress(completedGoalIds = []) {
   };
 }
 
-function deriveCurrentExperience(completedGoalIds = []) {
+function deriveCurrentExperience(completedGoalIds = [], preset) {
+  const safePreset = preset || { goals: GUITAR_ROUTE_PRESET };
   const completed = new Set(completedGoalIds);
   let current = 1;
 
   ROUTE_EXPERIENCES.forEach((experience) => {
-    const goals = LEARNING_ROUTE_PRESET.filter(
+    const goals = safePreset.goals.filter(
       (goal) => goal.experience === experience
     );
     const isDone = goals.length > 0 && goals.every((goal) => completed.has(goal.id));
@@ -781,46 +1262,109 @@ function deriveCurrentExperience(completedGoalIds = []) {
   return current;
 }
 
-function getNextGoalsByComponent(completedGoalIds = []) {
+function getNextGoalsByComponent(
+  completedGoalIds = [],
+  preset,
+  components = ROUTE_COMPONENTS
+) {
+  const safePreset = preset || { goals: GUITAR_ROUTE_PRESET };
   const completed = new Set(completedGoalIds);
 
-  return ROUTE_COMPONENTS.map(({ id }) =>
-    LEARNING_ROUTE_PRESET.find(
+  return components.map(({ id }) =>
+    safePreset.goals.find(
       (goal) => goal.component === id && !completed.has(goal.id)
     )
   ).filter(Boolean);
 }
 
-function buildRouteRecommendations(nextGoals = []) {
+function buildRouteRecommendations(nextGoals = [], components = ROUTE_COMPONENTS) {
   return nextGoals.slice(0, 3).map((goal) => {
-    return `Siguiente foco en ${getComponentLabel(goal.component)}: ${goal.title}`;
+    return `Siguiente foco en ${getComponentLabel(goal.component, components)}: ${goal.title}`;
   });
 }
 
-function getComponentLabel(componentId) {
+function getComponentLabel(componentId, components = ROUTE_COMPONENTS) {
   return (
+    components.find((component) => component.id === componentId)?.label ||
     ROUTE_COMPONENTS.find((component) => component.id === componentId)?.label ||
     "Componente"
   );
 }
 
+function getRouteComponentsForPreset(preset = null) {
+  const goals = Array.isArray(preset?.goals) ? preset.goals : [];
+  if (!goals.length) return ROUTE_COMPONENTS;
+
+  const components = [];
+  const seen = new Set();
+
+  goals.forEach((goal) => {
+    const componentId = toStringSafe(goal?.component);
+    if (!componentId || seen.has(componentId)) return;
+    seen.add(componentId);
+    components.push({
+      id: componentId,
+      label:
+        toStringSafe(goal?.componentLabel) ||
+        ROUTE_COMPONENTS.find((item) => item.id === componentId)?.label ||
+        `Componente ${componentId}`,
+    });
+  });
+
+  return components.length ? components : ROUTE_COMPONENTS;
+}
+
 function renderLearningRoute(student) {
   const access = resolveUserAccess(getState()?.auth?.user);
   const canEditRoute = access.canEditRoutes;
-  const route = buildDefaultRouteState(student, getStudentRoute(getStudentIdentity(student)));
-  const progress = buildRouteProgress(route.completedGoalIds);
+  const studentId = getStudentIdentity(student);
+  const route = buildDefaultRouteState(student, getStudentRoute(studentId));
+  const preset = resolveRoutePreset(student, route);
+  const routeComponents = getRouteComponentsForPreset(preset);
+  const progress = buildRouteProgress(route.completedGoalIds, preset);
   const history = Array.isArray(route.history) ? [...route.history].reverse() : [];
-  const nextGoals = getNextGoalsByComponent(route.completedGoalIds);
+  const nextGoals = getNextGoalsByComponent(
+    route.completedGoalIds,
+    preset,
+    routeComponents
+  );
+  const orderedGoals = [...(Array.isArray(preset?.goals) ? preset.goals : [])].sort(
+    (a, b) => {
+      const expDiff = Number(a?.experience || 0) - Number(b?.experience || 0);
+      if (expDiff !== 0) return expDiff;
+      return Number(a?.order || 0) - Number(b?.order || 0);
+    }
+  );
+  const lastGoal = orderedGoals[orderedGoals.length - 1] || null;
+  const totalSections = new Set(
+    orderedGoals.map((goal) => toStringSafe(goal?.section)).filter(Boolean)
+  ).size;
+  const componentProgress = routeComponents.map((component) => {
+    const goals = orderedGoals.filter((goal) => goal.component === component.id);
+    const completed = goals.filter((goal) =>
+      (route.completedGoalIds || []).includes(goal.id)
+    ).length;
+    const percent = goals.length ? Math.round((completed / goals.length) * 100) : 0;
+    return {
+      id: component.id,
+      label: component.label,
+      total: goals.length,
+      completed,
+      percent,
+    };
+  });
+  const currentGoals = nextGoals.slice(0, 2);
+  const expanded = routeExpansionState.get(studentId) === true;
 
   return `
     <div class="route-overview">
-      <section class="route-overview__hero">
+      <section class="route-overview__hero route-overview__hero--compact">
         <div>
-          <p class="route-overview__kicker">${escapeHtml(route.routeName || "Ruta base Musicala")}</p>
+          <p class="route-overview__kicker">${escapeHtml(route.routeName || "Ruta de aprendizaje")}</p>
           <h3 class="route-overview__title">${escapeHtml(route.stage || "Experiencia 1")}</h3>
           <p class="route-overview__text">
             ${escapeHtml(
-              `Foco actual: ${route.focusArea || "Proceso general"} · ${progress.completedGoals} de ${progress.totalGoals} objetivos logrados.`
+              `Experiencia actual: ${route.stage || "Experiencia 1"} · Objetivos actuales: ${currentGoals.length ? currentGoals.map((goal) => goal.title).join(" / ") : "Ruta base completada"}`
             )}
           </p>
         </div>
@@ -831,13 +1375,13 @@ function renderLearningRoute(student) {
             <strong class="route-stat__value">${escapeHtml(String(progress.percent))}%</strong>
           </article>
           <article class="route-stat">
-            <span class="route-stat__label">Experiencia actual</span>
-            <strong class="route-stat__value">${escapeHtml(route.stage || "Experiencia 1")}</strong>
+            <span class="route-stat__label">Objetivos logrados</span>
+            <strong class="route-stat__value">${escapeHtml(`${progress.completedGoals}/${progress.totalGoals}`)}</strong>
           </article>
         </div>
       </section>
 
-      <section class="route-map">
+      <section class="route-map" ${expanded ? "" : "hidden"}>
         ${progress.milestones
           .map(
             (milestone) => `
@@ -851,13 +1395,80 @@ function renderLearningRoute(student) {
           .join("")}
       </section>
 
-      <section class="route-components">
-        ${ROUTE_COMPONENTS.map((component) =>
-          renderRouteComponentCard(component, route, canEditRoute)
+      <section class="route-components" ${expanded ? "" : "hidden"}>
+        ${routeComponents.map((component) =>
+          renderRouteComponentCard(component, route, preset, canEditRoute)
         ).join("")}
       </section>
 
-      <section class="route-history-grid">
+      <section class="route-journey-map" ${expanded ? "" : "hidden"}>
+        <article class="route-history-card">
+          <p class="route-history-card__title">Mapa de avance</p>
+          <p class="route-overview__text">
+            ${escapeHtml(
+              progress.percent >= 50
+                ? `¡Excelente! Ya vas en ${progress.percent}% de la ruta total.`
+                : `Vas en ${progress.percent}% de la ruta. Cada logro te acerca a la meta final.`
+            )}
+          </p>
+
+          <div class="route-journey-track" aria-label="Hitos de avance de la ruta">
+            <div class="route-journey-track__line"></div>
+            ${[
+              { label: "Inicio", threshold: 0 },
+              { label: "Mitad", threshold: 50 },
+              { label: "Meta", threshold: 100 },
+            ]
+              .map(
+                (step) => `
+                  <article class="route-journey-node ${progress.percent >= step.threshold ? "is-reached" : ""}">
+                    <span class="route-journey-node__dot" aria-hidden="true"></span>
+                    <p class="route-journey-node__label">${escapeHtml(step.label)}</p>
+                    <p class="route-journey-node__meta">${escapeHtml(`${step.threshold}%`)}</p>
+                  </article>
+                `
+              )
+              .join("")}
+          </div>
+        </article>
+
+        <article class="route-history-card">
+          <p class="route-history-card__title">Progreso por componente</p>
+          <div class="route-progress-list">
+            ${componentProgress
+              .map(
+                (item) => `
+                  <div class="route-progress-item">
+                    <div class="route-progress-item__head">
+                      <span class="route-progress-item__label">${escapeHtml(item.label)}</span>
+                      <span class="route-progress-item__value">${escapeHtml(`${item.completed}/${item.total} · ${item.percent}%`)}</span>
+                    </div>
+                    <div class="route-progress-item__bar">
+                      <span class="route-progress-item__fill" style="width: ${item.percent}%;"></span>
+                    </div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+        </article>
+      </section>
+
+      <section class="route-history-grid" ${expanded ? "" : "hidden"}>
+        <article class="route-history-card">
+          <p class="route-history-card__title">Alcance total de la ruta</p>
+          <div class="route-focus-list">
+            <div class="route-focus-item">
+              <span class="route-focus-item__component">Tamaño de la ruta</span>
+              <strong class="route-focus-item__title">${escapeHtml(`${progress.totalGoals} objetivos en ${totalSections || 1} bloques`)}</strong>
+            </div>
+            <div class="route-focus-item">
+              <span class="route-focus-item__component">Último objetivo de referencia</span>
+              <strong class="route-focus-item__title">${escapeHtml(lastGoal?.title || "No disponible")}</strong>
+            </div>
+          </div>
+        </article>
+
         <article class="route-history-card">
           <p class="route-history-card__title">Logros recientes</p>
           ${
@@ -869,7 +1480,7 @@ function renderLearningRoute(student) {
                       (entry) => `
                         <article class="route-log-item">
                           <p class="route-log-item__title">${escapeHtml(entry.title || "Objetivo completado")}</p>
-                          <p class="route-log-item__meta">${escapeHtml(`${getComponentLabel(entry.component)} · Experiencia ${entry.experience} · ${formatDisplayDate(entry.completedAt)}`)}</p>
+                          <p class="route-log-item__meta">${escapeHtml(`${getComponentLabel(entry.component, routeComponents)} · Experiencia ${entry.experience} · ${formatDisplayDate(entry.completedAt)}`)}</p>
                         </article>
                       `
                     )
@@ -888,7 +1499,7 @@ function renderLearningRoute(student) {
                     .map(
                       (goal) => `
                         <div class="route-focus-item">
-                          <span class="route-focus-item__component">${escapeHtml(getComponentLabel(goal.component))}</span>
+                          <span class="route-focus-item__component">${escapeHtml(getComponentLabel(goal.component, routeComponents))}</span>
                           <strong class="route-focus-item__title">${escapeHtml(goal.title)}</strong>
                         </div>
                       `
@@ -903,11 +1514,11 @@ function renderLearningRoute(student) {
   `;
 }
 
-function renderRouteComponentCard(component, route = {}, canEditRoute = false) {
+function renderRouteComponentCard(component, route = {}, preset, canEditRoute = false) {
   const completedIds = new Set(
     Array.isArray(route.completedGoalIds) ? route.completedGoalIds : []
   );
-  const goals = LEARNING_ROUTE_PRESET.filter(
+  const goals = (preset?.goals || GUITAR_ROUTE_PRESET).filter(
     (goal) => goal.component === component.id
   );
   const nextGoal = goals.find((goal) => !completedIds.has(goal.id)) || null;
@@ -968,11 +1579,15 @@ function renderRouteComponentCard(component, route = {}, canEditRoute = false) {
   `;
 }
 
-function completeLearningGoal(student, goalId) {
+async function completeLearningGoal(student, goalId) {
   const studentId = getStudentIdentity(student);
   if (!studentId) return;
 
-  const goal = LEARNING_ROUTE_PRESET.find((item) => item.id === goalId);
+  const access = resolveUserAccess(getState()?.auth?.user);
+  if (!access.canEditRoutes) return;
+
+  const routePreset = resolveRoutePreset(student, getStudentRoute(studentId));
+  const goal = (routePreset?.goals || GUITAR_ROUTE_PRESET).find((item) => item.id === goalId);
   if (!goal) return;
 
   const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
@@ -996,17 +1611,163 @@ function completeLearningGoal(student, goalId) {
     history,
   });
 
+  const previousGoals = buildStudentGoalsFromRoute(currentRoute, student);
+  const nextGoals = buildStudentGoalsFromRoute(nextRoute, student);
+
+  clearAppError();
   setStudentRoute(studentId, nextRoute);
-  setStudentGoals(studentId, buildStudentGoalsFromRoute(nextRoute));
+  setStudentGoals(studentId, nextGoals);
+
+  try {
+    const savedRoute = await persistLearningRoute(student, nextRoute);
+    setStudentRoute(studentId, savedRoute);
+    setStudentGoals(studentId, buildStudentGoalsFromRoute(savedRoute, student));
+  } catch (error) {
+    console.error("Error guardando avance de la ruta:", error);
+    setStudentRoute(studentId, currentRoute);
+    setStudentGoals(studentId, previousGoals);
+    setAppError(
+      error?.message || "No se pudo guardar el avance de la ruta."
+    );
+  }
 }
 
-function renderHistoryPreview(items = [], config, isAuthenticated = true) {
+function toggleRouteExpanded(student, triggerButton) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+
+  const nextValue = !(routeExpansionState.get(studentId) === true);
+  routeExpansionState.set(studentId, nextValue);
+  if (nextValue) {
+    historyExpansionState.set(studentId, false);
+  }
+
+  const routeContainer = viewRoot?.querySelector("#profile-route-content");
+  if (routeContainer) {
+    routeContainer.innerHTML = renderLearningRoute(student);
+  }
+
+  applyProfileFocusLayout(student);
+
+  if (triggerButton) {
+    triggerButton.textContent = nextValue
+      ? "Volver al perfil"
+      : "Ver ruta completa";
+  }
+}
+
+function toggleHistoryExpanded(student, triggerButton, forceOpen = false) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+
+  const nextValue = forceOpen
+    ? true
+    : !(historyExpansionState.get(studentId) === true);
+  historyExpansionState.set(studentId, nextValue);
+  if (nextValue) {
+    routeExpansionState.set(studentId, false);
+  }
+
+  const historyContainer = viewRoot?.querySelector("#profile-history-content");
+  if (historyContainer) {
+    const state = getState();
+    const bitacoras = getBitacorasFromState(student);
+    historyContainer.innerHTML = renderHistoryPreview(
+      student,
+      bitacoras,
+      CONFIG,
+      Boolean(state?.auth?.isAuthenticated)
+    );
+  }
+
+  applyProfileFocusLayout(student);
+
+  if (triggerButton) {
+    triggerButton.textContent = nextValue
+      ? "Ocultar historial completo"
+      : "Ver bitácoras completas";
+  }
+}
+
+function applyProfileFocusLayout(student) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId || !viewRoot) return;
+
+  const isRouteFocus = routeExpansionState.get(studentId) === true;
+  const isHistoryFocus = historyExpansionState.get(studentId) === true;
+
+  const profileCard = viewRoot.querySelector(".profile-card");
+  const profileLayout = viewRoot.querySelector(".profile-layout");
+  const routePanel = viewRoot.querySelector(".route-panel");
+  const profileSide = viewRoot.querySelector(".profile-side");
+  const summaryCard = viewRoot.querySelector(".profile-summary");
+  const historyCard = viewRoot.querySelector(".profile-history");
+  const routeToggleButton = viewRoot.querySelector("[data-route-action='toggle-full']");
+
+  if (
+    !profileCard ||
+    !profileLayout ||
+    !routePanel ||
+    !profileSide ||
+    !summaryCard ||
+    !historyCard
+  ) {
+    return;
+  }
+
+  if (isRouteFocus) {
+    viewRoot.dataset.focusMode = "route";
+    profileLayout.classList.add("profile-layout--route-focus");
+    profileLayout.classList.remove("profile-layout--history-focus");
+    profileCard.hidden = true;
+    routePanel.hidden = false;
+    profileSide.hidden = true;
+    summaryCard.hidden = true;
+    historyCard.hidden = true;
+    if (routeToggleButton) routeToggleButton.textContent = "Volver al perfil";
+    return;
+  }
+
+  if (isHistoryFocus) {
+    viewRoot.dataset.focusMode = "history";
+    profileLayout.classList.remove("profile-layout--route-focus");
+    profileLayout.classList.add("profile-layout--history-focus");
+    profileCard.hidden = true;
+    routePanel.hidden = true;
+    profileSide.hidden = false;
+    summaryCard.hidden = true;
+    historyCard.hidden = false;
+    if (routeToggleButton) routeToggleButton.textContent = "Ver ruta completa";
+    return;
+  }
+
+  profileLayout.classList.remove("profile-layout--route-focus");
+  profileLayout.classList.remove("profile-layout--history-focus");
+  viewRoot.dataset.focusMode = "default";
+  profileCard.hidden = false;
+  routePanel.hidden = false;
+  profileSide.hidden = false;
+  summaryCard.hidden = false;
+  historyCard.hidden = false;
+  if (routeToggleButton) routeToggleButton.textContent = "Ver ruta completa";
+}
+
+async function reloadLearningRoute(student) {
+  await ensureLearningRouteLoaded(student, { forceReload: true });
+
+  const routeContainer = viewRoot?.querySelector("#profile-route-content");
+  if (routeContainer) {
+    routeContainer.innerHTML = renderLearningRoute(student);
+  }
+}
+
+function renderHistoryPreview(student, items = [], config, isAuthenticated = true) {
   if (!isAuthenticated) {
     return `
       <div class="empty-state">
         <p class="empty-state__title">Historial protegido</p>
         <p class="empty-state__text">
-          Inicia sesiÃ³n con Google para consultar las bitÃ¡coras de este estudiante.
+          Inicia sesión con Google para consultar las bitácoras de este estudiante.
         </p>
       </div>
     `;
@@ -1030,6 +1791,13 @@ function renderHistoryPreview(items = [], config, isAuthenticated = true) {
           >
             Crear primera bitácora
           </button>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-history-action="open-full-history"
+          >
+            Ver bitácoras completas
+          </button>
           ${
             CONFIG?.features?.allowGroupBitacoras
               ? `
@@ -1048,11 +1816,31 @@ function renderHistoryPreview(items = [], config, isAuthenticated = true) {
     `;
   }
 
-  const latestItems = sortBitacorasByDate(items).slice(0, 5);
+  const sortedItems = sortBitacorasByDate(items);
+  const latestItem = sortedItems[0] || null;
+  const studentId = getStudentIdentity(student);
+  const expanded = studentId ? historyExpansionState.get(studentId) === true : false;
+  const latestItems = expanded ? sortedItems.slice(0, 8) : latestItem ? [latestItem] : [];
 
   return `
     <div class="history-preview-list">
       ${latestItems.map(renderHistoryCard).join("")}
+      <div class="empty-state__actions">
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm"
+          data-history-action="toggle-full-history"
+        >
+          ${expanded ? "Ocultar historial completo" : "Ver bitácoras completas"}
+        </button>
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          data-history-action="open-editor"
+        >
+          Nueva bitácora
+        </button>
+      </div>
     </div>
   `;
 }
@@ -1385,8 +2173,7 @@ function renderMissingStudent() {
         <p class="view-eyebrow">Perfil</p>
         <h1 class="view-title">No hay estudiante seleccionado</h1>
         <p class="view-description">
-          Primero vuelvan a búsqueda y seleccionen un estudiante. El orden sigue
-          siendo una idea útil, aunque a veces parezca ciencia ficción.
+          Vuelve a busqueda y selecciona un estudiante para abrir su perfil.
         </p>
         <div class="empty-state-card__actions">
           <button
@@ -1434,4 +2221,6 @@ function cleanupView() {
   currentNavigateTo = null;
   currentSubscribe = null;
   currentProfileStudentKey = null;
+  historyExpansionState = new Map();
 }
+

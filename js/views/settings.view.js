@@ -15,7 +15,9 @@ import {
 import {
   listStudentAccessUsers,
   syncStudentAccessUsersFromSheet,
+  syncTeacherAccessUsers,
 } from "../api/users.api.js";
+import { syncStudentsFromSheetToFirestore } from "../api/students.api.js";
 import {
   escapeHtml,
   isPlainObject,
@@ -64,6 +66,14 @@ export function destroy() {
 async function refreshCatalogs() {
   try {
     currentCatalogs = await getCatalogs();
+
+    const state = getState();
+    const access = resolveUserAccess(state?.auth?.user);
+
+    if (state?.auth?.isAuthenticated && access.canManageSettings) {
+      await syncTeacherAccessUsers(currentCatalogs.docentes || []);
+    }
+
     currentMessage = null;
   } catch (error) {
     currentCatalogs = getEmptyCatalogs();
@@ -161,7 +171,8 @@ function buildMarkup(state) {
           <p class="view-eyebrow">Configuración</p>
           <h1 class="view-title">Catálogos del sistema</h1>
           <p class="view-description">
-            Administra docentes, categorías y componentes desde la misma app. También puedes importar listas grandes en formato CSV o TSV.
+            Administra docentes, categorias, componentes y accesos desde una
+            vista mas clara para mantenimiento del sistema.
           </p>
         </div>
         <div class="view-header__actions">
@@ -242,7 +253,7 @@ function buildMarkup(state) {
               id="settings-sync-students-btn"
               ${!isAuthenticated || !canManageSettings ? "disabled" : ""}
             >
-              Actualizar correos de estudiantes
+              Sincronizar estudiantes a Firebase
             </button>
             <button
               type="button"
@@ -605,12 +616,13 @@ function bindEvents(state) {
       }
 
       await withLoading(async () => {
-        currentStudentSyncReport = await syncStudentAccessUsersFromSheet();
+        currentStudentSyncReport = await syncStudentsFromSheetToFirestore();
+        await syncStudentAccessUsersFromSheet();
         await refreshStudentAccessUsers();
         expandedSettingsPanels.add("student-access-list");
         currentMessage = {
           type: "success",
-          text: `Sincronizacion completada. Nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
+          text: `Sincronizacion completada. Estudiantes nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
         };
         renderView(getState());
       });
