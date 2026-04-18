@@ -775,27 +775,10 @@ export function setAppReady(isReady) {
 export function setCurrentView(viewName) {
   const nextView = safeRoute(viewName);
 
-  const hasCurrentStudent = Boolean(state.students.currentStudentId);
-  const hasGroupDraft =
-    state.bitacoras.currentDraft.mode === CONFIG.modes.group &&
-    state.bitacoras.currentDraft.studentIds.length > 0;
-
-  let resolvedView = nextView;
-
-  if (
-    (nextView === CONFIG.routes.profile || nextView === CONFIG.routes.editor) &&
-    !hasCurrentStudent &&
-    !hasGroupDraft
-  ) {
-    resolvedView = CONFIG.routes.search;
-  }
-
   patchSlice("app", {
-    currentView: resolvedView,
+    currentView: nextView,
     error: null,
   });
-
-  safeLocalStorageSet(CONFIG.storage.lastRoute, resolvedView);
 }
 
 export function setAppLoading(isLoading) {
@@ -828,12 +811,6 @@ export function setAuthUser(user = null) {
     ready: true,
     isAuthenticated: Boolean(normalizedUser?.uid),
   });
-
-  if (normalizedUser) {
-    safeLocalStorageSet(CONFIG.storage.authUser, JSON.stringify(normalizedUser));
-  } else {
-    safeLocalStorageRemove(CONFIG.storage.authUser);
-  }
 }
 
 export function setAuthReady(isReady) {
@@ -855,8 +832,6 @@ export function setSearchQuery(query) {
     query: safeQuery,
     lastSearchAt: Date.now(),
   });
-
-  safeLocalStorageSet(CONFIG.storage.lastSearch, safeQuery);
 }
 
 export function setSearchResults(results = []) {
@@ -920,11 +895,6 @@ export function setSelectedStudentIds(studentIds = []) {
   patchSlice("search", {
     selectedStudentIds: normalizedIds,
   });
-
-  safeLocalStorageSet(
-    CONFIG.storage.selectedStudentIds,
-    JSON.stringify(normalizedIds)
-  );
 }
 
 export function addSelectedStudentId(studentId) {
@@ -1022,10 +992,8 @@ export function setCurrentStudentId(studentId) {
   });
 
   if (nextId) {
-    safeLocalStorageSet(CONFIG.storage.lastStudentId, nextId);
     hydrateDraftForStudent(nextStudent, CONFIG.modes.individual);
   } else {
-    safeLocalStorageRemove(CONFIG.storage.lastStudentId);
     resetDraft();
   }
 }
@@ -1060,8 +1028,6 @@ export function setSelectedStudent(student) {
       currentStudentId: normalized.id,
     },
   });
-
-  safeLocalStorageSet(CONFIG.storage.lastStudentId, normalized.id);
   hydrateDraftForStudent(normalized, CONFIG.modes.individual);
 }
 
@@ -1141,11 +1107,6 @@ export function setStudentGoals(studentId, goals = []) {
   patchSlice("profile", {
     goalsByStudentId: nextGoalsByStudentId,
   });
-
-  safeLocalStorageSet(
-    CONFIG.storage.routeGoals,
-    JSON.stringify(nextGoalsByStudentId)
-  );
 }
 
 export function setStudentRoute(studentId, route = {}) {
@@ -1173,11 +1134,6 @@ export function setStudentRoute(studentId, route = {}) {
   patchSlice("profile", {
     routeByStudentId: nextRouteByStudentId,
   });
-
-  safeLocalStorageSet(
-    CONFIG.storage.routeProgress,
-    JSON.stringify(nextRouteByStudentId)
-  );
 }
 
 export function setStudentsLoading(isLoading) {
@@ -1325,7 +1281,6 @@ export function setDraftMode(mode) {
   }
 
   updateDraft(nextDraft);
-  safeLocalStorageSet(CONFIG.storage.editorMode, normalizedMode);
 }
 
 export function updateDraft(partialDraft = {}) {
@@ -1418,71 +1373,20 @@ export function prepareGroupDraft(studentIds = []) {
   });
 
   persistCurrentDraft(draft);
-  safeLocalStorageSet(CONFIG.storage.editorMode, CONFIG.modes.group);
 
   return draft;
 }
 
 export function loadDraft(studentId, mode = CONFIG.modes.individual) {
   const safeStudentId = toStringSafe(studentId);
-  const normalizedMode = normalizeMode(mode);
-
   if (!safeStudentId) return null;
-
-  try {
-    const key = buildDraftKey(safeStudentId, normalizedMode);
-    const raw = safeLocalStorageGet(key);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
-    const normalizedDraft = createEmptyDraft({
-      ...parsed,
-      studentId: safeStudentId,
-      studentKey: safeStudentId,
-      mode: normalizedMode,
-      studentIds: [safeStudentId],
-      studentRefs: buildStudentRefsFromIds([safeStudentId], state.students.byId),
-    });
-
-    patchSlice("bitacoras", {
-      currentDraft: normalizedDraft,
-    });
-
-    return normalizedDraft;
-  } catch (error) {
-    console.warn("No se pudo cargar draft local:", error);
-    return null;
-  }
+  return null;
 }
 
 export function loadGroupDraft(studentIds = []) {
   const groupIds = uniqueStrings(studentIds);
   if (!groupIds.length) return null;
-
-  try {
-    const key = buildGroupDraftKey(groupIds);
-    const raw = safeLocalStorageGet(key);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
-    const normalizedDraft = createEmptyDraft({
-      ...parsed,
-      mode: CONFIG.modes.group,
-      studentId: null,
-      studentKey: null,
-      studentIds: groupIds,
-      studentRefs: buildStudentRefsFromIds(groupIds, state.students.byId),
-    });
-
-    patchSlice("bitacoras", {
-      currentDraft: normalizedDraft,
-    });
-
-    return normalizedDraft;
-  } catch (error) {
-    console.warn("No se pudo cargar draft grupal local:", error);
-    return null;
-  }
+  return null;
 }
 
 export function hydrateDraftForStudent(student, mode = CONFIG.modes.individual) {
@@ -1521,7 +1425,6 @@ export function hydrateDraftForStudent(student, mode = CONFIG.modes.individual) 
   });
 
   persistCurrentDraft(baseDraft);
-  safeLocalStorageSet(CONFIG.storage.editorMode, CONFIG.modes.individual);
 
   return baseDraft;
 }
@@ -1618,84 +1521,15 @@ export function removeToast(toastId) {
    ========================================================================== */
 
 export function hydrateStateFromStorage() {
-  const lastSearch = safeLocalStorageGet(CONFIG.storage.lastSearch) || "";
-  const lastStudentId = safeLocalStorageGet(CONFIG.storage.lastStudentId) || null;
-  const lastRoute = safeLocalStorageGet(CONFIG.storage.lastRoute) || CONFIG.routes.search;
-  const savedMode =
-    safeLocalStorageGet(CONFIG.storage.editorMode) || CONFIG.modes.individual;
-
-  let selectedStudentIds = [];
-  try {
-    const rawSelected = safeLocalStorageGet(CONFIG.storage.selectedStudentIds);
-    selectedStudentIds = rawSelected ? JSON.parse(rawSelected) : [];
-  } catch {
-    selectedStudentIds = [];
-  }
-
-  let authUser = null;
-  try {
-    const rawUser = safeLocalStorageGet(CONFIG.storage.authUser);
-    authUser = rawUser ? JSON.parse(rawUser) : null;
-  } catch {
-    authUser = null;
-  }
-
-  let savedGoalsByStudentId = {};
-  try {
-    const rawGoals = safeLocalStorageGet(CONFIG.storage.routeGoals);
-    savedGoalsByStudentId = rawGoals ? JSON.parse(rawGoals) : {};
-  } catch {
-    savedGoalsByStudentId = {};
-  }
-
-  let savedRouteByStudentId = {};
-  try {
-    const rawRoute = safeLocalStorageGet(CONFIG.storage.routeProgress);
-    savedRouteByStudentId = rawRoute ? JSON.parse(rawRoute) : {};
-  } catch {
-    savedRouteByStudentId = {};
-  }
+  clearLegacyLocalState();
 
   state = finalizeState({
-    ...state,
+    ...clone(initialState),
     app: {
-      ...state.app,
-      currentView: safeRoute(lastRoute),
-    },
-    auth: {
-      ...state.auth,
-      user: normalizeAuthUser(authUser),
-      ready: Boolean(authUser),
-      isAuthenticated: Boolean(authUser?.uid),
-    },
-    search: {
-      ...state.search,
-      query: lastSearch,
-      selectedStudentId: lastStudentId,
-      selectedStudentIds: uniqueStrings(selectedStudentIds),
-    },
-    profile: {
-      ...state.profile,
-      goalsByStudentId: savedGoalsByStudentId,
-      routeByStudentId: savedRouteByStudentId,
+      ...clone(initialState.app),
+      currentView: safeRoute(CONFIG.app.defaultRoute),
     },
   });
-
-  if (lastStudentId) {
-    const draft = loadDraft(lastStudentId, savedMode);
-
-    if (!draft && normalizeMode(savedMode) === CONFIG.modes.individual) {
-      patchSlice("bitacoras", {
-        currentDraft: createEmptyDraft({
-          mode: CONFIG.modes.individual,
-          studentId: lastStudentId,
-          studentKey: lastStudentId,
-          studentIds: [lastStudentId],
-          studentRefs: [{ id: lastStudentId, name: "" }],
-        }),
-      });
-    }
-  }
 
   notify();
 }
@@ -1803,25 +1637,11 @@ function getDraftStorageKey(draft) {
 }
 
 function persistCurrentDraft(draft) {
-  const key = getDraftStorageKey(draft);
-  if (!key) return;
-
-  try {
-    localStorage.setItem(key, JSON.stringify(draft));
-  } catch (error) {
-    console.warn("No se pudo guardar draft local:", error);
-  }
+  void draft;
 }
 
 function removePersistedDraft(draft) {
-  const key = getDraftStorageKey(draft);
-  if (!key) return;
-
-  try {
-    localStorage.removeItem(key);
-  } catch (error) {
-    console.warn("No se pudo limpiar draft local:", error);
-  }
+  void draft;
 }
 
 /* ==========================================================================
@@ -1829,20 +1649,13 @@ function removePersistedDraft(draft) {
    ========================================================================== */
 
 function safeLocalStorageGet(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch (error) {
-    console.warn(`No se pudo leer "${key}" de localStorage:`, error);
-    return null;
-  }
+  void key;
+  return null;
 }
 
 function safeLocalStorageSet(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch (error) {
-    console.warn(`No se pudo guardar "${key}" en localStorage:`, error);
-  }
+  void key;
+  void value;
 }
 
 function safeLocalStorageRemove(key) {
@@ -1850,6 +1663,33 @@ function safeLocalStorageRemove(key) {
     localStorage.removeItem(key);
   } catch (error) {
     console.warn(`No se pudo eliminar "${key}" de localStorage:`, error);
+  }
+}
+
+function clearLegacyLocalState() {
+  try {
+    const knownKeys = new Set(
+      Object.values(CONFIG.storage || {})
+        .map((key) => toStringSafe(key))
+        .filter(Boolean)
+    );
+    const draftPrefix = toStringSafe(CONFIG.storage?.draftPrefix);
+    const groupDraftPrefix = toStringSafe(CONFIG.storage?.groupDraftPrefix);
+
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = toStringSafe(localStorage.key(index));
+      if (!key) continue;
+
+      if (
+        knownKeys.has(key) ||
+        (draftPrefix && key.startsWith(draftPrefix)) ||
+        (groupDraftPrefix && key.startsWith(groupDraftPrefix))
+      ) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch (error) {
+    console.warn("No se pudo limpiar el estado local heredado:", error);
   }
 }
 
