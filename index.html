@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
 
@@ -32,6 +32,7 @@
     <link rel="stylesheet" href="./css/layout.css" />
     <link rel="stylesheet" href="./css/components.css" />
     <link rel="stylesheet" href="./css/forms.css" />
+    <link rel="stylesheet" href="./css/mobile-shell.css" />
 
     <link rel="icon" href="data:," />
   </head>
@@ -40,30 +41,76 @@
     <div class="app-shell" id="app-shell" data-app-shell>
       <header class="topbar" id="topbar" role="banner">
         <div class="topbar__inner">
-          <div class="topbar__brand">
-            <div class="brand" aria-label="Identidad de Musicala">
-              <div class="brand__logo-wrap">
-                <img
-                  src="./assets/logo.png"
-                  alt="Logo de Musicala"
-                  class="brand__logo"
-                />
-              </div>
+          <div class="topbar__brand-row">
+            <div class="topbar__brand">
+              <div class="brand" aria-label="Identidad de Musicala">
+                <div class="brand__logo-wrap">
+                  <img
+                    src="./assets/logo.png"
+                    alt="Logo de Musicala"
+                    class="brand__logo"
+                  />
+                </div>
 
-              <div class="brand__text">
-                <p class="brand__eyebrow">Musicala</p>
-                <h1 class="brand__title">Bitácoras de Clase</h1>
-                <p class="brand__subtitle">
-                  Seguimiento pedagógico por estudiante y proceso artístico
-                </p>
+                <div class="brand__text">
+                  <p class="brand__eyebrow">Musicala</p>
+                  <p class="brand__title">Bitácoras de Clase</p>
+                  <p class="brand__subtitle">
+                    Seguimiento pedagógico claro, ágil y pensado para móvil
+                  </p>
+                </div>
               </div>
             </div>
+
+            <div class="topbar__utility">
+              <div class="topbar__status">
+                <div
+                  class="status-badge"
+                  id="connection-status"
+                  data-app-status
+                  data-status="ready"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  <span class="status-badge__dot" aria-hidden="true"></span>
+                  <span class="status-badge__text">Sistema listo</span>
+                </div>
+              </div>
+              <div class="topbar__auth-slot" data-auth-slot></div>
+            </div>
           </div>
+
+          <section class="route-spotlight" aria-label="Contexto de la vista actual">
+            <div class="route-spotlight__copy">
+              <p class="route-spotlight__eyebrow" data-app-route-kicker>
+                Flujo móvil
+              </p>
+              <h2 class="route-spotlight__title" data-app-route-title>
+                Todo listo para la clase
+              </h2>
+              <p class="route-spotlight__text" data-app-route-text>
+                Busca estudiantes, abre el perfil y registra la sesión desde una
+                interfaz más clara, viva y cómoda para usar con una sola mano.
+              </p>
+            </div>
+
+            <div class="route-spotlight__chips">
+              <span class="route-spotlight__chip" data-app-route-chip>
+                Búsqueda
+              </span>
+              <span
+                class="route-spotlight__chip route-spotlight__chip--soft"
+                data-app-route-context
+              >
+                Mobile first
+              </span>
+            </div>
+          </section>
 
           <div class="topbar__actions">
             <nav
               class="topbar__nav"
-              data-app-nav
+              data-app-nav="top"
               aria-label="Navegación principal"
             >
               <button
@@ -74,6 +121,12 @@
                 aria-current="page"
                 title="Ir a búsqueda"
               >
+                <span class="nav-chip__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M11 5a6 6 0 1 0 0 12a6 6 0 0 0 0-12Z" />
+                    <path d="m19 19-3.5-3.5" />
+                  </svg>
+                </span>
                 <span class="nav-chip__label">Búsqueda</span>
               </button>
 
@@ -84,6 +137,12 @@
                 data-nav-item
                 title="Ir al perfil"
               >
+                <span class="nav-chip__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8Z" />
+                    <path d="M5 20a7 7 0 0 1 14 0" />
+                  </svg>
+                </span>
                 <span class="nav-chip__label">Perfil</span>
               </button>
 
@@ -94,17 +153,15 @@
                 data-nav-item
                 title="Ir al editor de bitácora"
               >
+                <span class="nav-chip__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M4 17.5V20h2.5L18 8.5L15.5 6L4 17.5Z" />
+                    <path d="m14.5 7 2.5 2.5" />
+                  </svg>
+                </span>
                 <span class="nav-chip__label">Bitácora</span>
               </button>
-              <button
-                type="button"
-                class="nav-chip"
-                data-route="settings"
-                data-nav-item
-                title="Ir a configuraciÃ³n"
-              >
-                <span class="nav-chip__label">ConfiguraciÃ³n</span>
-              </button>
+
               <button
                 type="button"
                 class="nav-chip"
@@ -112,23 +169,31 @@
                 data-nav-item
                 title="Ir a bibliotecas"
               >
+                <span class="nav-chip__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M5 6.5h11a2 2 0 0 1 2 2V18H7a2 2 0 0 0-2 2V6.5Z" />
+                    <path d="M7 20V8.5A2.5 2.5 0 0 0 4.5 6H4v12a2 2 0 0 0 2 2h12" />
+                  </svg>
+                </span>
                 <span class="nav-chip__label">Bibliotecas</span>
               </button>
-            </nav>
 
-            <div class="topbar__status">
-              <div
-                class="status-badge"
-                id="connection-status"
-                data-app-status
-                data-status="ready"
-                aria-live="polite"
-                aria-atomic="true"
+              <button
+                type="button"
+                class="nav-chip"
+                data-route="settings"
+                data-nav-item
+                title="Ir a configuración"
               >
-                <span class="status-badge__dot" aria-hidden="true"></span>
-                <span class="status-badge__text">Sistema listo</span>
-              </div>
-            </div>
+                <span class="nav-chip__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M12 9.25a2.75 2.75 0 1 0 0 5.5a2.75 2.75 0 0 0 0-5.5Z" />
+                    <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2a1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9a1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1a1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6a1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9a1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1a1 1 0 0 0 .9.6H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6Z" />
+                  </svg>
+                </span>
+                <span class="nav-chip__label">Configuración</span>
+              </button>
+            </nav>
           </div>
         </div>
       </header>
@@ -187,23 +252,90 @@
 
       <footer class="app-footer" role="contentinfo">
         <div class="app-footer__inner">
-          <div class="app-footer__left">
-            <p class="app-footer__text">
-              Musicala · Sistema interno de seguimiento pedagógico
-            </p>
-          </div>
-
-          <div class="app-footer__center">
-            <p class="app-footer__text">
-              Búsqueda de estudiantes · Perfil pedagógico · Registro de bitácoras
-            </p>
-          </div>
-
-          <div class="app-footer__right">
-            <p class="app-footer__text" id="app-version">v0.1.0</p>
-          </div>
+          <p class="app-footer__text">
+            Musicala · seguimiento pedagógico moderno, claro y listo para clase
+          </p>
+          <p class="app-footer__text" id="app-version">v0.1.0</p>
         </div>
       </footer>
+
+      <nav class="bottom-nav" data-app-nav="bottom" aria-label="Navegación inferior">
+        <button
+          type="button"
+          class="bottom-nav__item is-active"
+          data-route="search"
+          aria-current="page"
+          title="Ir a búsqueda"
+        >
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M11 5a6 6 0 1 0 0 12a6 6 0 0 0 0-12Z" />
+              <path d="m19 19-3.5-3.5" />
+            </svg>
+          </span>
+          <span class="bottom-nav__label">Buscar</span>
+        </button>
+
+        <button
+          type="button"
+          class="bottom-nav__item"
+          data-route="profile"
+          title="Ir al perfil"
+        >
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8Z" />
+              <path d="M5 20a7 7 0 0 1 14 0" />
+            </svg>
+          </span>
+          <span class="bottom-nav__label">Perfil</span>
+        </button>
+
+        <button
+          type="button"
+          class="bottom-nav__item"
+          data-route="editor"
+          title="Ir al editor de bitácora"
+        >
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 17.5V20h2.5L18 8.5L15.5 6L4 17.5Z" />
+              <path d="m14.5 7 2.5 2.5" />
+            </svg>
+          </span>
+          <span class="bottom-nav__label">Bitácora</span>
+        </button>
+
+        <button
+          type="button"
+          class="bottom-nav__item"
+          data-route="libraries"
+          title="Ir a bibliotecas"
+        >
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M5 6.5h11a2 2 0 0 1 2 2V18H7a2 2 0 0 0-2 2V6.5Z" />
+              <path d="M7 20V8.5A2.5 2.5 0 0 0 4.5 6H4v12a2 2 0 0 0 2 2h12" />
+            </svg>
+          </span>
+          <span class="bottom-nav__label">Biblioteca</span>
+        </button>
+
+        <button
+          type="button"
+          class="bottom-nav__item"
+          data-route="settings"
+          title="Ir a configuración"
+        >
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 9.25a2.75 2.75 0 1 0 0 5.5a2.75 2.75 0 0 0 0-5.5Z" />
+              <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2a1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9a1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1a1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6a1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9a1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1a1 1 0 0 0 .9.6H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6Z" />
+            </svg>
+          </span>
+          <span class="bottom-nav__label">Ajustes</span>
+        </button>
+      </nav>
     </div>
 
     <div
