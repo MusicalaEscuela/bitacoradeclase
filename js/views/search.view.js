@@ -34,6 +34,7 @@ let unsubscribeView = null;
 let currentNavigateTo = null;
 let currentSubscribe = null;
 let currentModalStudentId = null;
+let hasRetriedInitialLoad = false;
 
 export async function beforeEnter({ payload } = {}) {
   clearAppError();
@@ -77,6 +78,19 @@ export async function render({
     unsubscribeView = currentSubscribe((nextState) => {
       const safeNextState = nextState || getState();
       if (!viewRoot || !viewRoot.isConnected) return;
+
+      const hasStudents = Array.isArray(safeNextState?.students?.allIds)
+        ? safeNextState.students.allIds.length > 0
+        : false;
+      const isLoading = Boolean(safeNextState?.students?.loading);
+      const authReady = Boolean(safeNextState?.auth?.ready);
+
+      if (authReady && !hasStudents && !isLoading && !hasRetriedInitialLoad) {
+        hasRetriedInitialLoad = true;
+        refreshStudents().catch((error) => {
+          console.error("Error reintentando carga inicial de estudiantes:", error);
+        });
+      }
 
       renderSummary(safeNextState, safeConfig);
       renderResults(safeNextState);
@@ -197,8 +211,8 @@ function buildSearchViewMarkup(state, config) {
           <p class="view-eyebrow">${escapeHtml(title)}</p>
           <h1 class="view-title">Búsqueda de estudiantes</h1>
           <p class="view-description">
-            Busquen por nombre o documento, abran la ficha flotante y registren la clase
-            sin perder tiempo navegando entre paneles.
+            Busca por nombre, documento o proceso y entra rapido a perfil o
+            bitacora desde una vista pensada para trabajar mejor en movil.
           </p>
         </div>
       </header>
@@ -462,8 +476,13 @@ function handleResultsKeydown(event) {
 }
 
 function handleModalClick(event) {
-  const closeTarget = event.target.closest("[data-modal-close]");
-  if (closeTarget || event.target.classList.contains("student-modal-backdrop")) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const closeButton = event.target.closest("[data-modal-close='button']");
+  const clickedBackdrop = event.target.classList.contains("student-modal-backdrop");
+
+  if (closeButton || clickedBackdrop) {
     closeStudentModal();
     return;
   }
@@ -473,17 +492,19 @@ function handleModalClick(event) {
 
   const action = actionButton.dataset.modalAction;
   const studentId = toStringSafe(actionButton.dataset.studentId || currentModalStudentId);
-  const student = getStudentById(studentId);
+  const state = getState();
+  const student =
+    getStudentById(studentId) ||
+    state?.students?.selected ||
+    null;
   if (!student) return;
 
   if (action === "profile") {
-    closeStudentModal();
     goToProfile(student);
     return;
   }
 
   if (action === "editor") {
-    closeStudentModal();
     goToEditor(student);
     return;
   }
@@ -845,12 +866,13 @@ function renderEmptyResultsState(state) {
 
   if (!query) {
     return `
-      <div class="empty-state">
-        <p class="empty-state__title">Empieza a buscar</p>
-        <p class="empty-state__text">
-          Escribe al menos 2 letras para ver estudiantes y mantener esta pantalla más ligera.
-        </p>
-      </div>
+          <div class="empty-state">
+            <p class="empty-state__title">Empieza a buscar</p>
+            <p class="empty-state__text">
+              Escribe al menos 2 letras para mostrar resultados y mantener la
+              pantalla clara desde el primer toque.
+            </p>
+          </div>
     `;
   }
 
@@ -870,7 +892,7 @@ function renderEmptyResultsState(state) {
       <div class="empty-state">
         <p class="empty-state__title">Sin resultados</p>
         <p class="empty-state__text">
-          No encontramos estudiantes para <strong>${escapeHtml(query)}</strong>.
+          No encontramos coincidencias para <strong>${escapeHtml(query)}</strong>.
         </p>
       </div>
     `;
@@ -1086,6 +1108,7 @@ function goToProfile(student) {
   if (typeof currentNavigateTo !== "function" || !student) return;
 
   const identity = getStudentIdentity(student);
+  setSelectedStudent(student);
 
   currentNavigateTo(CONFIG.routes.profile, {
     id: identity,
@@ -1098,6 +1121,7 @@ function goToEditor(student, extraPayload = {}) {
   if (typeof currentNavigateTo !== "function" || !student) return;
 
   const identity = getStudentIdentity(student);
+  setSelectedStudent(student);
 
   currentNavigateTo(CONFIG.routes.editor, {
     id: identity,
@@ -1124,6 +1148,7 @@ function cleanupView() {
   }
 
   currentModalStudentId = null;
+  hasRetriedInitialLoad = false;
   viewRoot = null;
   currentNavigateTo = null;
   currentSubscribe = null;

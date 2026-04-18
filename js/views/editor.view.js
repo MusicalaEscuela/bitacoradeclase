@@ -17,6 +17,8 @@ import {
   updateDraft,
   resetDraft,
   setUploadQueue,
+  setUploading,
+  addUploadedFiles,
   clearUploads,
 } from "../state.js";
 
@@ -29,6 +31,8 @@ import {
   getCatalogs,
   getEmptyCatalogs,
 } from "../api/catalogs.api.js";
+
+import { uploadFileResumable } from "../firebase.client.js";
 
 import {
   escapeHtml,
@@ -463,6 +467,8 @@ function buildEditorMarkup({
                   type="file"
                   class="field__input"
                   multiple
+                  accept="image/*,video/*,application/pdf,audio/*"
+                  capture="environment"
                 />
                 <small class="field__hint">
                   Pueden adjuntar imágenes, video, audio o PDF. Si el flujo de uploads
@@ -978,7 +984,7 @@ async function handleSubmit(student) {
     return;
   }
 
-  const draft = updateDraftFromForm(student);
+  let draft = updateDraftFromForm(student);
   const validation = validateDraft(draft, student);
 
   if (!validation.valid) {
@@ -989,6 +995,7 @@ async function handleSubmit(student) {
   setAppSaving(true);
 
   try {
+    draft = await uploadDraftFilesToStorage(student, draft);
     const payload = buildBitacoraPayload(student, draft);
     const created = await createBitacora(payload);
     const normalized = normalizeCreatedBitacora(created, payload);
@@ -1017,6 +1024,7 @@ async function handleSubmit(student) {
     renderFilesPreviewBlock(student);
     renderDraftMetaBlock(student);
     syncModeInputs();
+    clearUploads();
   } catch (error) {
     console.error("Error guardando bitácora:", error);
     setAppError(
@@ -1026,6 +1034,82 @@ async function handleSubmit(student) {
     );
   } finally {
     setAppSaving(false);
+  }
+}
+
+function sanitizePathPart(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+}
+
+function buildStorageUploadPath(student, file, kind = "support", index = 0) {
+  const studentId = sanitizePathPart(getStudentIdentity(student) || "sin-estudiante");
+  const timestamp = Date.now();
+  const safeKind = sanitizePathPart(kind || "support");
+  const originalName = sanitizePathPart(file?.name || `archivo-${index + 1}`);
+  return `bitacoras/${studentId}/${timestamp}-${safeKind}-${index + 1}-${originalName}`;
+}
+
+async function uploadDraftFilesToStorage(student, draft = {}) {
+  const files = Array.isArray(draft?.archivos) ? draft.archivos : [];
+  if (!files.length) return draft;
+
+  const pending = files.filter(
+    (item) => item?.sourceFile instanceof File && !item?.url
+  );
+  if (!pending.length) return draft;
+
+  setUploading(true);
+
+  try {
+    const uploaded = [];
+
+    for (let index = 0; index < pending.length; index += 1) {
+      const item = pending[index];
+      const file = item.sourceFile;
+      const path = buildStorageUploadPath(student, file, item.kind, index);
+      const result = await uploadFileResumable(path, file);
+
+      uploaded.push({
+        name: result?.name || item?.name || `Archivo ${index + 1}`,
+        type: result?.type || item?.type || "",
+        size: Number(result?.size || item?.size || 0),
+        url: result?.url || "",
+        path: result?.path || path,
+        kind: item?.kind || "support",
+        uploadedAt: new Date().toISOString(),
+      });
+    }
+
+    const existing = files
+      .filter((item) => item?.url || item?.path)
+      .map((item) => ({
+        name: item?.name || "Archivo",
+        type: item?.type || "",
+        size: Number(item?.size || 0),
+        url: item?.url || "",
+        path: item?.path || "",
+        kind: item?.kind || "support",
+        uploadedAt: item?.uploadedAt || null,
+      }));
+
+    const nextDraft = {
+      ...draft,
+      archivos: [...existing, ...uploaded],
+    };
+
+    updateDraft(nextDraft);
+    addUploadedFiles(uploaded);
+    setUploadQueue([]);
+
+    return nextDraft;
+  } finally {
+    setUploading(false);
   }
 }
 
@@ -1832,6 +1916,7 @@ function renderFilesPreview(files = []) {
         .map(
           (file) => `
             <article class="file-chip">
+              ${renderFileThumbnail(file, "file-chip__thumb")}
               <div class="file-chip__body">
                 <p class="file-chip__name">
                   ${escapeHtml(file.name || file.nombre || "Archivo")}
@@ -2077,13 +2162,23 @@ function renderBitacoraCard(item, index = 0, total = 0) {
           ? `
             <div class="bitacora-card__files">
               <p class="bitacora-card__files-title">Archivos adjuntos</p>
-              <ul class="bitacora-card__files-list">
+              <ul class="bitacora-card__files-list bitacora-card__files-list--media">
                 ${item.archivos
                   .map(
                     (file) => `
-                      <li>${escapeHtml(
-                        file.name || file.nombre || "Archivo adjunto"
-                      )}</li>
+                      <li class="bitacora-card__file-item">
+                        ${renderFileThumbnail(file, "bitacora-card__file-thumb")}
+                        <div class="bitacora-card__file-copy">
+                          <p class="bitacora-card__file-name">${escapeHtml(
+                            file.name || file.nombre || "Archivo adjunto"
+                          )}</p>
+                          ${
+                            file.url
+                              ? `<a class="bitacora-card__file-link" href="${escapeHtml(file.url)}" target="_blank" rel="noopener noreferrer">Abrir archivo</a>`
+                              : ""
+                          }
+                        </div>
+                      </li>
                     `
                   )
                   .join("")}
@@ -2722,6 +2817,10 @@ function normalizeFiles(files) {
       lastModified: file.lastModified || null,
       url: file.url || "",
       path: file.path || "",
+      kind: file.kind || "support",
+      uploadedAt: file.uploadedAt || null,
+      previewUrl: file.previewUrl || "",
+      sourceFile: file.sourceFile instanceof File ? file.sourceFile : null,
     }));
 }
 
@@ -2736,7 +2835,51 @@ function mapFileToDraftItem(file, kind = "support") {
     size: file.size,
     lastModified: file.lastModified,
     kind,
+    sourceFile: file,
+    previewUrl: typeof URL !== "undefined" ? URL.createObjectURL(file) : "",
   };
+}
+
+function getRenderableFileUrl(file = {}) {
+  if (file?.url) return String(file.url);
+  if (file?.previewUrl) return String(file.previewUrl);
+  if (file?.sourceFile instanceof File && typeof URL !== "undefined") {
+    return URL.createObjectURL(file.sourceFile);
+  }
+  return "";
+}
+
+function getFileMimeType(file = {}) {
+  return String(file?.type || "").toLowerCase();
+}
+
+function isImageAttachment(file = {}) {
+  const mime = getFileMimeType(file);
+  if (mime.startsWith("image/")) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(String(file?.name || file?.url || ""));
+}
+
+function isVideoAttachment(file = {}) {
+  const mime = getFileMimeType(file);
+  if (mime.startsWith("video/")) return true;
+  return /\.(mp4|webm|ogg|mov|m4v)$/i.test(String(file?.name || file?.url || ""));
+}
+
+function renderFileThumbnail(file = {}, className = "") {
+  const url = getRenderableFileUrl(file);
+  if (!url) {
+    return `<div class="${escapeHtml(className)} is-empty" aria-hidden="true">📎</div>`;
+  }
+
+  if (isImageAttachment(file)) {
+    return `<img class="${escapeHtml(className)}" src="${escapeHtml(url)}" alt="${escapeHtml(file?.name || "Imagen adjunta")}" loading="lazy" />`;
+  }
+
+  if (isVideoAttachment(file)) {
+    return `<video class="${escapeHtml(className)}" src="${escapeHtml(url)}" muted playsinline preload="metadata" aria-label="${escapeHtml(file?.name || "Video adjunto")}"></video>`;
+  }
+
+  return `<div class="${escapeHtml(className)} is-empty" aria-hidden="true">📎</div>`;
 }
 
 /**
@@ -3106,6 +3249,7 @@ function buildMusicalaEditorMarkup({
                     class="field__input"
                     multiple
                     accept="image/*,application/pdf,audio/*"
+                    capture="environment"
                   />
                 </label>
                 <label class="field">
@@ -3117,6 +3261,7 @@ function buildMusicalaEditorMarkup({
                     class="field__input"
                     multiple
                     accept="video/*"
+                    capture="environment"
                   />
                 </label>
               </div>
