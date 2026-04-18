@@ -2292,6 +2292,7 @@
 }
 
 .route-components,
+.route-journey-map,
 .route-history-grid {
   display: grid;
   gap: 0.9rem;
@@ -2301,8 +2302,114 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.route-journey-map {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .route-history-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.route-journey-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+  padding-top: 0.25rem;
+}
+
+.route-journey-track__line {
+  position: absolute;
+  top: 12px;
+  left: 8%;
+  right: 8%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(92, 72, 238, 0.35), rgba(26, 155, 121, 0.25));
+}
+
+.route-journey-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 0.28rem;
+}
+
+.route-journey-node__dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(97, 83, 211, 0.45);
+  background: #fff;
+  box-shadow: 0 0 0 5px rgba(97, 83, 211, 0.08);
+}
+
+.route-journey-node.is-reached .route-journey-node__dot {
+  border-color: rgba(39, 160, 126, 0.85);
+  background: linear-gradient(135deg, #36c394, #1f9d74);
+  box-shadow: 0 0 0 5px rgba(31, 157, 116, 0.16);
+}
+
+.route-journey-node__label {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.route-journey-node__meta {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--text-light);
+  font-weight: 700;
+}
+
+.route-progress-list {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.route-progress-item {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.route-progress-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.route-progress-item__label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-light);
+}
+
+.route-progress-item__value {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.route-progress-item__bar {
+  height: 11px;
+  border-radius: 999px;
+  background: #eef3f8;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+
+.route-progress-item__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4f73ff, #8945f0 62%, #de3e9f);
 }
 
 .route-component-card__header {
@@ -2402,6 +2509,7 @@
 
 @media (max-width: 960px) {
   .route-overview__hero,
+  .route-journey-map,
   .route-components,
   .route-history-grid,
   .route-map {
@@ -2496,6 +2604,83 @@
   display: grid;
   gap: 0.35rem;
   padding-left: 1.1rem;
+}
+
+/* =========================
+   MEDIA THUMBNAILS
+   ========================= */
+.file-chip {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.file-chip__thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--border-soft);
+  background: #f1f5f9;
+}
+
+.file-chip__thumb.is-empty {
+  display: grid;
+  place-items: center;
+  font-size: 1.15rem;
+}
+
+.bitacora-card__files-list--media {
+  padding-left: 0;
+}
+
+.bitacora-card__file-item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 0.72rem;
+  align-items: center;
+  list-style: none;
+  padding: 0.45rem 0;
+}
+
+.bitacora-card__file-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--border-soft);
+  background: #f1f5f9;
+}
+
+.bitacora-card__file-thumb.is-empty {
+  display: grid;
+  place-items: center;
+  font-size: 1.2rem;
+}
+
+.bitacora-card__file-copy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.bitacora-card__file-name {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.bitacora-card__file-link {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--brand, #4f46e5);
+  text-decoration: none;
+}
+
+.bitacora-card__file-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 900px) {

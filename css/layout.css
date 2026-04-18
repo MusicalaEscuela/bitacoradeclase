@@ -818,6 +818,31 @@ body {
   min-width: 0;
 }
 
+.profile-layout.profile-layout--route-focus,
+.profile-layout.profile-layout--history-focus {
+  grid-template-columns: 1fr;
+}
+
+.profile-layout.profile-layout--route-focus .profile-main,
+.profile-layout.profile-layout--history-focus .profile-side {
+  width: 100%;
+  max-width: none;
+}
+
+.profile-layout.profile-layout--history-focus .profile-side {
+  position: static;
+}
+
+.view-shell--profile[data-focus-mode="route"] .profile-card,
+.view-shell--profile[data-focus-mode="route"] .profile-side {
+  display: none !important;
+}
+
+.view-shell--profile[data-focus-mode="route"] .route-panel {
+  width: 100%;
+  max-width: none;
+}
+
 .search-preview-panel,
 .profile-side,
 .editor-student {
