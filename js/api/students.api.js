@@ -309,7 +309,9 @@ function normalizeStudentRecord(student = {}) {
 
   const processes = Array.isArray(normalized.processes)
     ? normalized.processes
-        .map((process, index) => normalizeProcessRecord(process, rawStudentKey, index))
+        .flatMap((process, index) =>
+          expandProcessRecords(process, rawStudentKey, index)
+        )
         .filter(Boolean)
     : [];
 
@@ -349,24 +351,42 @@ function normalizeStudentRecord(student = {}) {
   };
 }
 
-function normalizeProcessRecord(process = {}, studentKey = "", index = 0) {
+function splitProcessDetails(detailValue = "") {
+  return String(detailValue || "")
+    .split(/,|;|\n/g)
+    .map((value) => normalizeScalar(value))
+    .filter(Boolean);
+}
+
+function expandProcessRecords(process = {}, studentKey = "", index = 0) {
   if (!isPlainObject(process)) return null;
 
   const arte = normalizeScalar(process.arte || process.area);
-  const detalle = normalizeScalar(process.detalle || process.instrumento);
+  const detalleRaw = normalizeScalar(process.detalle || process.instrumento);
+  const detailValues = splitProcessDetails(detalleRaw);
+  const safeDetailValues = detailValues.length ? detailValues : [detalleRaw];
   const label =
     normalizeScalar(process.label) ||
-    [arte, detalle].filter(Boolean).join(" - ");
+    [arte, detalleRaw].filter(Boolean).join(" - ");
 
-  if (!arte && !detalle && !label) return null;
+  if (!arte && !detalleRaw && !label) return null;
 
-  return {
-    processKey:
-      normalizeScalar(process.processKey) || `${studentKey}_process_${index + 1}`,
-    arte,
-    detalle,
-    label,
-  };
+  return safeDetailValues
+    .map((detalle, detailIndex) => {
+      const baseProcessKey =
+        normalizeScalar(process.processKey) || `${studentKey}_process_${index + 1}`;
+      const computedLabel = [arte, detalle].filter(Boolean).join(" - ") || label;
+      return {
+        processKey:
+          safeDetailValues.length > 1
+            ? `${baseProcessKey}_${detailIndex + 1}`
+            : baseProcessKey,
+        arte,
+        detalle,
+        label: computedLabel,
+      };
+    })
+    .filter(Boolean);
 }
 
 function matchesStatusFilter(student, statusValue, includeInactive) {

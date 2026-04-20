@@ -132,6 +132,8 @@ function normalizeProcess(process = {}) {
   }
 
   return {
+    processKey: safeString(process.processKey || process.id || process.key),
+    processLabel: safeString(process.processLabel || process.label),
     area: safeString(process.area),
     modalidad: safeString(process.modalidad),
     docente: safeString(process.docente),
@@ -397,6 +399,7 @@ function applyClientFilters(items = [], options = {}) {
   const mode = safeString(options.mode).toLowerCase();
   const search = safeString(options.search || options.query).toLowerCase();
   const status = safeString(options.status).toLowerCase();
+  const processKey = safeString(options.processKey || options.processRef);
 
   let results = [...items];
 
@@ -407,6 +410,12 @@ function applyClientFilters(items = [], options = {}) {
   if (status) {
     results = results.filter(
       (item) => safeString(item.status).toLowerCase() === status
+    );
+  }
+
+  if (processKey) {
+    results = results.filter(
+      (item) => safeString(item?.process?.processKey) === processKey
     );
   }
 
