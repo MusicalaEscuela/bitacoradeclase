@@ -18,15 +18,15 @@ const ENV = detectEnvironment();
 const BASE_URLS = {
   development: {
     appsScript:
-      "https://script.google.com/macros/s/AKfycbxc7YwEESS0Si55llUT3Bfh5JziSaM6roIgSp0YoOnBUuLC68VK9lnowZft0NGQdgAjQA/exec",
+      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
     uploads:
-      "https://script.google.com/macros/s/AKfycbxc7YwEESS0Si55llUT3Bfh5JziSaM6roIgSp0YoOnBUuLC68VK9lnowZft0NGQdgAjQA/exec",
+      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
   },
   production: {
     appsScript:
-      "https://script.google.com/macros/s/AKfycbxc7YwEESS0Si55llUT3Bfh5JziSaM6roIgSp0YoOnBUuLC68VK9lnowZft0NGQdgAjQA/exec",
+      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
     uploads:
-      "https://script.google.com/macros/s/AKfycbxc7YwEESS0Si55llUT3Bfh5JziSaM6roIgSp0YoOnBUuLC68VK9lnowZft0NGQdgAjQA/exec",
+      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
   },
 };
 
