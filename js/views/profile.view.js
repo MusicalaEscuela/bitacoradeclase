@@ -34,9 +34,12 @@ import {
   getStudentIdentity,
   getStudentName,
   getStudentProcessesSummary,
+  normalizeStudentProcesses,
+  resolveStudentProcess,
   getTimestamp,
   normalizeBitacorasResponse as normalizeBitacorasResponseShared,
   normalizeMode,
+  normalizeText,
   normalizeStudentIds,
   normalizeStudentRefs,
   resolveStudentRefFromPayload,
@@ -49,6 +52,7 @@ let unsubscribeView = null;
 let currentNavigateTo = null;
 let currentSubscribe = null;
 let currentProfileStudentKey = null;
+let currentProfileProcessKey = "";
 let historyExpansionState = new Map();
 
 const ROUTE_COMPONENTS = Object.freeze([
@@ -405,6 +409,171 @@ const PIANO_ROUTE_PRESET = Object.freeze({
   goals: buildGoalsFromLearningRoute(PIANO_LEARNING_ROUTE, "piano_ruta_v1"),
 });
 
+const CANTO_LEARNING_ROUTE = Object.freeze({
+  instrumento: "Canto",
+  componentes: [
+    {
+      nombre: "Técnico",
+      secciones: [
+        {
+          nombre: "Respiración y soporte",
+          items: [
+            { nombre: "Respiración costo-diafragmática", tipo: "progressive", niveles: Array.from({ length: 12 }, (_, i) => i + 1) },
+            { nombre: "Control de flujo de aire (s/f/z)", tipo: "progressive", niveles: Array.from({ length: 10 }, (_, i) => i + 1) },
+            { nombre: "Apoyo y sostén de frase", tipo: "progressive", niveles: Array.from({ length: 10 }, (_, i) => i + 1) },
+          ],
+        },
+        {
+          nombre: "Emisión y colocación",
+          items: [
+            { nombre: "Vocalizaciones en 5 notas", tipo: "progressive", niveles: Array.from({ length: 15 }, (_, i) => i + 1) },
+            { nombre: "Resonadores (máscara y pecho)", tipo: "checklist", valores: ["Nasal frontal", "Máscara", "Pecho", "Mixto"] },
+            { nombre: "Articulación y dicción", tipo: "progressive", niveles: Array.from({ length: 12 }, (_, i) => i + 1) },
+          ],
+        },
+        {
+          nombre: "Afinación e intervalos",
+          items: [
+            { nombre: "Entonación por grados conjuntos", tipo: "progressive", niveles: Array.from({ length: 12 }, (_, i) => i + 1) },
+            { nombre: "Intervalos básicos cantados", tipo: "checklist", valores: ["2da", "3ra", "4ta", "5ta", "6ta", "8va"] },
+            { nombre: "Escalas mayores y menores cantadas", tipo: "checklist", valores: ["Do", "Sol", "Re", "La", "Mi"] },
+          ],
+        },
+      ],
+    },
+    {
+      nombre: "Teórico",
+      secciones: [
+        {
+          nombre: "Lenguaje musical vocal",
+          items: [
+            { nombre: "Lectura rítmica vocal", tipo: "progressive", niveles: Array.from({ length: 16 }, (_, i) => i + 1) },
+            { nombre: "Lectura melódica en pentagrama", tipo: "progressive", niveles: Array.from({ length: 12 }, (_, i) => i + 1) },
+            { nombre: "Función armónica para cantante", tipo: "single" },
+          ],
+        },
+        {
+          nombre: "Interpretación",
+          items: [
+            { nombre: "Dinámicas y fraseo", tipo: "checklist", valores: ["Piano", "Mezzo forte", "Forte", "Crescendo", "Diminuendo"] },
+            { nombre: "Intención textual", tipo: "progressive", niveles: Array.from({ length: 8 }, (_, i) => i + 1) },
+            { nombre: "Presencia escénica básica", tipo: "progressive", niveles: Array.from({ length: 8 }, (_, i) => i + 1) },
+          ],
+        },
+      ],
+    },
+    {
+      nombre: "Repertorio",
+      secciones: [
+        {
+          nombre: "Montaje vocal",
+          items: [
+            { nombre: "Canción 1 (estructura y memoria)", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Canción 2 (afinación y estilo)", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Canción 3 (interpretación completa)", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+          ],
+        },
+        {
+          nombre: "Performance",
+          items: [
+            { nombre: "Ensayo con pista", tipo: "single" },
+            { nombre: "Ensayo con micrófono", tipo: "single" },
+            { nombre: "Presentación final", tipo: "single" },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const CELLO_LEARNING_ROUTE = Object.freeze({
+  instrumento: "Cello",
+  componentes: [
+    {
+      nombre: "Técnico",
+      secciones: [
+        {
+          nombre: "Postura y arco",
+          items: [
+            { nombre: "Postura base y puntos de apoyo", tipo: "progressive", niveles: Array.from({ length: 10 }, (_, i) => i + 1) },
+            { nombre: "Trazos de arco (détaché)", tipo: "progressive", niveles: Array.from({ length: 12 }, (_, i) => i + 1) },
+            { nombre: "Control de cuerdas al aire", tipo: "progressive", niveles: Array.from({ length: 12 }, (_, i) => i + 1) },
+          ],
+        },
+        {
+          nombre: "Mano izquierda",
+          items: [
+            { nombre: "Digitación primera posición", tipo: "progressive", niveles: Array.from({ length: 14 }, (_, i) => i + 1) },
+            { nombre: "Cambios de cuerda limpios", tipo: "progressive", niveles: Array.from({ length: 12 }, (_, i) => i + 1) },
+            { nombre: "Extensiones y afinación", tipo: "checklist", valores: ["Semitono", "Tono", "Extensión 1-2", "Extensión 2-3"] },
+          ],
+        },
+        {
+          nombre: "Escalas y estudios",
+          items: [
+            { nombre: "Escalas mayores (1 octava)", tipo: "checklist", valores: ["Do", "Sol", "Re", "Fa"] },
+            { nombre: "Escalas menores (1 octava)", tipo: "checklist", valores: ["La menor", "Re menor", "Sol menor"] },
+            { nombre: "Estudios progresivos", tipo: "progressive", niveles: Array.from({ length: 15 }, (_, i) => i + 1) },
+          ],
+        },
+      ],
+    },
+    {
+      nombre: "Teórico",
+      secciones: [
+        {
+          nombre: "Lectura aplicada",
+          items: [
+            { nombre: "Lectura en clave de Fa", tipo: "progressive", niveles: Array.from({ length: 16 }, (_, i) => i + 1) },
+            { nombre: "Ritmo para cuerdas frotadas", tipo: "progressive", niveles: Array.from({ length: 14 }, (_, i) => i + 1) },
+            { nombre: "Signos de arco y articulación", tipo: "checklist", valores: ["Ligado", "Staccato", "Acento", "Tenuto"] },
+          ],
+        },
+        {
+          nombre: "Sonoridad",
+          items: [
+            { nombre: "Calidad de sonido por zona de arco", tipo: "progressive", niveles: Array.from({ length: 10 }, (_, i) => i + 1) },
+            { nombre: "Dinámicas en frases", tipo: "checklist", valores: ["pp", "p", "mf", "f", "ff"] },
+          ],
+        },
+      ],
+    },
+    {
+      nombre: "Repertorio",
+      secciones: [
+        {
+          nombre: "Piezas",
+          items: [
+            { nombre: "Pieza 1 (melodía y ritmo)", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Pieza 2 (arco y afinación)", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+            { nombre: "Pieza 3 (expresión musical)", tipo: "progressive", niveles: [1, 2, 3, 4, 5] },
+          ],
+        },
+        {
+          nombre: "Ensamble",
+          items: [
+            { nombre: "Trabajo con acompañamiento", tipo: "single" },
+            { nombre: "Ajuste de tempo y entradas", tipo: "single" },
+            { nombre: "Presentación final", tipo: "single" },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const CANTO_ROUTE_PRESET = Object.freeze({
+  id: "canto_ruta_v1",
+  routeName: "Ruta de aprendizaje - Canto",
+  goals: buildGoalsFromLearningRoute(CANTO_LEARNING_ROUTE, "canto_ruta_v1"),
+});
+
+const CELLO_ROUTE_PRESET = Object.freeze({
+  id: "cello_ruta_v1",
+  routeName: "Ruta de aprendizaje - Cello",
+  goals: buildGoalsFromLearningRoute(CELLO_LEARNING_ROUTE, "cello_ruta_v1"),
+});
+
 const ROUTE_PRESETS = Object.freeze({
   guitarra: Object.freeze({
     id: "guitarra_objetivos_v1",
@@ -412,6 +581,8 @@ const ROUTE_PRESETS = Object.freeze({
     goals: GUITAR_ROUTE_PRESET,
   }),
   piano: PIANO_ROUTE_PRESET,
+  canto: CANTO_ROUTE_PRESET,
+  cello: CELLO_ROUTE_PRESET,
 });
 
 const routePresetCache = new Map();
@@ -423,6 +594,7 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   let state = getState();
   const access = resolveUserAccess(state?.auth?.user);
   const requestedStudentRef = resolveStudentRefFromPayload(payload);
+  const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const fallbackSelectedId = getSelectedStudentId();
   const selectedStudentRef =
     access.role === CONFIG.roles.student
@@ -445,6 +617,8 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   }
 
   currentProfileStudentKey = getStudentIdentity(student);
+  currentProfileProcessKey =
+    resolveStudentProcess(student, requestedProcessRef)?.processKey || "";
   if (access.role !== CONFIG.roles.student) {
     await ensureStudentBitacorasLoaded(student);
   }
@@ -500,6 +674,7 @@ export async function render({
     access.role === CONFIG.roles.student
       ? access.linkedStudentId
       : resolveStudentRefFromPayload(payload);
+  const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const student = getStudentFromState(safeState, requestedStudentRef);
 
   if (!student || !canViewStudent(safeState?.auth?.user, getStudentIdentity(student))) {
@@ -510,6 +685,9 @@ export async function render({
   }
 
   currentProfileStudentKey = getStudentIdentity(student);
+  currentProfileProcessKey =
+    resolveStudentProcess(student, requestedProcessRef || currentProfileProcessKey)
+      ?.processKey || "";
 
   root.innerHTML = buildProfileMarkup(student, safeState, safeConfig);
 
@@ -575,6 +753,15 @@ function buildProfileMarkup(student, state, config) {
     config?.appName ||
     config?.title ||
     "Bitácoras de Clase";
+  const processOptions = normalizeStudentProcesses(student);
+  const activeProcess =
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    processOptions[0] ||
+    null;
+  const activeProcessKey = toStringSafe(activeProcess?.processKey);
+  const activeProcessLabel = toStringSafe(
+    activeProcess?.label || activeProcess?.detalle || activeProcess?.arte || "Proceso"
+  );
 
   return `
     <section class="view-shell view-shell--profile">
@@ -589,6 +776,12 @@ function buildProfileMarkup(student, state, config) {
         </div>
 
         <div class="view-header__actions">
+          <label class="field field--compact">
+            <span class="field__label">Proceso activo</span>
+            <select id="profile-process-select" class="field__input">
+              ${renderProcessSelectOptions(processOptions, activeProcessKey)}
+            </select>
+          </label>
           <button
             type="button"
             class="btn btn--ghost"
@@ -632,7 +825,7 @@ function buildProfileMarkup(student, state, config) {
                 <p class="panel-header__eyebrow">Ruta</p>
                 <h2 class="panel-header__title">Ruta de aprendizaje</h2>
                 <p class="panel__description">
-                  Resumen del estado actual y objetivos en curso. Abre la ruta completa solo cuando necesites ver todo el detalle.
+                  Proceso actual: <strong>${escapeHtml(activeProcessLabel)}</strong>. Resumen del estado actual y objetivos en curso.
                 </p>
               </div>
               <div class="panel-header__actions">
@@ -677,7 +870,7 @@ function buildProfileMarkup(student, state, config) {
             <header class="panel-header profile-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Última bitácora</h2>
+                <h2 class="panel-header__title">Última bitácora (${escapeHtml(activeProcessLabel)})</h2>
               </div>
 
               <button
@@ -710,6 +903,7 @@ function bindProfileEvents(student) {
   const refreshBtn = viewRoot.querySelector("#profile-refresh-history-btn");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
+  const processSelect = viewRoot.querySelector("#profile-process-select");
 
   if (isStudentView) {
     backBtn?.remove();
@@ -729,7 +923,15 @@ function bindProfileEvents(student) {
 
   if (openEditorBtn) {
     openEditorBtn.addEventListener("click", () => {
-      goToEditor(student);
+      goToEditor(student, { processKey: currentProfileProcessKey || "" });
+    });
+  }
+
+  if (processSelect) {
+    processSelect.addEventListener("change", async () => {
+      currentProfileProcessKey = toStringSafe(processSelect.value);
+      await Promise.all([reloadHistory(student), reloadLearningRoute(student)]);
+      renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
     });
   }
 
@@ -978,16 +1180,35 @@ async function ensureLearningRouteLoaded(student, options = {}) {
   const access = resolveUserAccess(getState()?.auth?.user);
   const currentRoute = getStudentRoute(studentId);
   const currentGoals = getStudentGoals(studentId);
+  const activeProcess =
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
+  const activeProcessKey = toStringSafe(
+    currentProfileProcessKey || activeProcess?.processKey
+  );
 
-  if (!forceReload && currentRoute?.presetId && Array.isArray(currentGoals) && currentGoals.length) {
+  if (
+    !forceReload &&
+    currentRoute?.presetId &&
+    Array.isArray(currentGoals) &&
+    currentGoals.length &&
+    toStringSafe(currentRoute?.processKey || "") === activeProcessKey
+  ) {
     return;
   }
 
   setProfileLoading(true);
 
   try {
-    const persistedRoute = await getStudentRouteRecord(studentId);
-    const nextRoute = buildDefaultRouteState(student, persistedRoute || currentRoute);
+    const persistedRoute = await getStudentRouteRecord(studentId, {
+      processKey: activeProcessKey,
+    });
+    const currentMatchesActiveProcess =
+      toStringSafe(currentRoute?.processKey || "") === activeProcessKey;
+    const baseRoute =
+      persistedRoute || (currentMatchesActiveProcess ? currentRoute : {});
+    const nextRoute = buildDefaultRouteState(student, baseRoute);
 
     setStudentRoute(studentId, nextRoute);
     setStudentGoals(studentId, buildStudentGoalsFromRoute(nextRoute, student));
@@ -1018,17 +1239,30 @@ async function persistLearningRoute(student, route) {
     throw new Error("No se pudo resolver el estudiante para guardar la ruta.");
   }
 
-  const savedRoute = await saveStudentRouteRecord(studentId, route, { student });
+  const activeProcess =
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
+  const savedRoute = await saveStudentRouteRecord(studentId, route, {
+    student,
+    processKey: currentProfileProcessKey || "",
+    processLabel: activeProcess?.label || "",
+  });
   return buildDefaultRouteState(student, savedRoute);
 }
 
 function normalizeArtKey(student) {
+  const activeProcess =
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
   const rawValue = firstNonEmpty(
+    activeProcess?.arte,
+    activeProcess?.detalle,
+    activeProcess?.label,
     student?.area,
     student?.instrumento,
-    student?.programa,
-    student?.processes?.[0]?.arte,
-    student?.processes?.[0]?.label
+    student?.programa
   );
 
   const normalized = toStringSafe(rawValue)
@@ -1040,6 +1274,7 @@ function normalizeArtKey(student) {
 
   if (!normalized) return "general";
   if (normalized.includes("guitarra")) return "guitarra";
+  if (normalized.includes("cello") || normalized.includes("violoncello")) return "cello";
   if (normalized.includes("canto")) return "canto";
   if (normalized.includes("danza")) return "danza";
   if (normalized.includes("teatro")) return "teatro";
@@ -1103,17 +1338,52 @@ function buildGenericRoutePreset(artKey, artLabel) {
 }
 
 function resolveRoutePreset(student, baseRoute = {}) {
+  const activeProcess =
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
+  const activeProcessKey = toStringSafe(
+    currentProfileProcessKey || activeProcess?.processKey
+  );
+  const baseRouteProcessKey = toStringSafe(baseRoute?.processKey || "");
+  const activeProcessHint = toStringSafe(
+    firstNonEmpty(activeProcess?.detalle, activeProcess?.label, activeProcess?.arte)
+  )
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  let forcedPreset = null;
+  if (activeProcessHint.includes("canto")) {
+    forcedPreset = ROUTE_PRESETS.canto;
+  }
+  if (
+    !forcedPreset &&
+    (activeProcessHint.includes("cello") ||
+      activeProcessHint.includes("violoncello"))
+  ) {
+    forcedPreset = ROUTE_PRESETS.cello;
+  }
+  if (!forcedPreset && activeProcessHint.includes("piano")) {
+    forcedPreset = ROUTE_PRESETS.piano;
+  }
+  if (forcedPreset) return forcedPreset;
+
   const byId = toStringSafe(baseRoute?.presetId);
-  const builtIn = Object.values(ROUTE_PRESETS).find((preset) => preset.id === byId);
+  const builtIn =
+    byId &&
+    (!activeProcessKey || baseRouteProcessKey === activeProcessKey)
+      ? Object.values(ROUTE_PRESETS).find((preset) => preset.id === byId)
+      : null;
   if (builtIn) return builtIn;
 
   const instrumentHints = [
+    activeProcess?.detalle,
+    activeProcess?.label,
+    activeProcess?.arte,
     student?.instrumento,
     student?.programa,
     student?.area,
-    student?.processes?.[0]?.detalle,
-    student?.processes?.[0]?.label,
-    student?.processes?.[0]?.arte,
   ]
     .map((value) =>
       toStringSafe(value)
@@ -1126,6 +1396,12 @@ function resolveRoutePreset(student, baseRoute = {}) {
   if (instrumentHints.includes("piano")) {
     return ROUTE_PRESETS.piano;
   }
+  if (instrumentHints.includes("canto")) {
+    return ROUTE_PRESETS.canto;
+  }
+  if (instrumentHints.includes("cello") || instrumentHints.includes("violoncello")) {
+    return ROUTE_PRESETS.cello;
+  }
 
   const artKey = normalizeArtKey(student);
   if (ROUTE_PRESETS[artKey]) return ROUTE_PRESETS[artKey];
@@ -1137,6 +1413,10 @@ function resolveRoutePreset(student, baseRoute = {}) {
 }
 
 function buildDefaultRouteState(student, baseRoute = {}) {
+  const activeProcess =
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
   const preset = resolveRoutePreset(student, baseRoute);
   const routeComponents = getRouteComponentsForPreset(preset);
   const presetGoalIds = new Set(preset.goals.map((goal) => goal.id));
@@ -1174,8 +1454,22 @@ function buildDefaultRouteState(student, baseRoute = {}) {
     ...(baseRoute && typeof baseRoute === "object" ? baseRoute : {}),
     presetId: preset.id,
     routeName: preset.routeName,
+    processKey: toStringSafe(currentProfileProcessKey || activeProcess?.processKey),
+    processLabel: firstNonEmpty(
+      activeProcess?.label,
+      activeProcess?.detalle,
+      activeProcess?.arte
+    ),
     focusArea:
-      getReadableValue(student.area || student.instrumento || student.programa, "Proceso general"),
+      getReadableValue(
+        activeProcess?.label ||
+          activeProcess?.detalle ||
+          activeProcess?.arte ||
+          student.area ||
+          student.instrumento ||
+          student.programa,
+        "Proceso general"
+      ),
     completedGoalIds,
     history,
     currentExperience: experience,
@@ -1936,7 +2230,9 @@ async function ensureStudentBitacorasLoaded(student) {
   setBitacorasLoading(true);
 
   try {
-    const response = await getBitacorasByStudent(studentRef);
+    const response = await getBitacorasByStudent(studentRef, {
+      processKey: currentProfileProcessKey || "",
+    });
     const items = normalizeBitacorasResponse(response);
 
     setBitacorasForStudent(studentRef, items);
@@ -1964,7 +2260,9 @@ async function reloadHistory(student) {
   try {
     clearAppError();
 
-    const response = await getBitacorasByStudent(studentRef);
+    const response = await getBitacorasByStudent(studentRef, {
+      processKey: currentProfileProcessKey || "",
+    });
     const items = normalizeBitacorasResponse(response);
 
     setBitacorasForStudent(studentRef, items);
@@ -1982,6 +2280,42 @@ async function reloadHistory(student) {
 }
 
 function getBitacorasFromState(studentOrRef) {
+  const selectedProcess =
+    studentOrRef && typeof studentOrRef === "object"
+      ? resolveStudentProcess(studentOrRef, currentProfileProcessKey)
+      : null;
+
+  const applyProcessFilter = (items = []) => {
+    const safeProcessKey = toStringSafe(currentProfileProcessKey);
+    const selectedDetail = normalizeText(
+      selectedProcess?.detalle || selectedProcess?.label || ""
+    );
+
+    return items.filter((item) => {
+      const itemProcessKey = toStringSafe(
+        item?.process?.processKey || item?.processKey
+      );
+
+      if (safeProcessKey && itemProcessKey) {
+        return itemProcessKey === safeProcessKey;
+      }
+
+      if (!selectedDetail) return true;
+
+      const itemDetails = [
+        item?.process?.processLabel,
+        item?.process?.label,
+        item?.process?.programa,
+        item?.process?.detalle,
+        item?.process?.area,
+      ]
+        .flatMap((value) => String(value || "").split(/,|;|\n/g))
+        .map((value) => normalizeText(value))
+        .filter(Boolean);
+
+      return itemDetails.includes(selectedDetail);
+    });
+  };
   const studentRef =
     studentOrRef && typeof studentOrRef === "object"
       ? getStudentIdentity(studentOrRef)
@@ -1995,7 +2329,7 @@ function getBitacorasFromState(studentOrRef) {
   const selectedItems = getSelectedStudentBitacoras();
   if (Array.isArray(selectedItems) && selectedItems.length) {
     return sortBitacorasByDate(
-      selectedItems.map(normalizeBitacora).filter(Boolean)
+      applyProcessFilter(selectedItems.map(normalizeBitacora).filter(Boolean))
     );
   }
 
@@ -2012,7 +2346,7 @@ function getBitacorasFromState(studentOrRef) {
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) {
       return sortBitacorasByDate(
-        candidate.map(normalizeBitacora).filter(Boolean)
+        applyProcessFilter(candidate.map(normalizeBitacora).filter(Boolean))
       );
     }
   }
@@ -2049,6 +2383,10 @@ function normalizeBitacora(item) {
       item.studentOverrides || item.overrides,
       normalizeStudentIds(item.studentIds || [item.studentId])
     ),
+    process: item.process || {},
+    processKey:
+      toStringSafe(item?.process?.processKey) ||
+      toStringSafe(item?.processKey),
     createdAt:
       item.createdAt || item.created_at || item.fechaRegistro || "",
   };
@@ -2221,6 +2559,25 @@ function cleanupView() {
   currentNavigateTo = null;
   currentSubscribe = null;
   currentProfileStudentKey = null;
+  currentProfileProcessKey = "";
   historyExpansionState = new Map();
+}
+
+function renderProcessSelectOptions(processes = [], activeKey = "") {
+  return (Array.isArray(processes) ? processes : [])
+    .map((process) => {
+      const processKey = toStringSafe(process?.processKey);
+      const processLabel = toStringSafe(
+        process?.label || process?.detalle || process?.arte || "Proceso"
+      );
+      const selectedAttr = processKey === activeKey ? " selected" : "";
+
+      return `<option value="${escapeHtml(processKey)}"${selectedAttr}>${escapeHtml(processLabel)}</option>`;
+    })
+    .join("");
+}
+
+function getRequestedProcessFromPayload(payload) {
+  return toStringSafe(payload?.processKey || payload?.processRef || payload?.process);
 }
 
