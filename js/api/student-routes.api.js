@@ -16,6 +16,7 @@ import {
 } from "../utils/shared.js";
 
 const STUDENT_ROUTES_COLLECTION = getStudentRoutesCollectionName();
+const DEFAULT_PROCESS_KEY = "general";
 
 function createApiError(message, extra = {}) {
   const error = new Error(message);
@@ -76,6 +77,8 @@ function normalizeStudentRouteRecord(data = {}, studentId = "") {
     studentId: safeStudentId,
     studentKey:
       toStringSafe(normalized.studentKey || normalized.studentId) || safeStudentId,
+    processKey: toStringSafe(normalized.processKey || DEFAULT_PROCESS_KEY),
+    processLabel: toStringSafe(normalized.processLabel || normalized.focusArea),
     studentName: toStringSafe(
       normalized.studentName || normalized.nombre || normalized.displayName
     ),
@@ -103,6 +106,12 @@ function normalizeStudentRouteRecord(data = {}, studentId = "") {
         }
       : null,
   };
+}
+
+function buildStudentRouteDocId(studentId, processKey = "") {
+  const safeStudentId = toStringSafe(studentId);
+  const safeProcessKey = toStringSafe(processKey || DEFAULT_PROCESS_KEY);
+  return `${safeStudentId}__${safeProcessKey}`;
 }
 
 function buildPersistedRoutePayload(studentId, route = {}, options = {}) {
@@ -136,7 +145,7 @@ function buildPersistedRoutePayload(studentId, route = {}, options = {}) {
   };
 }
 
-export async function getStudentRouteRecord(studentId) {
+export async function getStudentRouteRecord(studentId, options = {}) {
   assertAuthenticated();
 
   const safeStudentId = toStringSafe(studentId);
@@ -146,7 +155,13 @@ export async function getStudentRouteRecord(studentId) {
     });
   }
 
-  const snapshot = await getDoc(doc(db, STUDENT_ROUTES_COLLECTION, safeStudentId));
+  const processKey = toStringSafe(options.processKey || DEFAULT_PROCESS_KEY);
+  const processDocId = buildStudentRouteDocId(safeStudentId, processKey);
+  let snapshot = await getDoc(doc(db, STUDENT_ROUTES_COLLECTION, processDocId));
+
+  if (!snapshot.exists()) {
+    snapshot = await getDoc(doc(db, STUDENT_ROUTES_COLLECTION, safeStudentId));
+  }
 
   if (!snapshot.exists()) {
     return null;
@@ -158,7 +173,13 @@ export async function getStudentRouteRecord(studentId) {
 export async function saveStudentRouteRecord(studentId, route = {}, options = {}) {
   const safeStudentId = toStringSafe(studentId);
   const payload = buildPersistedRoutePayload(safeStudentId, route, options);
-  const ref = doc(db, STUDENT_ROUTES_COLLECTION, safeStudentId);
+  const processKey =
+    toStringSafe(options.processKey || payload.processKey) || DEFAULT_PROCESS_KEY;
+  const ref = doc(
+    db,
+    STUDENT_ROUTES_COLLECTION,
+    buildStudentRouteDocId(safeStudentId, processKey)
+  );
 
   await setDoc(
     ref,
@@ -170,7 +191,9 @@ export async function saveStudentRouteRecord(studentId, route = {}, options = {}
     { merge: true }
   );
 
-  return (await getStudentRouteRecord(safeStudentId)) || payload;
+  return (
+    (await getStudentRouteRecord(safeStudentId, { processKey })) || payload
+  );
 }
 
 export default {
