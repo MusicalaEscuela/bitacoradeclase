@@ -44,6 +44,8 @@ import {
   getStudentIdentity,
   getStudentName,
   getStudentProcessesSummary,
+  normalizeStudentProcesses,
+  resolveStudentProcess,
   getTimestamp,
   getTodayDate,
   isPlainObject,
@@ -63,6 +65,7 @@ let currentNavigateTo = null;
 let currentSubscribe = null;
 let currentEditorStudentKey = null;
 let currentEditorMode = CONFIG?.modes?.individual || "individual";
+let currentEditorProcessKey = "";
 let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
 
@@ -76,6 +79,7 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
       ? access.linkedStudentId
       : resolveStudentRefFromPayload(payload);
   const requestedMode = getRequestedModeFromPayload(payload);
+  const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const student = getStudentFromState(state, requestedStudentRef);
 
   if (!student || !canViewStudent(state?.auth?.user, getStudentIdentity(student))) {
@@ -91,6 +95,8 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   }
 
   currentEditorStudentKey = getStudentIdentity(student);
+  currentEditorProcessKey =
+    resolveStudentProcess(student, requestedProcessRef)?.processKey || "";
 
   await ensureCatalogsLoaded();
   await ensureBitacorasLoaded(student);
@@ -137,6 +143,7 @@ export async function render({
     access.role === CONFIG.roles.student
       ? access.linkedStudentId
       : resolveStudentRefFromPayload(payload);
+  const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const student = getStudentFromState(safeState, requestedStudentRef);
 
   if (!student || !canViewStudent(safeState?.auth?.user, getStudentIdentity(student))) {
@@ -147,6 +154,9 @@ export async function render({
   }
 
   currentEditorStudentKey = getStudentIdentity(student);
+  currentEditorProcessKey =
+    resolveStudentProcess(student, requestedProcessRef || currentEditorProcessKey)
+      ?.processKey || "";
   await ensureCatalogsLoaded();
 
   const draft = getDraftForContext(student);
@@ -536,6 +546,7 @@ function bindEditorEvents(student) {
   if (!viewRoot) return;
 
   const form = viewRoot.querySelector("#bitacora-form");
+  const processSelect = viewRoot.querySelector("#bitacora-process-select");
   const fechaInput = viewRoot.querySelector("#bitacora-fecha");
   const tituloInput = viewRoot.querySelector("#bitacora-titulo");
   const docenteInput = viewRoot.querySelector("#bitacora-docente");
@@ -604,6 +615,19 @@ function bindEditorEvents(student) {
       removeStudentFromGroupDraft(student, studentId);
       renderGroupSelectionBlocks(student);
       renderDraftMetaBlock(student);
+    });
+  }
+
+  if (processSelect) {
+    processSelect.addEventListener("change", async () => {
+      currentEditorProcessKey = toStringSafe(processSelect.value);
+      resetDraftForContext({
+        mode: currentEditorMode,
+        student,
+      });
+      refillFormFromDraft(student);
+      await reloadHistory(student);
+      renderReactiveBlocks(getState(), CONFIG, currentEditorStudentKey);
     });
   }
 
@@ -1502,7 +1526,9 @@ function renderPrintableOverridesSection(item = {}) {
 }
 
 async function safeLoadBitacoras(studentRef) {
-  const response = await getBitacorasByStudent(studentRef);
+  const response = await getBitacorasByStudent(studentRef, {
+    processKey: currentEditorProcessKey || "",
+  });
   const items = normalizeBitacorasResponse(response);
   return sortBitacorasByDate(items);
 }
@@ -1540,6 +1566,10 @@ function normalizeBitacora(item) {
     ),
     createdAt: item.createdAt || item.created_at || item.fechaRegistro || "",
     author: item.author || null,
+    process: item.process || {},
+    processKey:
+      toStringSafe(item?.process?.processKey) ||
+      toStringSafe(item?.processKey),
   };
 }
 
@@ -1572,6 +1602,10 @@ function buildBitacoraPayload(student, draft) {
     toStringSafe(viewRoot?.querySelector("#bitacora-docente")?.value) ||
     structured.docente ||
     firstNonEmpty(student.docente, student.teacher);
+  const activeProcess =
+    resolveStudentProcess(student, currentEditorProcessKey || draft.processKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
 
   const studentIds =
     mode === CONFIG.modes.group
@@ -1605,12 +1639,29 @@ function buildBitacoraPayload(student, draft) {
     attachments: normalizeFiles(draft.archivos),
     archivos: normalizeFiles(draft.archivos),
     studentOverrides: normalizeStudentOverrides(draft.studentOverrides, studentIds),
+    processKey: activeProcess?.processKey || "",
     process: {
-      area: firstNonEmpty(student.area, student.programa, student.instrumento),
+      processKey: activeProcess?.processKey || "",
+      processLabel: firstNonEmpty(
+        activeProcess?.label,
+        activeProcess?.detalle,
+        activeProcess?.arte
+      ),
+      area: firstNonEmpty(
+        activeProcess?.arte,
+        student.area,
+        student.programa,
+        student.instrumento
+      ),
       modalidad: firstNonEmpty(student.modalidad),
       docente: selectedTeacher,
       sede: firstNonEmpty(student.sede),
-      programa: firstNonEmpty(student.programa, student.area),
+      programa: firstNonEmpty(
+        activeProcess?.detalle,
+        activeProcess?.label,
+        student.programa,
+        student.area
+      ),
     },
     author: buildAuthorFromState(),
     createdAt: new Date().toISOString(),
@@ -1843,6 +1894,10 @@ function getDraftForContext(student) {
 function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual) {
   const normalizedMode = getAllowedMode(mode);
   const baseStudentName = isPlainObject(student) ? getStudentName(student) : "";
+  const activeProcess =
+    resolveStudentProcess(student, currentEditorProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
   const refs = [
     {
       id: studentRef,
@@ -1856,6 +1911,7 @@ function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual)
     studentKey: isPlainObject(student) ? student.studentKey || studentRef : studentRef,
     studentIds: refs.map((item) => item.id).filter(Boolean),
     studentRefs: refs.filter((item) => item.id),
+    processKey: activeProcess?.processKey || "",
     fechaClase: getTodayDate(),
     titulo: "",
     etiquetas: [],
@@ -1886,7 +1942,12 @@ function draftBelongsToContext(draft, studentOrRef) {
 
 function resetDraftForContext({ mode = CONFIG.modes.individual, student } = {}) {
   const studentRef = isPlainObject(student) ? getStudentIdentity(student) : "";
+  const activeProcess =
+    resolveStudentProcess(student, currentEditorProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null;
   const nextDraft = createDefaultDraft(studentRef, student, mode);
+  nextDraft.processKey = activeProcess?.processKey || "";
 
   resetDraft(nextDraft);
   clearUploads();
@@ -2632,6 +2693,42 @@ function mapSelectionFromRef(ref) {
 }
 
 function getBitacorasFromState(studentOrRef) {
+  const selectedProcess =
+    studentOrRef && typeof studentOrRef === "object"
+      ? resolveStudentProcess(studentOrRef, currentEditorProcessKey)
+      : null;
+
+  const applyProcessFilter = (items = []) => {
+    const safeProcessKey = toStringSafe(currentEditorProcessKey);
+    const selectedDetail = normalizeText(
+      selectedProcess?.detalle || selectedProcess?.label || ""
+    );
+
+    return items.filter((item) => {
+      const itemProcessKey = toStringSafe(
+        item?.process?.processKey || item?.processKey
+      );
+
+      if (safeProcessKey && itemProcessKey) {
+        return itemProcessKey === safeProcessKey;
+      }
+
+      if (!selectedDetail) return true;
+
+      const itemDetails = [
+        item?.process?.processLabel,
+        item?.process?.label,
+        item?.process?.programa,
+        item?.process?.detalle,
+        item?.process?.area,
+      ]
+        .flatMap((value) => String(value || "").split(/,|;|\n/g))
+        .map((value) => normalizeText(value))
+        .filter(Boolean);
+
+      return itemDetails.includes(selectedDetail);
+    });
+  };
   const studentRef = isPlainObject(studentOrRef)
     ? getStudentIdentity(studentOrRef)
     : toStringSafe(studentOrRef);
@@ -2643,7 +2740,7 @@ function getBitacorasFromState(studentOrRef) {
   const selectedItems = getSelectedStudentBitacoras();
   if (Array.isArray(selectedItems) && selectedItems.length) {
     return sortBitacorasByDate(
-      selectedItems.map(normalizeBitacora).filter(Boolean)
+      applyProcessFilter(selectedItems.map(normalizeBitacora).filter(Boolean))
     );
   }
 
@@ -2660,7 +2757,7 @@ function getBitacorasFromState(studentOrRef) {
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) {
       return sortBitacorasByDate(
-        candidate.map(normalizeBitacora).filter(Boolean)
+        applyProcessFilter(candidate.map(normalizeBitacora).filter(Boolean))
       );
     }
   }
@@ -2914,6 +3011,7 @@ function goToProfile(student) {
     id: student.id,
     studentId: student.id,
     studentKey: student.studentKey || student.id,
+    processKey: currentEditorProcessKey || "",
   });
 }
 
@@ -2943,6 +3041,10 @@ function getRequestedModeFromPayload(payload) {
   const rawMode = toStringSafe(payload?.mode);
   if (!rawMode) return "";
   return getAllowedMode(rawMode);
+}
+
+function getRequestedProcessFromPayload(payload) {
+  return toStringSafe(payload?.processKey || payload?.processRef || payload?.process);
 }
 
 function buildDraftWithMode({
@@ -3029,6 +3131,14 @@ function buildMusicalaEditorMarkup({
   const teoricoOptions = getCatalogOptions(catalogs.componenteTeorico);
   const obrasOptions = getCatalogOptions(catalogs.componenteObras);
   const selectedStudents = getSelectedStudentsForDraft(draft, student, allStudents);
+  const processOptions = normalizeStudentProcesses(student);
+  const activeProcess =
+    resolveStudentProcess(student, currentEditorProcessKey || draft.processKey) ||
+    processOptions[0] ||
+    null;
+  const activeProcessLabel = toStringSafe(
+    activeProcess?.label || activeProcess?.detalle || activeProcess?.arte || "Proceso"
+  );
 
   return `
     <section class="view-shell view-shell--editor">
@@ -3099,6 +3209,24 @@ function buildMusicalaEditorMarkup({
               </fieldset>
 
               <div class="editor-form-grid editor-form-grid--2">
+                <label class="field">
+                  <span class="field__label">Proceso activo</span>
+                  <select id="bitacora-process-select" class="field__input">
+                    ${processOptions
+                      .map(
+                        (process) => `
+                          <option value="${escapeHtml(process.processKey)}" ${
+                            process.processKey === activeProcess?.processKey
+                              ? "selected"
+                              : ""
+                          }>
+                            ${escapeHtml(process.label || process.detalle || process.arte || "Proceso")}
+                          </option>
+                        `
+                      )
+                      .join("")}
+                  </select>
+                </label>
                 <label class="field">
                   <span class="field__label">Fecha</span>
                   <input
@@ -3306,7 +3434,7 @@ function buildMusicalaEditorMarkup({
             <header class="editor-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Bitacoras registradas</h2>
+                <h2 class="panel-header__title">Bitacoras registradas (${escapeHtml(activeProcessLabel)})</h2>
               </div>
               <div class="editor-history__actions">
                 <button type="button" class="btn btn--ghost btn--sm" id="bitacora-print-btn">
@@ -3984,4 +4112,5 @@ function cleanupView() {
   currentSubscribe = null;
   currentEditorStudentKey = null;
   currentEditorMode = CONFIG?.modes?.individual || "individual";
+  currentEditorProcessKey = "";
 }
