@@ -281,3 +281,73 @@ export function getStudentProcessesSummary(student) {
     .filter(Boolean)
     .join(" • ");
 }
+export function slugifyProcessKey(value) {
+  const normalized = toStringSafe(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return normalized || "general";
+}
+
+export function normalizeStudentProcesses(student = {}) {
+  const rawProcesses = Array.isArray(student?.processes) ? student.processes : [];
+
+  if (!rawProcesses.length) {
+    const fallbackArte = firstNonEmpty(student?.area);
+    const fallbackDetalle = firstNonEmpty(student?.instrumento, student?.programa);
+    const fallbackLabel = firstNonEmpty(
+      student?.programa,
+      student?.instrumento,
+      student?.area,
+      "Proceso general"
+    );
+
+    return [
+      {
+        processKey: `fallback_${slugifyProcessKey(fallbackLabel)}`,
+        arte: fallbackArte,
+        detalle: fallbackDetalle,
+        label: fallbackLabel,
+      },
+    ];
+  }
+
+  return rawProcesses
+    .map((process, index) => {
+      if (!process || typeof process !== "object") return null;
+
+      const arte = toStringSafe(process.arte || process.area);
+      const detalle = toStringSafe(process.detalle || process.instrumento);
+      const label =
+        toStringSafe(process.label) ||
+        [arte, detalle].filter(Boolean).join(" - ") ||
+        `Proceso ${index + 1}`;
+
+      return {
+        processKey:
+          toStringSafe(process.processKey) ||
+          `${slugifyProcessKey(arte || label)}_${slugifyProcessKey(detalle || label)}_${index + 1}`,
+        arte,
+        detalle,
+        label,
+      };
+    })
+    .filter(Boolean);
+}
+
+export function resolveStudentProcess(student = {}, processRef = "") {
+  const processes = normalizeStudentProcesses(student);
+  const safeRef = toStringSafe(processRef);
+
+  if (!safeRef) return processes[0] || null;
+
+  return (
+    processes.find((process) => toStringSafe(process.processKey) === safeRef) ||
+    processes.find((process) => normalizeText(process.label) === normalizeText(safeRef)) ||
+    processes[0] ||
+    null
+  );
+}
