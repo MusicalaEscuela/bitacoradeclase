@@ -18,7 +18,11 @@ import {
   setStudentProfile,
   setStudentRoute,
 } from "../state.js";
-import { getBitacorasByStudent } from "../api/bitacoras.api.js";
+import {
+  getBitacoraById,
+  getBitacorasByStudent,
+  updateBitacora,
+} from "../api/bitacoras.api.js";
 import { getStudentProfile } from "../api/students.api.js";
 import {
   getStudentRouteRecord,
@@ -40,6 +44,7 @@ import {
   normalizeBitacorasResponse as normalizeBitacorasResponseShared,
   normalizeMode,
   normalizeText,
+  isPlainObject,
   normalizeStudentIds,
   normalizeStudentRefs,
   resolveStudentRefFromPayload,
@@ -54,6 +59,12 @@ let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let historyExpansionState = new Map();
+let guitarLibraryResources = [];
+let guitarLibraryLoaded = false;
+let guitarLibraryLoadingPromise = null;
+
+const GUITAR_LIBRARY_ASSET_URL = "assets/biblioteca-guitarra.csv";
+const GUITAR_LIBRARY_PUBLIC_URL = "https://musicalaescuela.github.io/bibliotecaguitarra/";
 
 const ROUTE_COMPONENTS = Object.freeze([
   { id: "corporal", label: "Componente corporal" },
@@ -590,6 +601,7 @@ const routeExpansionState = new Map();
 
 export async function beforeEnter({ payload, navigateTo } = {}) {
   clearAppError();
+  await ensureGuitarLibraryLoaded();
 
   let state = getState();
   const access = resolveUserAccess(state?.auth?.user);
@@ -866,11 +878,24 @@ function buildProfileMarkup(student, state, config) {
             </div>
           </section>
 
+          <section class="card profile-summary">
+            <header class="panel-header">
+              <div>
+                <p class="panel-header__eyebrow">Práctica</p>
+                <h2 class="panel-header__title">Practica ahora</h2>
+              </div>
+            </header>
+
+            <div id="profile-practice-content">
+              ${renderPracticeNow(student, bitacoras)}
+            </div>
+          </section>
+
           <section class="card profile-history">
             <header class="panel-header profile-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Última bitácora (${escapeHtml(activeProcessLabel)})</h2>
+                <h2 class="panel-header__title" id="profile-history-title">Última bitácora (${escapeHtml(activeProcessLabel)})</h2>
               </div>
 
               <button
@@ -903,6 +928,7 @@ function bindProfileEvents(student) {
   const refreshBtn = viewRoot.querySelector("#profile-refresh-history-btn");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
+  const historyTitle = viewRoot.querySelector("#profile-history-title");
   const processSelect = viewRoot.querySelector("#profile-process-select");
 
   if (isStudentView) {
@@ -942,7 +968,7 @@ function bindProfileEvents(student) {
   }
 
   if (historyContainer) {
-    historyContainer.addEventListener("click", (event) => {
+    historyContainer.addEventListener("click", async (event) => {
       const actionButton = event.target.closest("[data-history-action]");
       if (!actionButton) return;
 
@@ -965,6 +991,21 @@ function bindProfileEvents(student) {
 
       if (action === "toggle-full-history") {
         toggleHistoryExpanded(student, actionButton);
+        return;
+      }
+
+      if (action === "assign-process") {
+        const bitacoraId = toStringSafe(
+          actionButton.getAttribute("data-bitacora-id")
+        );
+        const card = actionButton.closest("[data-history-card]");
+        const processSelect = card?.querySelector(
+          "[data-history-process-select]"
+        );
+        const processKey = toStringSafe(processSelect?.value);
+
+        if (!bitacoraId) return;
+        await assignProcessToBitacora(student, bitacoraId, processKey);
       }
     });
   }
@@ -1017,8 +1058,10 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   if (!student || !viewRoot) return;
 
   const summaryContainer = viewRoot.querySelector("#profile-summary-content");
+  const practiceContainer = viewRoot.querySelector("#profile-practice-content");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
+  const historyTitle = viewRoot.querySelector("#profile-history-title");
   const titleNode = viewRoot.querySelector(".profile-card__name");
   const docNode = viewRoot.querySelector(".profile-card__doc");
   const gridNode = viewRoot.querySelector("#profile-grid");
@@ -1046,8 +1089,23 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
     summaryContainer.innerHTML = renderSummary(student, bitacoras);
   }
 
+  if (practiceContainer) {
+    practiceContainer.innerHTML = renderPracticeNow(student, bitacoras);
+  }
+
   if (routeContainer) {
     routeContainer.innerHTML = renderLearningRoute(student);
+  }
+
+  if (historyTitle) {
+    const activeProcess =
+      resolveStudentProcess(student, currentProfileProcessKey) ||
+      normalizeStudentProcesses(student)[0] ||
+      null;
+    const activeProcessLabel = toStringSafe(
+      activeProcess?.label || activeProcess?.detalle || activeProcess?.arte || "Proceso"
+    );
+    historyTitle.textContent = `Última bitácora (${activeProcessLabel})`;
   }
 
   if (historyContainer) {
@@ -1172,6 +1230,434 @@ function renderSummary(student, bitacoras = []) {
   `;
 }
 
+function renderPracticeNow(student, bitacoras = []) {
+  const artKey = normalizeArtKey(student);
+
+  if (artKey !== "guitarra") {
+    return `
+      <div class="empty-state">
+        <p class="empty-state__title">Práctica guiada no disponible</p>
+        <p class="empty-state__text">
+          Este panel está habilitado por ahora para el proceso de guitarra.
+        </p>
+      </div>
+    `;
+  }
+
+  if (!guitarLibraryLoaded || !guitarLibraryResources.length) {
+    return `
+      <div class="empty-state">
+        <p class="empty-state__title">Cargando biblioteca</p>
+        <p class="empty-state__text">
+          Aún no se pudo leer el catálogo de ejercicios. Puedes abrir la biblioteca completa mientras tanto.
+        </p>
+        <div class="empty-state__actions">
+          <a class="btn btn--ghost btn--sm" href="${escapeHtml(GUITAR_LIBRARY_PUBLIC_URL)}" target="_blank" rel="noopener noreferrer">
+            Abrir biblioteca
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  const recommendations = buildPracticeRecommendations(student, bitacoras);
+
+  return `
+    <div class="summary-list">
+      <article class="summary-item">
+        <span class="summary-item__label">Haz esto ahora</span>
+        <strong class="summary-item__value">${escapeHtml(String(recommendations.primary.length || 0))} sugerencias</strong>
+      </article>
+      ${renderPracticeLinks("Sugerido por tu última bitácora y objetivos", recommendations.primary)}
+      ${renderPracticeLinks("Más opciones según tu ruta actual", recommendations.secondary)}
+      <div class="empty-state__actions">
+        <a class="btn btn--ghost btn--sm" href="${escapeHtml(GUITAR_LIBRARY_PUBLIC_URL)}" target="_blank" rel="noopener noreferrer">
+          Ver biblioteca completa
+        </a>
+      </div>
+    </div>
+  `;
+}
+
+function renderPracticeLinks(title, links = []) {
+  if (!Array.isArray(links) || !links.length) {
+    return `
+      <div class="history-preview-card__group">
+        <p class="history-preview-card__group-title">${escapeHtml(title)}</p>
+        <p class="history-preview-card__text">Aún sin coincidencias fuertes. Prueba recargar o revisar etiquetas de bitácora.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="history-preview-card__group">
+      <p class="history-preview-card__group-title">${escapeHtml(title)}</p>
+      <div class="history-preview-card__tags">
+        ${links
+          .map(
+            (item) => `
+              <a
+                class="btn btn--ghost btn--sm"
+                href="${escapeHtml(item.link)}"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="${escapeHtml(item.category || "")}"
+              >
+                ${escapeHtml(item.name)}
+              </a>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function buildPracticeRecommendations(student, bitacoras = []) {
+  const latestBitacora = getLatestBitacora(bitacoras);
+  const studentId = getStudentIdentity(student);
+  const goals = Array.isArray(getStudentGoals(studentId))
+    ? getStudentGoals(studentId)
+    : [];
+  const activeGoals = goals
+    .filter((goal) => toStringSafe(goal?.status).toLowerCase() !== "completed")
+    .slice(0, 8);
+
+  const latestTerms = extractBitacoraTerms(latestBitacora, studentId);
+  const goalTerms = activeGoals.flatMap((goal) =>
+    extractTermsFromText(`${goal?.title || ""} ${goal?.description || ""}`)
+  );
+  const allTerms = [...new Set([...latestTerms, ...goalTerms])].filter(Boolean);
+  const goalTermSet = new Set(goalTerms);
+  const latestTermSet = new Set(latestTerms);
+
+  const scored = guitarLibraryResources
+    .map((entry) => {
+      let score = 0;
+
+      allTerms.forEach((term) => {
+        if (!term || term.length < 3) return;
+        if (entry.searchable.includes(term)) {
+          score += term.length > 8 ? 10 : 6;
+          if (goalTermSet.has(term)) score += 3;
+          if (latestTermSet.has(term)) score += 4;
+        }
+      });
+
+      if (entry.order > 0) {
+        score += Math.max(0, 8 - Math.min(entry.order, 8));
+      }
+
+      if (entry.goalKeys.length) {
+        const activeGoalIds = new Set(activeGoals.map((goal) => toStringSafe(goal?.id)));
+        entry.goalKeys.forEach((goalKey) => {
+          if (activeGoalIds.has(goalKey)) {
+            score += 12;
+          }
+        });
+      }
+
+      return { ...entry, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || (a.order || 999) - (b.order || 999));
+
+  const fallback = [...guitarLibraryResources]
+    .sort((a, b) => (a.order || 999) - (b.order || 999))
+    .slice(0, 8);
+  const ranked = scored.length ? scored : fallback;
+  let primary = ranked.slice(0, 3);
+  const used = new Set(primary.map((entry) => entry.id));
+  let secondary = ranked.filter((entry) => !used.has(entry.id)).slice(0, 6);
+
+  const hasSongsSignal = hasSongsOrWorksSignal(latestTerms, goalTerms);
+  if (hasSongsSignal) {
+    const songsResource = findSongsAndRepertoireResource();
+    if (songsResource) {
+      const alreadyInPrimary = primary.some((entry) => entry.id === songsResource.id);
+      const alreadyInSecondary = secondary.some(
+        (entry) => entry.id === songsResource.id
+      );
+
+      if (!alreadyInPrimary && !alreadyInSecondary) {
+        // Lo dejamos visible siempre como sugerencia rápida de repertorio.
+        secondary = [songsResource, ...secondary].slice(0, 6);
+      }
+    }
+  }
+
+  return { primary, secondary };
+}
+
+function hasSongsOrWorksSignal(latestTerms = [], goalTerms = []) {
+  const signals = new Set([
+    "cancion",
+    "canciones",
+    "obra",
+    "obras",
+    "repertorio",
+    "melodia",
+    "melodias",
+    "acordes",
+  ]);
+  const source = [...latestTerms, ...goalTerms];
+  return source.some((term) => signals.has(term));
+}
+
+function findSongsAndRepertoireResource() {
+  const candidate = guitarLibraryResources.find((entry) => {
+    const normalizedName = normalizeText(fixMojibake(entry?.name || ""));
+    return (
+      normalizedName.includes("lista de canciones y repertorio") ||
+      normalizedName.includes("canciones y repertorio")
+    );
+  });
+
+  if (candidate) return candidate;
+
+  // Fallback seguro si el nombre cambia en CSV pero existe URL conocida.
+  return {
+    id: "songs-repertoire-fallback",
+    name: "Lista de canciones y repertorio",
+    category: "Repertorio",
+    link: "https://musicalaescuela.github.io/cancionesguitarra/",
+    order: 999,
+    tags: ["canciones", "repertorio"],
+    goalKeys: [],
+    searchable: "lista canciones repertorio",
+    score: 0,
+  };
+}
+
+function extractBitacoraTerms(bitacora, studentId = "") {
+  if (!bitacora || typeof bitacora !== "object") return [];
+
+  const overrides = bitacora?.studentOverrides || {};
+  const override = isPlainObject(overrides[toStringSafe(studentId)])
+    ? overrides[toStringSafe(studentId)]
+    : {};
+  const content = [
+    bitacora?.titulo,
+    bitacora?.contenido,
+    bitacora?.process?.processLabel,
+    bitacora?.process?.programa,
+    bitacora?.process?.area,
+    ...(bitacora?.etiquetas || []),
+    ...(override?.etiquetas || []),
+    ...(override?.componenteCorporal || []),
+    ...(override?.componenteTecnico || []),
+    ...(override?.componenteTeorico || []),
+    ...(override?.componenteObras || []),
+  ]
+    .map((value) => toStringSafe(value))
+    .filter(Boolean)
+    .join(" ");
+
+  return extractTermsFromText(content);
+}
+
+function extractTermsFromText(text = "") {
+  const source = normalizeText(fixMojibake(text))
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const stopwords = new Set([
+    "para",
+    "con",
+    "del",
+    "las",
+    "los",
+    "una",
+    "uno",
+    "que",
+    "por",
+    "sin",
+    "sobre",
+    "desde",
+    "hacia",
+    "clase",
+    "clases",
+    "objetivo",
+    "objetivos",
+  ]);
+
+  return [...new Set(source.filter((token) => token.length >= 3 && !stopwords.has(token)))];
+}
+
+function fixMojibake(value = "") {
+  return String(value || "")
+    .replace(/Ã¡/g, "á")
+    .replace(/Ã©/g, "é")
+    .replace(/Ã­/g, "í")
+    .replace(/Ã³/g, "ó")
+    .replace(/Ãº/g, "ú")
+    .replace(/Ã±/g, "ñ")
+    .replace(/Ã¼/g, "ü")
+    .replace(/Â/g, "");
+}
+
+async function ensureGuitarLibraryLoaded() {
+  if (guitarLibraryLoaded) return;
+  if (guitarLibraryLoadingPromise) {
+    await guitarLibraryLoadingPromise;
+    return;
+  }
+
+  guitarLibraryLoadingPromise = (async () => {
+    try {
+      const response = await fetch(GUITAR_LIBRARY_ASSET_URL, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`No se pudo cargar ${GUITAR_LIBRARY_ASSET_URL}`);
+      }
+
+      const text = await response.text();
+      const rows = parseCsvRows(text);
+      if (!rows.length) {
+        guitarLibraryResources = [];
+        guitarLibraryLoaded = true;
+        return;
+      }
+
+      const header = rows[0].map((cell) => normalizeHeaderName(cell));
+      const body = rows.slice(1);
+      const indexByHeader = {};
+
+      header.forEach((name, index) => {
+        if (!name || indexByHeader[name] !== undefined) return;
+        indexByHeader[name] = index;
+      });
+
+      guitarLibraryResources = body
+        .map((row) => normalizeGuitarLibraryRow(row, indexByHeader))
+        .filter(Boolean);
+      guitarLibraryLoaded = true;
+    } catch (error) {
+      console.error("No se pudo cargar biblioteca de guitarra:", error);
+      guitarLibraryResources = [];
+      guitarLibraryLoaded = false;
+    } finally {
+      guitarLibraryLoadingPromise = null;
+    }
+  })();
+
+  await guitarLibraryLoadingPromise;
+}
+
+function normalizeGuitarLibraryRow(row = [], indexByHeader = {}) {
+  const byHeader = (...keys) => {
+    for (const key of keys) {
+      const position = indexByHeader[key];
+      if (!Number.isInteger(position)) continue;
+      const value = toStringSafe(row[position]);
+      if (value) return value;
+    }
+    return "";
+  };
+
+  const id = toStringSafe(byHeader("id")) || toStringSafe(row[0]);
+  const name = fixMojibake(byHeader("nombre")) || fixMojibake(toStringSafe(row[1]));
+  const category =
+    fixMojibake(byHeader("categoria", "categoría")) || fixMojibake(toStringSafe(row[4]));
+  const link = toStringSafe(byHeader("link")) || toStringSafe(row[6]);
+  const tags = extractTermsFromText(byHeader("tags") || "");
+  const goalKeys = String(byHeader("goalkeys") || "")
+    .split(",")
+    .map((value) => toStringSafe(value))
+    .filter(Boolean);
+  const activeRaw = normalizeText(fixMojibake(byHeader("activo") || toStringSafe(row[7])));
+  const isActive =
+    activeRaw === "si" ||
+    activeRaw === "s" ||
+    activeRaw === "yes" ||
+    activeRaw === "true" ||
+    activeRaw === "1";
+  const orderValue = Number(byHeader("orden") || toStringSafe(row[8]));
+  const order = Number.isFinite(orderValue) ? orderValue : 999;
+  const searchable = normalizeText(
+    [
+      id,
+      name,
+      category,
+      tags.join(" "),
+      fixMojibake(byHeader("autor") || toStringSafe(row[3])),
+      fixMojibake(byHeader("observaciones") || toStringSafe(row[5])),
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  if (!name || !link || !isActive) return null;
+
+  return {
+    id: id || name,
+    name,
+    category,
+    link,
+    order,
+    tags,
+    goalKeys,
+    searchable,
+  };
+}
+
+function normalizeHeaderName(value = "") {
+  return fixMojibake(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function parseCsvRows(text = "") {
+  const safeText = String(text || "").replace(/\r/g, "").trim();
+  if (!safeText) return [];
+
+  const delimiter = safeText.includes("\t") ? "\t" : ",";
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < safeText.length; index += 1) {
+    const char = safeText[index];
+    const nextChar = safeText[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === delimiter && !inQuotes) {
+      row.push(toStringSafe(cell));
+      cell = "";
+      continue;
+    }
+
+    if (char === "\n" && !inQuotes) {
+      row.push(toStringSafe(cell));
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  row.push(toStringSafe(cell));
+  if (row.some(Boolean)) rows.push(row);
+
+  return rows;
+}
+
 async function ensureLearningRouteLoaded(student, options = {}) {
   const studentId = getStudentIdentity(student);
   if (!studentId) return;
@@ -1257,9 +1743,11 @@ function normalizeArtKey(student) {
     normalizeStudentProcesses(student)[0] ||
     null;
   const rawValue = firstNonEmpty(
-    activeProcess?.arte,
     activeProcess?.detalle,
     activeProcess?.label,
+    activeProcess?.programa,
+    activeProcess?.instrumento,
+    activeProcess?.arte,
     student?.area,
     student?.instrumento,
     student?.programa
@@ -2115,10 +2603,13 @@ function renderHistoryPreview(student, items = [], config, isAuthenticated = tru
   const studentId = getStudentIdentity(student);
   const expanded = studentId ? historyExpansionState.get(studentId) === true : false;
   const latestItems = expanded ? sortedItems.slice(0, 8) : latestItem ? [latestItem] : [];
+  const processOptions = normalizeStudentProcesses(student);
 
   return `
     <div class="history-preview-list">
-      ${latestItems.map(renderHistoryCard).join("")}
+      ${latestItems
+        .map((item) => renderHistoryCard(item, processOptions))
+        .join("")}
       <div class="empty-state__actions">
         <button
           type="button"
@@ -2139,14 +2630,20 @@ function renderHistoryPreview(student, items = [], config, isAuthenticated = tru
   `;
 }
 
-function renderHistoryCard(item) {
+function renderHistoryCard(item, processOptions = []) {
   const mode = normalizeMode(item.mode);
-  const overridesCount = Object.keys(
-    normalizeStudentOverrides(item.studentOverrides, item.studentIds || [])
-  ).length;
+  const overrides = normalizeStudentOverrides(
+    item.studentOverrides,
+    item.studentIds || []
+  );
+  const overridesCount = Object.keys(overrides).length;
+  const teacherName = getHistoryTeacherName(item);
+  const selectedProcessKey = toStringSafe(
+    item?.process?.processKey || item?.processKey
+  );
 
   return `
-    <article class="history-preview-card">
+    <article class="history-preview-card" data-history-card>
       <header class="history-preview-card__header">
         <div>
           <h3 class="history-preview-card__title">
@@ -2171,8 +2668,31 @@ function renderHistoryCard(item) {
               ? `<span class="badge badge--soft">${escapeHtml(`${overridesCount} ajuste${overridesCount === 1 ? "" : "s"}`)}</span>`
               : ""
           }
+          ${
+            teacherName
+              ? `<span class="badge badge--soft">${escapeHtml(`Docente: ${teacherName}`)}</span>`
+              : ""
+          }
         </div>
       </header>
+
+      <div class="history-preview-card__group">
+        <p class="history-preview-card__group-title">Proceso</p>
+        <div class="empty-state__actions">
+          <select class="field__input" data-history-process-select>
+            <option value="">Sin categorizar</option>
+            ${renderHistoryProcessOptions(processOptions, selectedProcessKey)}
+          </select>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-history-action="assign-process"
+            data-bitacora-id="${escapeHtml(item.id)}"
+          >
+            Guardar proceso
+          </button>
+        </div>
+      </div>
 
       ${
         Array.isArray(item.etiquetas) && item.etiquetas.length
@@ -2189,6 +2709,8 @@ function renderHistoryCard(item) {
       <p class="history-preview-card__text">
         ${escapeHtml(truncateText(item.contenido || "", 180))}
       </p>
+
+      ${renderHistoryOverrides(item, overrides)}
 
       ${
         Array.isArray(item.studentRefs) && item.studentRefs.length > 1
@@ -2220,6 +2742,118 @@ function renderHistoryCard(item) {
   `;
 }
 
+function renderHistoryProcessOptions(processes = [], selectedKey = "") {
+  return (Array.isArray(processes) ? processes : [])
+    .map((process) => {
+      const processKey = toStringSafe(process?.processKey);
+      if (!processKey) return "";
+
+      const processLabel = toStringSafe(
+        process?.label ||
+          process?.detalle ||
+          process?.arte ||
+          process?.programa ||
+          "Proceso"
+      );
+      const selectedAttr = processKey === selectedKey ? " selected" : "";
+      return `<option value="${escapeHtml(processKey)}"${selectedAttr}>${escapeHtml(processLabel)}</option>`;
+    })
+    .join("");
+}
+
+function getHistoryTeacherName(item = {}) {
+  return firstNonEmpty(
+    item?.process?.docente,
+    item?.author?.name,
+    item?.author?.displayName,
+    item?.author?.email
+  );
+}
+
+function renderHistoryOverrides(item, overrides = {}) {
+  const entries = Object.entries(overrides || {});
+  if (!entries.length) return "";
+
+  const studentNameById = new Map(
+    (Array.isArray(item?.studentRefs) ? item.studentRefs : []).map((student) => [
+      toStringSafe(student?.id),
+      toStringSafe(student?.name),
+    ])
+  );
+
+  const rows = entries
+    .map(([studentId, data]) => {
+      const tarea = toStringSafe(data?.tareas);
+      const componenteCorporal = Array.isArray(data?.componenteCorporal)
+        ? data.componenteCorporal
+        : [];
+      const componenteTecnico = Array.isArray(data?.componenteTecnico)
+        ? data.componenteTecnico
+        : [];
+      const componenteTeorico = Array.isArray(data?.componenteTeorico)
+        ? data.componenteTeorico
+        : [];
+      const componenteObras = Array.isArray(data?.componenteObras)
+        ? data.componenteObras
+        : [];
+      const etiquetas = Array.isArray(data?.etiquetas) ? data.etiquetas : [];
+      const hasAnyComponent =
+        componenteCorporal.length ||
+        componenteTecnico.length ||
+        componenteTeorico.length ||
+        componenteObras.length ||
+        etiquetas.length;
+      if (!tarea && !hasAnyComponent) return "";
+
+      const studentName =
+        studentNameById.get(toStringSafe(studentId)) ||
+        toStringSafe(studentId) ||
+        "Estudiante";
+
+      return `
+        <div class="history-preview-card__group">
+          <p class="history-preview-card__group-title">Ajustes de ${escapeHtml(studentName)}</p>
+          ${
+            tarea
+              ? `
+                <p class="history-preview-card__group-title">Tareas/observaciones</p>
+                <p class="history-preview-card__text">${escapeHtml(truncateText(tarea, 240))}</p>
+              `
+              : ""
+          }
+          ${renderOverrideSection("Componente corporal", componenteCorporal)}
+          ${renderOverrideSection("Componente técnico", componenteTecnico)}
+          ${renderOverrideSection("Componente teórico", componenteTeorico)}
+          ${renderOverrideSection("Componente de obras", componenteObras)}
+          ${renderOverrideSection("Complementario", etiquetas)}
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join("");
+
+  if (!rows) return "";
+
+  return `
+    <section class="history-preview-card__overrides">
+      ${rows}
+    </section>
+  `;
+}
+
+function renderOverrideSection(label, values = []) {
+  if (!Array.isArray(values) || !values.length) return "";
+
+  return `
+    <p class="history-preview-card__group-title">${escapeHtml(label)}</p>
+    <div class="history-preview-card__tags">
+      ${values
+        .map((value) => `<span class="badge badge--soft">${escapeHtml(value)}</span>`)
+        .join("")}
+    </div>
+  `;
+}
+
 async function ensureStudentBitacorasLoaded(student) {
   const studentRef = getStudentIdentity(student);
   if (!studentRef) return;
@@ -2230,9 +2864,9 @@ async function ensureStudentBitacorasLoaded(student) {
   setBitacorasLoading(true);
 
   try {
-    const response = await getBitacorasByStudent(studentRef, {
-      processKey: currentProfileProcessKey || "",
-    });
+    // Traemos todo el historial del estudiante. El filtro por proceso se resuelve
+    // en UI para no perder registros importados que aún no traen processKey.
+    const response = await getBitacorasByStudent(studentRef);
     const items = normalizeBitacorasResponse(response);
 
     setBitacorasForStudent(studentRef, items);
@@ -2260,9 +2894,8 @@ async function reloadHistory(student) {
   try {
     clearAppError();
 
-    const response = await getBitacorasByStudent(studentRef, {
-      processKey: currentProfileProcessKey || "",
-    });
+    // Mismo criterio que en la carga inicial: no filtrar por processKey en API.
+    const response = await getBitacorasByStudent(studentRef);
     const items = normalizeBitacorasResponse(response);
 
     setBitacorasForStudent(studentRef, items);
@@ -2279,6 +2912,89 @@ async function reloadHistory(student) {
   }
 }
 
+async function assignProcessToBitacora(student, bitacoraId, processKey = "") {
+  const safeBitacoraId = toStringSafe(bitacoraId);
+  if (!safeBitacoraId) return;
+
+  try {
+    clearAppError();
+
+    const currentItem = await getBitacoraById(safeBitacoraId);
+    if (!currentItem) {
+      throw new Error("No se encontró la bitácora para actualizar su proceso.");
+    }
+
+    const safeProcessKey = toStringSafe(processKey);
+    const processOptions = normalizeStudentProcesses(student);
+    const selectedProcess = safeProcessKey
+      ? resolveStudentProcess(student, safeProcessKey) ||
+        processOptions.find(
+          (process) => toStringSafe(process?.processKey) === safeProcessKey
+        ) ||
+        null
+      : null;
+    const currentProcess = currentItem?.process || {};
+
+    const nextProcess = selectedProcess
+      ? {
+          processKey:
+            toStringSafe(selectedProcess?.processKey) || safeProcessKey,
+          processLabel: toStringSafe(
+            selectedProcess?.label ||
+              selectedProcess?.detalle ||
+              selectedProcess?.arte
+          ),
+          area: toStringSafe(selectedProcess?.arte || selectedProcess?.area),
+          modalidad: toStringSafe(selectedProcess?.modalidad),
+          docente: toStringSafe(
+            firstNonEmpty(
+              currentProcess?.docente,
+              currentItem?.author?.name,
+              student?.docente,
+              student?.teacher
+            )
+          ),
+          sede: toStringSafe(selectedProcess?.sede),
+          programa: toStringSafe(
+            selectedProcess?.programa || selectedProcess?.instrumento
+          ),
+        }
+      : {
+          processKey: "",
+          processLabel: "",
+          area: "",
+          modalidad: "",
+          docente: toStringSafe(
+            firstNonEmpty(
+              currentProcess?.docente,
+              currentItem?.author?.name,
+              student?.docente,
+              student?.teacher
+            )
+          ),
+          sede: "",
+          programa: "",
+        };
+
+    await updateBitacora(safeBitacoraId, {
+      process: nextProcess,
+      metadata: {
+        ...(currentItem?.metadata || {}),
+        manualProcessAssignment: true,
+        manualProcessAssignedAt: new Date().toISOString(),
+      },
+    });
+
+    await reloadHistory(student);
+    renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+  } catch (error) {
+    console.error("No se pudo actualizar el proceso de la bitácora:", error);
+    setAppError(
+      error?.message || "No se pudo guardar el proceso de la bitácora."
+    );
+  }
+}
+
 function getBitacorasFromState(studentOrRef) {
   const selectedProcess =
     studentOrRef && typeof studentOrRef === "object"
@@ -2291,7 +3007,7 @@ function getBitacorasFromState(studentOrRef) {
       selectedProcess?.detalle || selectedProcess?.label || ""
     );
 
-    return items.filter((item) => {
+    const filtered = items.filter((item) => {
       const itemProcessKey = toStringSafe(
         item?.process?.processKey || item?.processKey
       );
@@ -2313,8 +3029,15 @@ function getBitacorasFromState(studentOrRef) {
         .map((value) => normalizeText(value))
         .filter(Boolean);
 
+      // Mantenemos visibles los registros sin proceso para permitir categorización manual.
+      if (!itemProcessKey && !itemDetails.length) {
+        return true;
+      }
+
       return itemDetails.includes(selectedDetail);
     });
+
+    return filtered;
   };
   const studentRef =
     studentOrRef && typeof studentOrRef === "object"
