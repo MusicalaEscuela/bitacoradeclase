@@ -2,11 +2,11 @@ import { CONFIG } from "../config.js";
 import { resolveUserAccess } from "../authz.js";
 import {
   getState,
+  patchSlice,
   setAppError,
   clearAppError,
-  setSearchQuery,
   setSearchResults,
-  setFilteredResults,
+  setFilteredStudentIds,
   setSelectedStudent,
   addSelectedStudentId,
   removeSelectedStudentId,
@@ -35,6 +35,9 @@ let currentNavigateTo = null;
 let currentSubscribe = null;
 let currentModalStudentId = null;
 let hasRetriedInitialLoad = false;
+let searchInputDebounceTimer = null;
+
+const SEARCH_INPUT_DEBOUNCE_MS = 120;
 
 export async function beforeEnter({ payload } = {}) {
   clearAppError();
@@ -127,7 +130,9 @@ async function ensureStudentsLoaded(payload = {}) {
     const visibleStudents = getVisibleStudents(state, students);
 
     setSearchResults(students);
-    setFilteredResults(filterStudents(visibleStudents, state?.search?.query || ""));
+    setFilteredStudentIds(
+      filterStudentIds(visibleStudents, state?.search?.query || "")
+    );
     ensureInitialSelection(visibleStudents, state, payload);
     return;
   }
@@ -147,7 +152,7 @@ async function refreshStudents(payload = {}) {
 
     setStudentsList(students);
     setSearchResults(students);
-    setFilteredResults(filterStudents(visibleStudents, query));
+    setFilteredStudentIds(filterStudentIds(visibleStudents, query));
     ensureInitialSelection(visibleStudents, state, payload);
   } catch (error) {
     console.error("Error cargando estudiantes:", error);
@@ -354,18 +359,27 @@ function handleSearchInput(event) {
     ? state.search.results
     : [];
 
-  setSearchQuery(query);
-  setFilteredResults(filterStudents(students, query));
+  if (searchInputDebounceTimer) {
+    clearTimeout(searchInputDebounceTimer);
+  }
+
+  searchInputDebounceTimer = setTimeout(() => {
+    applySearchQuery(query, students);
+    searchInputDebounceTimer = null;
+  }, SEARCH_INPUT_DEBOUNCE_MS);
 }
 
 function handleClearSearch() {
-  const state = getState();
-  const allResults = Array.isArray(state?.search?.results)
-    ? state.search.results
-    : [];
+  if (searchInputDebounceTimer) {
+    clearTimeout(searchInputDebounceTimer);
+    searchInputDebounceTimer = null;
+  }
 
-  setSearchQuery("");
-  setFilteredResults(filterStudents(allResults, ""));
+  patchSlice("search", {
+    query: "",
+    filteredIds: [],
+    lastSearchAt: Date.now(),
+  });
 
   const input = viewRoot?.querySelector("#student-search-input");
   if (input) {
@@ -1045,6 +1059,20 @@ function filterStudents(students, query) {
     .slice(0, 12);
 }
 
+function filterStudentIds(students, query) {
+  return filterStudents(students, query)
+    .map((student) => getStudentIdentity(student))
+    .filter(Boolean);
+}
+
+function applySearchQuery(query, students) {
+  patchSlice("search", {
+    query: String(query || ""),
+    filteredIds: filterStudentIds(students, query),
+    lastSearchAt: Date.now(),
+  });
+}
+
 function syncSelectedStudentFromId(studentId, baseState) {
   const safeId = toStringSafe(studentId);
   if (!safeId) return;
@@ -1145,6 +1173,10 @@ function cleanupView() {
   if (unsubscribeView) {
     unsubscribeView();
     unsubscribeView = null;
+  }
+  if (searchInputDebounceTimer) {
+    clearTimeout(searchInputDebounceTimer);
+    searchInputDebounceTimer = null;
   }
 
   currentModalStudentId = null;
