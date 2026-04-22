@@ -68,6 +68,11 @@ let currentEditorMode = CONFIG?.modes?.individual || "individual";
 let currentEditorProcessKey = "";
 let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
+let draftInputDebounceTimer = null;
+let groupSearchDebounceTimer = null;
+
+const DRAFT_INPUT_DEBOUNCE_MS = 140;
+const GROUP_SEARCH_DEBOUNCE_MS = 100;
 
 export async function beforeEnter({ payload, navigateTo } = {}) {
   clearAppError();
@@ -578,7 +583,7 @@ function bindEditorEvents(student) {
     contenidoInput,
   ].forEach((input) => {
     if (!input) return;
-    input.addEventListener("input", () => handleDraftInput(student));
+    input.addEventListener("input", () => scheduleDraftInput(student));
     input.addEventListener("change", () => handleDraftInput(student));
   });
 
@@ -590,7 +595,7 @@ function bindEditorEvents(student) {
 
   if (groupSearchInput) {
     groupSearchInput.addEventListener("input", () => {
-      renderGroupSelectionBlocks(student);
+      scheduleGroupSearchRender(student);
     });
   }
 
@@ -662,7 +667,7 @@ function bindEditorEvents(student) {
     overridesContainer.addEventListener("input", (event) => {
       const textarea = event.target.closest("[data-override-textarea]");
       if (textarea) {
-        handleDraftInput(student);
+        scheduleDraftInput(student);
         return;
       }
 
@@ -855,6 +860,28 @@ function handleDraftInput(student) {
   const draft = updateDraftFromForm(student);
   renderDraftMetaBlock(student);
   return draft;
+}
+
+function scheduleDraftInput(student) {
+  if (draftInputDebounceTimer) {
+    clearTimeout(draftInputDebounceTimer);
+  }
+
+  draftInputDebounceTimer = setTimeout(() => {
+    handleDraftInput(student);
+    draftInputDebounceTimer = null;
+  }, DRAFT_INPUT_DEBOUNCE_MS);
+}
+
+function scheduleGroupSearchRender(student) {
+  if (groupSearchDebounceTimer) {
+    clearTimeout(groupSearchDebounceTimer);
+  }
+
+  groupSearchDebounceTimer = setTimeout(() => {
+    renderGroupSelectionBlocks(student);
+    groupSearchDebounceTimer = null;
+  }, GROUP_SEARCH_DEBOUNCE_MS);
 }
 
 function handleModeChange(student, mode) {
@@ -4105,6 +4132,14 @@ function cleanupView() {
   if (unsubscribeView) {
     unsubscribeView();
     unsubscribeView = null;
+  }
+  if (draftInputDebounceTimer) {
+    clearTimeout(draftInputDebounceTimer);
+    draftInputDebounceTimer = null;
+  }
+  if (groupSearchDebounceTimer) {
+    clearTimeout(groupSearchDebounceTimer);
+    groupSearchDebounceTimer = null;
   }
 
   viewRoot = null;
