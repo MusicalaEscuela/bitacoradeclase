@@ -34,6 +34,7 @@ let unsubscribeView = null;
 let currentNavigateTo = null;
 let currentSubscribe = null;
 let currentModalStudentId = null;
+let currentCanUseHub = false;
 let hasRetriedInitialLoad = false;
 let searchInputDebounceTimer = null;
 
@@ -41,6 +42,7 @@ const SEARCH_INPUT_DEBOUNCE_MS = 120;
 
 export async function beforeEnter({ payload } = {}) {
   clearAppError();
+  if (!canUseTeacherHub(getState()?.auth?.user)) return;
   await ensureStudentsLoaded(payload);
 }
 
@@ -64,6 +66,7 @@ export async function render({
     syncSelectedStudentFromId(selectedFromPayload, safeState);
   }
 
+  currentCanUseHub = canUseTeacherHub(safeState?.auth?.user);
   root.innerHTML = buildSearchViewMarkup(safeState, safeConfig);
 
   bindViewEvents();
@@ -87,8 +90,15 @@ export async function render({
         : false;
       const isLoading = Boolean(safeNextState?.students?.loading);
       const authReady = Boolean(safeNextState?.auth?.ready);
+      const canUseHub = canUseTeacherHub(safeNextState?.auth?.user);
 
-      if (authReady && !hasStudents && !isLoading && !hasRetriedInitialLoad) {
+      if (canUseHub !== currentCanUseHub) {
+        currentCanUseHub = canUseHub;
+        viewRoot.innerHTML = buildSearchViewMarkup(safeNextState, safeConfig);
+        bindViewEvents();
+      }
+
+      if (authReady && canUseHub && !hasStudents && !isLoading && !hasRetriedInitialLoad) {
         hasRetriedInitialLoad = true;
         refreshStudents().catch((error) => {
           console.error("Error reintentando carga inicial de estudiantes:", error);
@@ -190,24 +200,47 @@ function ensureInitialSelection(students, state, payload = {}) {
 
 function getVisibleStudents(state, students = []) {
   const access = resolveUserAccess(state?.auth?.user);
-  if (access.role !== CONFIG.roles.student) {
-    return students;
+  if (access.role !== CONFIG.roles.admin && access.role !== CONFIG.roles.teacher) {
+    return [];
   }
 
-  return students.filter((student) =>
-    getStudentIdentity(student) === access.linkedStudentId
-  );
+  return students;
 }
 
 function buildSearchViewMarkup(state, config) {
   const query = escapeHtml(state?.search?.query || "");
-  const access = resolveUserAccess(state?.auth?.user);
-  const isStudent = access.role === CONFIG.roles.student;
+  const canUseHub = canUseTeacherHub(state?.auth?.user);
   const title =
     config?.app?.name ||
     config?.appName ||
     config?.title ||
     "Bitácoras de Clase";
+
+  if (!canUseHub) {
+    return `
+      <section class="view-shell view-shell--search">
+        <header class="view-header">
+          <div class="view-header__content">
+            <p class="view-eyebrow">${escapeHtml(title)}</p>
+            <h1 class="view-title">Ingreso a HUB Docentes Musicala</h1>
+            <p class="view-description">
+              Para este HUB solo pueden ingresar Admin y Docentes.
+            </p>
+          </div>
+        </header>
+
+        <section class="empty-state">
+          <p class="empty-state__title">Inicia sesion con Google</p>
+          <p class="empty-state__text">
+            Este espacio es interno para busqueda, perfiles y bitacoras pedagogicas.
+          </p>
+          <button type="button" class="btn btn--primary" data-action="login-google">
+            Entrar con Google
+          </button>
+        </section>
+      </section>
+    `;
+  }
 
   return `
     <section class="view-shell view-shell--search">
@@ -303,6 +336,11 @@ function buildSearchViewMarkup(state, config) {
   `;
 }
 
+function canUseTeacherHub(user) {
+  const access = resolveUserAccess(user);
+  return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
+}
+
 function bindViewEvents() {
   if (!viewRoot) return;
 
@@ -316,10 +354,6 @@ function bindViewEvents() {
   const resultsContainer = viewRoot.querySelector("#students-results");
   const modalRoot = viewRoot.querySelector("#student-modal-root");
   const bulkActions = viewRoot.querySelector(".search-toolbar__bulk-actions");
-
-  if (bulkActions && access.role === CONFIG.roles.student) {
-    bulkActions.hidden = true;
-  }
 
   if (input) {
     input.addEventListener("input", handleSearchInput);

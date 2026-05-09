@@ -79,10 +79,7 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
 
   const state = getState();
   const access = resolveUserAccess(state?.auth?.user);
-  const requestedStudentRef =
-    access.role === CONFIG.roles.student
-      ? access.linkedStudentId
-      : resolveStudentRefFromPayload(payload);
+  const requestedStudentRef = resolveStudentRefFromPayload(payload);
   const requestedMode = getRequestedModeFromPayload(payload);
   const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const student = getStudentFromState(state, requestedStudentRef);
@@ -90,11 +87,7 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   if (!student || !canViewStudent(state?.auth?.user, getStudentIdentity(student))) {
     setAppError("No hay un estudiante seleccionado.");
     if (typeof navigateTo === "function") {
-      navigateTo(
-        access.role === CONFIG.roles.student
-          ? CONFIG.routes.profile
-          : CONFIG.routes.search
-      );
+      navigateTo(CONFIG.routes.search);
     }
     return;
   }
@@ -144,10 +137,7 @@ export async function render({
   const safeState = state || getState();
   const safeConfig = config || CONFIG;
   const access = resolveUserAccess(safeState?.auth?.user);
-  const requestedStudentRef =
-    access.role === CONFIG.roles.student
-      ? access.linkedStudentId
-      : resolveStudentRefFromPayload(payload);
+  const requestedStudentRef = resolveStudentRefFromPayload(payload);
   const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const student = getStudentFromState(safeState, requestedStudentRef);
 
@@ -250,8 +240,8 @@ async function ensureBitacorasLoaded(student) {
       setBitacorasForStudent(fallbackId, items);
     }
   } catch (error) {
-    console.error("Error cargando bitácoras del estudiante:", error);
-    setAppError(error?.message || "No se pudieron cargar las bitácoras.");
+    console.error("Error cargando bitacoras del estudiante:", error);
+    setAppError(error?.message || "No se pudieron cargar las bitacoras.");
   } finally {
     setBitacorasLoading(false);
   }
@@ -335,7 +325,7 @@ function buildEditorMarkup({
                 !isAuthenticated
                   ? `
                     <div class="message-box message-box--warning">
-                      Inicia sesiÃ³n con Google para consultar el historial y guardar bitÃ¡coras en Firebase.
+                      Inicia sesión con Google para consultar el historial y guardar bitacoras en Firebase.
                     </div>
                   `
                   : ""
@@ -344,7 +334,7 @@ function buildEditorMarkup({
                 isAuthenticated && !canEditBitacoras
                   ? `
                     <div class="message-box message-box--warning">
-                      Tu cuenta de estudiante solo puede consultar su bitacora y su ruta. No puede editar registros.
+                      Tu cuenta no tiene permisos para editar registros en este HUB.
                     </div>
                   `
                   : ""
@@ -419,7 +409,7 @@ function buildEditorMarkup({
                   </div>
                   <p class="section-text">
                     El estudiante actual ya viene seleccionado. Agreguen o quiten los
-                    demás sin duplicar bitácoras como si fueran panfletos.
+                    demás sin duplicar bitacoras como si fueran panfletos.
                   </p>
                 </div>
 
@@ -1429,7 +1419,7 @@ function buildHistoryPrintDocument(student, items = []) {
           </section>
 
           <footer class="report-footer">
-            Documento preparado desde Bitacoras de Clase para impresion o guardado en PDF.
+            Documento preparado desde Bitácoras de Clase para impresion o guardado en PDF.
           </footer>
         </main>
         <script>
@@ -2112,7 +2102,7 @@ function renderBitacorasHistory(
       <div class="empty-state">
         <p class="empty-state__title">Historial protegido</p>
         <p class="empty-state__text">
-          Inicia sesiÃ³n con Google para ver las bitÃ¡coras guardadas de este estudiante.
+          Inicia sesión con Google para ver las bitacoras guardadas de este estudiante.
         </p>
       </div>
     `;
@@ -2135,7 +2125,7 @@ function renderBitacorasHistory(
         <p class="empty-state__text">
           ${escapeHtml(
             config?.text?.emptyBitacoras ||
-              "Este estudiante aún no tiene bitácoras registradas."
+              "Este estudiante aún no tiene bitacoras registradas."
           )}
         </p>
       </div>
@@ -3142,7 +3132,7 @@ function buildMusicalaEditorMarkup({
     config?.app?.name ||
     config?.appName ||
     config?.title ||
-    "Bitacoras de Clase";
+    "Bitácoras de Clase";
   const isGroup = draft.mode === CONFIG.modes.group;
   const draftFields = getStructuredDraftFields(draft, student);
   const catalogs = cachedCatalogs || getEmptyCatalogs();
@@ -3199,7 +3189,7 @@ function buildMusicalaEditorMarkup({
                 !isAuthenticated
                   ? `
                     <div class="message-box message-box--warning">
-                      Inicia sesion con Google para consultar el historial y guardar bitacoras en Firebase.
+                      Inicia sesión con Google para consultar el historial y guardar bitacoras en Firebase.
                     </div>
                   `
                   : ""
@@ -3333,8 +3323,8 @@ function buildMusicalaEditorMarkup({
                   label: "Categorias",
                   inputId: "bitacora-etiquetas-input",
                   listId: "bitacora-categorias-list",
-                  placeholder: "Escribe o elige una categoria y agrégala...",
-                  hint: "Puedes seleccionar varias categorias para la misma clase.",
+                  placeholder: "Escribe o elige una categoría y agrégala...",
+                  hint: "Puedes seleccionar varias categorías para la misma clase.",
                   options: categoriasOptions,
                   selectedValues: draft.etiquetas || [],
                 })}
@@ -3461,7 +3451,7 @@ function buildMusicalaEditorMarkup({
             <header class="editor-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Bitacoras registradas (${escapeHtml(activeProcessLabel)})</h2>
+                <h2 class="panel-header__title">Bitácoras registradas (${escapeHtml(activeProcessLabel)})</h2>
               </div>
               <div class="editor-history__actions">
                 <button type="button" class="btn btn--ghost btn--sm" id="bitacora-print-btn">
@@ -3823,7 +3813,7 @@ function renderStudentOverrideCard(student, override, catalogOptions = {}) {
           >${escapeHtml(selectedOverride.tareas)}</textarea>
         </label>
         <div class="editor-form-grid editor-form-grid--2">
-          ${renderStudentOverrideField(studentId, "etiquetas", "Categorias", "Agrega categorias solo para este estudiante...", selectedOverride.etiquetas, catalogOptions.etiquetas)}
+          ${renderStudentOverrideField(studentId, "etiquetas", "Categorias", "Agrega categorías solo para este estudiante...", selectedOverride.etiquetas, catalogOptions.etiquetas)}
           ${renderStudentOverrideField(studentId, "componenteCorporal", "Componente corporal", "Ejercicios diferenciales...", selectedOverride.componenteCorporal, catalogOptions.componenteCorporal)}
         </div>
         <div class="editor-form-grid editor-form-grid--2">
