@@ -26,6 +26,7 @@ import {
 import { getStudentProfile } from "../api/students.api.js";
 import {
   getStudentRouteRecord,
+  saveStudentRouteProgressRecord,
   saveStudentRouteRecord,
 } from "../api/student-routes.api.js";
 import {
@@ -44,7 +45,6 @@ import {
   normalizeBitacorasResponse as normalizeBitacorasResponseShared,
   normalizeMode,
   normalizeText,
-  isPlainObject,
   normalizeStudentIds,
   normalizeStudentRefs,
   resolveStudentRefFromPayload,
@@ -59,12 +59,6 @@ let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let historyExpansionState = new Map();
-let guitarLibraryResources = [];
-let guitarLibraryLoaded = false;
-let guitarLibraryLoadingPromise = null;
-
-const GUITAR_LIBRARY_ASSET_URL = "assets/biblioteca-guitarra.csv";
-const GUITAR_LIBRARY_PUBLIC_URL = "https://musicalaescuela.github.io/bibliotecaguitarra/";
 
 const ROUTE_COMPONENTS = Object.freeze([
   { id: "corporal", label: "Componente corporal" },
@@ -192,10 +186,10 @@ const PIANO_LEARNING_ROUTE = Object.freeze({
         {
           nombre: "Técnica",
           items: [
-            { nombre: "Gimnasia dactilar individuales", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
-            { nombre: "Gimnasia dactilar dobles", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
-            { nombre: "Gimnasia dactilar intermedios", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
-            { nombre: "Gimnasia dactilar alternados", tipo: "progressive", niveles: Array.from({ length: 20 }, (_, i) => i + 1) },
+            { nombre: "Gimnasia dactilar individuales", tipo: "single" },
+            { nombre: "Gimnasia dactilar dobles", tipo: "single" },
+            { nombre: "Gimnasia dactilar intermedios", tipo: "single" },
+            { nombre: "Gimnasia dactilar alternados", tipo: "single" },
           ],
         },
         {
@@ -601,7 +595,6 @@ const routeExpansionState = new Map();
 
 export async function beforeEnter({ payload, navigateTo } = {}) {
   clearAppError();
-  await ensureGuitarLibraryLoaded();
 
   let state = getState();
   const access = resolveUserAccess(state?.auth?.user);
@@ -609,20 +602,13 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const fallbackSelectedId = getSelectedStudentId();
   const selectedStudentRef =
-    access.role === CONFIG.roles.student
-      ? access.linkedStudentId || fallbackSelectedId || null
-      : requestedStudentRef || fallbackSelectedId || null;
+    requestedStudentRef || fallbackSelectedId || null;
 
   let student = getStudentFromState(state, selectedStudentRef);
 
-  if (!student && access.role === CONFIG.roles.student && selectedStudentRef) {
-    student = await ensureStudentLoadedForProfile(selectedStudentRef);
-    state = getState();
-  }
-
   if (!student || !canViewStudent(state?.auth?.user, getStudentIdentity(student))) {
     setAppError("No hay estudiante seleccionado.");
-    if (access.role !== CONFIG.roles.student && typeof navigateTo === "function") {
+    if (typeof navigateTo === "function") {
       navigateTo(CONFIG.routes.search);
     }
     return;
@@ -631,9 +617,7 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   currentProfileStudentKey = getStudentIdentity(student);
   currentProfileProcessKey =
     resolveStudentProcess(student, requestedProcessRef)?.processKey || "";
-  if (access.role !== CONFIG.roles.student) {
-    await ensureStudentBitacorasLoaded(student);
-  }
+  await ensureStudentBitacorasLoaded(student);
   await ensureLearningRouteLoaded(student);
 }
 
@@ -681,11 +665,7 @@ export async function render({
 
   const safeState = state || getState();
   const safeConfig = config || CONFIG;
-  const access = resolveUserAccess(safeState?.auth?.user);
-  const requestedStudentRef =
-    access.role === CONFIG.roles.student
-      ? access.linkedStudentId
-      : resolveStudentRefFromPayload(payload);
+  const requestedStudentRef = resolveStudentRefFromPayload(payload);
   const requestedProcessRef = getRequestedProcessFromPayload(payload);
   const student = getStudentFromState(safeState, requestedStudentRef);
 
@@ -757,7 +737,6 @@ function buildProfileMarkup(student, state, config) {
   const bitacoras = getBitacorasFromState(student);
   const isAuthenticated = Boolean(state?.auth?.isAuthenticated);
   const access = resolveUserAccess(state?.auth?.user);
-  const isStudentView = access.role === CONFIG.roles.student;
   const studentId = getStudentIdentity(student);
   const routeExpanded = studentId ? routeExpansionState.get(studentId) === true : false;
   const title =
@@ -878,19 +857,6 @@ function buildProfileMarkup(student, state, config) {
             </div>
           </section>
 
-          <section class="card profile-summary">
-            <header class="panel-header">
-              <div>
-                <p class="panel-header__eyebrow">Práctica</p>
-                <h2 class="panel-header__title">Practica ahora</h2>
-              </div>
-            </header>
-
-            <div id="profile-practice-content">
-              ${renderPracticeNow(student, bitacoras)}
-            </div>
-          </section>
-
           <section class="card profile-history">
             <header class="panel-header profile-history__header">
               <div>
@@ -920,9 +886,6 @@ function buildProfileMarkup(student, state, config) {
 function bindProfileEvents(student) {
   if (!viewRoot) return;
 
-  const access = resolveUserAccess(getState()?.auth?.user);
-  const isStudentView = access.role === CONFIG.roles.student;
-
   const backBtn = viewRoot.querySelector("#profile-back-btn");
   const openEditorBtn = viewRoot.querySelector("#profile-open-editor-btn");
   const refreshBtn = viewRoot.querySelector("#profile-refresh-history-btn");
@@ -930,16 +893,6 @@ function bindProfileEvents(student) {
   const routeContainer = viewRoot.querySelector("#profile-route-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const processSelect = viewRoot.querySelector("#profile-process-select");
-
-  if (isStudentView) {
-    backBtn?.remove();
-    openEditorBtn?.remove();
-    refreshBtn?.remove();
-
-    if (historyContainer) {
-      historyContainer.innerHTML = renderStudentHistoryLocked();
-    }
-  }
 
   if (backBtn) {
     backBtn.addEventListener("click", () => {
@@ -1023,7 +976,23 @@ function bindProfileEvents(student) {
     if (action === "refresh-route") {
       await reloadLearningRoute(student);
     }
+
+    if (action === "save-manual-route") {
+      await saveManualLearningRoute(student);
+    }
   });
+
+  if (routeContainer) {
+    routeContainer.addEventListener("click", async (event) => {
+      const undoButton = event.target.closest("[data-route-goal-undo]");
+      if (!undoButton) return;
+
+      const goalId = undoButton.getAttribute("data-route-goal-undo");
+      if (!goalId) return;
+
+      await undoLearningGoal(student, goalId);
+    });
+  }
 
   if (routeContainer) {
     routeContainer.addEventListener("change", async (event) => {
@@ -1058,7 +1027,6 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   if (!student || !viewRoot) return;
 
   const summaryContainer = viewRoot.querySelector("#profile-summary-content");
-  const practiceContainer = viewRoot.querySelector("#profile-practice-content");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
@@ -1089,10 +1057,6 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
     summaryContainer.innerHTML = renderSummary(student, bitacoras);
   }
 
-  if (practiceContainer) {
-    practiceContainer.innerHTML = renderPracticeNow(student, bitacoras);
-  }
-
   if (routeContainer) {
     routeContainer.innerHTML = renderLearningRoute(student);
   }
@@ -1109,30 +1073,15 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   }
 
   if (historyContainer) {
-    const access = resolveUserAccess(state?.auth?.user);
-    historyContainer.innerHTML =
-      access.role === CONFIG.roles.student
-        ? renderStudentHistoryLocked()
-        : renderHistoryPreview(
-            student,
-            bitacoras,
-            config,
-            Boolean(state?.auth?.isAuthenticated)
-          );
+    historyContainer.innerHTML = renderHistoryPreview(
+      student,
+      bitacoras,
+      config,
+      Boolean(state?.auth?.isAuthenticated)
+    );
   }
 
   applyProfileFocusLayout(student);
-}
-
-function renderStudentHistoryLocked() {
-  return `
-    <div class="empty-state">
-      <p class="empty-state__title">Historial no disponible</p>
-      <p class="empty-state__text">
-        Por ahora este perfil de estudiante muestra solo la informacion general.
-      </p>
-    </div>
-  `;
 }
 
 function renderStudentBadges(student) {
@@ -1230,434 +1179,6 @@ function renderSummary(student, bitacoras = []) {
   `;
 }
 
-function renderPracticeNow(student, bitacoras = []) {
-  const artKey = normalizeArtKey(student);
-
-  if (artKey !== "guitarra") {
-    return `
-      <div class="empty-state">
-        <p class="empty-state__title">Práctica guiada no disponible</p>
-        <p class="empty-state__text">
-          Este panel está habilitado por ahora para el proceso de guitarra.
-        </p>
-      </div>
-    `;
-  }
-
-  if (!guitarLibraryLoaded || !guitarLibraryResources.length) {
-    return `
-      <div class="empty-state">
-        <p class="empty-state__title">Cargando biblioteca</p>
-        <p class="empty-state__text">
-          Aún no se pudo leer el catálogo de ejercicios. Puedes abrir la biblioteca completa mientras tanto.
-        </p>
-        <div class="empty-state__actions">
-          <a class="btn btn--ghost btn--sm" href="${escapeHtml(GUITAR_LIBRARY_PUBLIC_URL)}" target="_blank" rel="noopener noreferrer">
-            Abrir biblioteca
-          </a>
-        </div>
-      </div>
-    `;
-  }
-
-  const recommendations = buildPracticeRecommendations(student, bitacoras);
-
-  return `
-    <div class="summary-list">
-      <article class="summary-item">
-        <span class="summary-item__label">Haz esto ahora</span>
-        <strong class="summary-item__value">${escapeHtml(String(recommendations.primary.length || 0))} sugerencias</strong>
-      </article>
-      ${renderPracticeLinks("Sugerido por tu última bitácora y objetivos", recommendations.primary)}
-      ${renderPracticeLinks("Más opciones según tu ruta actual", recommendations.secondary)}
-      <div class="empty-state__actions">
-        <a class="btn btn--ghost btn--sm" href="${escapeHtml(GUITAR_LIBRARY_PUBLIC_URL)}" target="_blank" rel="noopener noreferrer">
-          Ver biblioteca completa
-        </a>
-      </div>
-    </div>
-  `;
-}
-
-function renderPracticeLinks(title, links = []) {
-  if (!Array.isArray(links) || !links.length) {
-    return `
-      <div class="history-preview-card__group">
-        <p class="history-preview-card__group-title">${escapeHtml(title)}</p>
-        <p class="history-preview-card__text">Aún sin coincidencias fuertes. Prueba recargar o revisar etiquetas de bitácora.</p>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="history-preview-card__group">
-      <p class="history-preview-card__group-title">${escapeHtml(title)}</p>
-      <div class="history-preview-card__tags">
-        ${links
-          .map(
-            (item) => `
-              <a
-                class="btn btn--ghost btn--sm"
-                href="${escapeHtml(item.link)}"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="${escapeHtml(item.category || "")}"
-              >
-                ${escapeHtml(item.name)}
-              </a>
-            `
-          )
-          .join("")}
-      </div>
-    </div>
-  `;
-}
-
-function buildPracticeRecommendations(student, bitacoras = []) {
-  const latestBitacora = getLatestBitacora(bitacoras);
-  const studentId = getStudentIdentity(student);
-  const goals = Array.isArray(getStudentGoals(studentId))
-    ? getStudentGoals(studentId)
-    : [];
-  const activeGoals = goals
-    .filter((goal) => toStringSafe(goal?.status).toLowerCase() !== "completed")
-    .slice(0, 8);
-
-  const latestTerms = extractBitacoraTerms(latestBitacora, studentId);
-  const goalTerms = activeGoals.flatMap((goal) =>
-    extractTermsFromText(`${goal?.title || ""} ${goal?.description || ""}`)
-  );
-  const allTerms = [...new Set([...latestTerms, ...goalTerms])].filter(Boolean);
-  const goalTermSet = new Set(goalTerms);
-  const latestTermSet = new Set(latestTerms);
-
-  const scored = guitarLibraryResources
-    .map((entry) => {
-      let score = 0;
-
-      allTerms.forEach((term) => {
-        if (!term || term.length < 3) return;
-        if (entry.searchable.includes(term)) {
-          score += term.length > 8 ? 10 : 6;
-          if (goalTermSet.has(term)) score += 3;
-          if (latestTermSet.has(term)) score += 4;
-        }
-      });
-
-      if (entry.order > 0) {
-        score += Math.max(0, 8 - Math.min(entry.order, 8));
-      }
-
-      if (entry.goalKeys.length) {
-        const activeGoalIds = new Set(activeGoals.map((goal) => toStringSafe(goal?.id)));
-        entry.goalKeys.forEach((goalKey) => {
-          if (activeGoalIds.has(goalKey)) {
-            score += 12;
-          }
-        });
-      }
-
-      return { ...entry, score };
-    })
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || (a.order || 999) - (b.order || 999));
-
-  const fallback = [...guitarLibraryResources]
-    .sort((a, b) => (a.order || 999) - (b.order || 999))
-    .slice(0, 8);
-  const ranked = scored.length ? scored : fallback;
-  let primary = ranked.slice(0, 3);
-  const used = new Set(primary.map((entry) => entry.id));
-  let secondary = ranked.filter((entry) => !used.has(entry.id)).slice(0, 6);
-
-  const hasSongsSignal = hasSongsOrWorksSignal(latestTerms, goalTerms);
-  if (hasSongsSignal) {
-    const songsResource = findSongsAndRepertoireResource();
-    if (songsResource) {
-      const alreadyInPrimary = primary.some((entry) => entry.id === songsResource.id);
-      const alreadyInSecondary = secondary.some(
-        (entry) => entry.id === songsResource.id
-      );
-
-      if (!alreadyInPrimary && !alreadyInSecondary) {
-        // Lo dejamos visible siempre como sugerencia rápida de repertorio.
-        secondary = [songsResource, ...secondary].slice(0, 6);
-      }
-    }
-  }
-
-  return { primary, secondary };
-}
-
-function hasSongsOrWorksSignal(latestTerms = [], goalTerms = []) {
-  const signals = new Set([
-    "cancion",
-    "canciones",
-    "obra",
-    "obras",
-    "repertorio",
-    "melodia",
-    "melodias",
-    "acordes",
-  ]);
-  const source = [...latestTerms, ...goalTerms];
-  return source.some((term) => signals.has(term));
-}
-
-function findSongsAndRepertoireResource() {
-  const candidate = guitarLibraryResources.find((entry) => {
-    const normalizedName = normalizeText(fixMojibake(entry?.name || ""));
-    return (
-      normalizedName.includes("lista de canciones y repertorio") ||
-      normalizedName.includes("canciones y repertorio")
-    );
-  });
-
-  if (candidate) return candidate;
-
-  // Fallback seguro si el nombre cambia en CSV pero existe URL conocida.
-  return {
-    id: "songs-repertoire-fallback",
-    name: "Lista de canciones y repertorio",
-    category: "Repertorio",
-    link: "https://musicalaescuela.github.io/cancionesguitarra/",
-    order: 999,
-    tags: ["canciones", "repertorio"],
-    goalKeys: [],
-    searchable: "lista canciones repertorio",
-    score: 0,
-  };
-}
-
-function extractBitacoraTerms(bitacora, studentId = "") {
-  if (!bitacora || typeof bitacora !== "object") return [];
-
-  const overrides = bitacora?.studentOverrides || {};
-  const override = isPlainObject(overrides[toStringSafe(studentId)])
-    ? overrides[toStringSafe(studentId)]
-    : {};
-  const content = [
-    bitacora?.titulo,
-    bitacora?.contenido,
-    bitacora?.process?.processLabel,
-    bitacora?.process?.programa,
-    bitacora?.process?.area,
-    ...(bitacora?.etiquetas || []),
-    ...(override?.etiquetas || []),
-    ...(override?.componenteCorporal || []),
-    ...(override?.componenteTecnico || []),
-    ...(override?.componenteTeorico || []),
-    ...(override?.componenteObras || []),
-  ]
-    .map((value) => toStringSafe(value))
-    .filter(Boolean)
-    .join(" ");
-
-  return extractTermsFromText(content);
-}
-
-function extractTermsFromText(text = "") {
-  const source = normalizeText(fixMojibake(text))
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/g)
-    .map((token) => token.trim())
-    .filter(Boolean);
-  const stopwords = new Set([
-    "para",
-    "con",
-    "del",
-    "las",
-    "los",
-    "una",
-    "uno",
-    "que",
-    "por",
-    "sin",
-    "sobre",
-    "desde",
-    "hacia",
-    "clase",
-    "clases",
-    "objetivo",
-    "objetivos",
-  ]);
-
-  return [...new Set(source.filter((token) => token.length >= 3 && !stopwords.has(token)))];
-}
-
-function fixMojibake(value = "") {
-  return String(value || "")
-    .replace(/Ã¡/g, "á")
-    .replace(/Ã©/g, "é")
-    .replace(/Ã­/g, "í")
-    .replace(/Ã³/g, "ó")
-    .replace(/Ãº/g, "ú")
-    .replace(/Ã±/g, "ñ")
-    .replace(/Ã¼/g, "ü")
-    .replace(/Â/g, "");
-}
-
-async function ensureGuitarLibraryLoaded() {
-  if (guitarLibraryLoaded) return;
-  if (guitarLibraryLoadingPromise) {
-    await guitarLibraryLoadingPromise;
-    return;
-  }
-
-  guitarLibraryLoadingPromise = (async () => {
-    try {
-      const response = await fetch(GUITAR_LIBRARY_ASSET_URL, {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(`No se pudo cargar ${GUITAR_LIBRARY_ASSET_URL}`);
-      }
-
-      const text = await response.text();
-      const rows = parseCsvRows(text);
-      if (!rows.length) {
-        guitarLibraryResources = [];
-        guitarLibraryLoaded = true;
-        return;
-      }
-
-      const header = rows[0].map((cell) => normalizeHeaderName(cell));
-      const body = rows.slice(1);
-      const indexByHeader = {};
-
-      header.forEach((name, index) => {
-        if (!name || indexByHeader[name] !== undefined) return;
-        indexByHeader[name] = index;
-      });
-
-      guitarLibraryResources = body
-        .map((row) => normalizeGuitarLibraryRow(row, indexByHeader))
-        .filter(Boolean);
-      guitarLibraryLoaded = true;
-    } catch (error) {
-      console.error("No se pudo cargar biblioteca de guitarra:", error);
-      guitarLibraryResources = [];
-      guitarLibraryLoaded = false;
-    } finally {
-      guitarLibraryLoadingPromise = null;
-    }
-  })();
-
-  await guitarLibraryLoadingPromise;
-}
-
-function normalizeGuitarLibraryRow(row = [], indexByHeader = {}) {
-  const byHeader = (...keys) => {
-    for (const key of keys) {
-      const position = indexByHeader[key];
-      if (!Number.isInteger(position)) continue;
-      const value = toStringSafe(row[position]);
-      if (value) return value;
-    }
-    return "";
-  };
-
-  const id = toStringSafe(byHeader("id")) || toStringSafe(row[0]);
-  const name = fixMojibake(byHeader("nombre")) || fixMojibake(toStringSafe(row[1]));
-  const category =
-    fixMojibake(byHeader("categoria", "categoría")) || fixMojibake(toStringSafe(row[4]));
-  const link = toStringSafe(byHeader("link")) || toStringSafe(row[6]);
-  const tags = extractTermsFromText(byHeader("tags") || "");
-  const goalKeys = String(byHeader("goalkeys") || "")
-    .split(",")
-    .map((value) => toStringSafe(value))
-    .filter(Boolean);
-  const activeRaw = normalizeText(fixMojibake(byHeader("activo") || toStringSafe(row[7])));
-  const isActive =
-    activeRaw === "si" ||
-    activeRaw === "s" ||
-    activeRaw === "yes" ||
-    activeRaw === "true" ||
-    activeRaw === "1";
-  const orderValue = Number(byHeader("orden") || toStringSafe(row[8]));
-  const order = Number.isFinite(orderValue) ? orderValue : 999;
-  const searchable = normalizeText(
-    [
-      id,
-      name,
-      category,
-      tags.join(" "),
-      fixMojibake(byHeader("autor") || toStringSafe(row[3])),
-      fixMojibake(byHeader("observaciones") || toStringSafe(row[5])),
-    ]
-      .filter(Boolean)
-      .join(" ")
-  );
-
-  if (!name || !link || !isActive) return null;
-
-  return {
-    id: id || name,
-    name,
-    category,
-    link,
-    order,
-    tags,
-    goalKeys,
-    searchable,
-  };
-}
-
-function normalizeHeaderName(value = "") {
-  return fixMojibake(value)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "");
-}
-
-function parseCsvRows(text = "") {
-  const safeText = String(text || "").replace(/\r/g, "").trim();
-  if (!safeText) return [];
-
-  const delimiter = safeText.includes("\t") ? "\t" : ",";
-  const rows = [];
-  let row = [];
-  let cell = "";
-  let inQuotes = false;
-
-  for (let index = 0; index < safeText.length; index += 1) {
-    const char = safeText[index];
-    const nextChar = safeText[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        cell += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === delimiter && !inQuotes) {
-      row.push(toStringSafe(cell));
-      cell = "";
-      continue;
-    }
-
-    if (char === "\n" && !inQuotes) {
-      row.push(toStringSafe(cell));
-      if (row.some(Boolean)) rows.push(row);
-      row = [];
-      cell = "";
-      continue;
-    }
-
-    cell += char;
-  }
-
-  row.push(toStringSafe(cell));
-  if (row.some(Boolean)) rows.push(row);
-
-  return rows;
-}
-
 async function ensureLearningRouteLoaded(student, options = {}) {
   const studentId = getStudentIdentity(student);
   if (!studentId) return;
@@ -1699,8 +1220,8 @@ async function ensureLearningRouteLoaded(student, options = {}) {
     setStudentRoute(studentId, nextRoute);
     setStudentGoals(studentId, buildStudentGoalsFromRoute(nextRoute, student));
 
-    if (!persistedRoute && access.canEditRoutes) {
-      const savedRoute = await persistLearningRoute(student, nextRoute);
+    if (!persistedRoute && access.canEditRouteStructure) {
+      const savedRoute = await persistLearningRouteStructure(student, nextRoute);
       setStudentRoute(studentId, savedRoute);
       setStudentGoals(studentId, buildStudentGoalsFromRoute(savedRoute, student));
     }
@@ -1719,21 +1240,48 @@ async function ensureLearningRouteLoaded(student, options = {}) {
   }
 }
 
-async function persistLearningRoute(student, route) {
+function getActiveProcessContext(student) {
+  return (
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    normalizeStudentProcesses(student)[0] ||
+    null
+  );
+}
+
+function getRouteSaveOptions(student) {
+  const activeProcess = getActiveProcessContext(student);
+  return {
+    student,
+    processKey: currentProfileProcessKey || "",
+    processLabel: activeProcess?.label || "",
+  };
+}
+
+async function persistLearningRouteStructure(student, route) {
   const studentId = getStudentIdentity(student);
   if (!studentId) {
     throw new Error("No se pudo resolver el estudiante para guardar la ruta.");
   }
 
-  const activeProcess =
-    resolveStudentProcess(student, currentProfileProcessKey) ||
-    normalizeStudentProcesses(student)[0] ||
-    null;
-  const savedRoute = await saveStudentRouteRecord(studentId, route, {
-    student,
-    processKey: currentProfileProcessKey || "",
-    processLabel: activeProcess?.label || "",
-  });
+  const savedRoute = await saveStudentRouteRecord(
+    studentId,
+    route,
+    getRouteSaveOptions(student)
+  );
+  return buildDefaultRouteState(student, savedRoute);
+}
+
+async function persistLearningRouteProgress(student, route) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) {
+    throw new Error("No se pudo resolver el estudiante para guardar el avance.");
+  }
+
+  const savedRoute = await saveStudentRouteProgressRecord(
+    studentId,
+    route,
+    getRouteSaveOptions(student)
+  );
   return buildDefaultRouteState(student, savedRoute);
 }
 
@@ -1826,6 +1374,15 @@ function buildGenericRoutePreset(artKey, artLabel) {
 }
 
 function resolveRoutePreset(student, baseRoute = {}) {
+  const customGoals = normalizeManualRouteGoals(baseRoute?.customGoals);
+  if (customGoals.length) {
+    return {
+      id: toStringSafe(baseRoute?.presetId) || "ruta_manual_v1",
+      routeName: toStringSafe(baseRoute?.routeName) || "Ruta manual",
+      goals: customGoals,
+    };
+  }
+
   const activeProcess =
     resolveStudentProcess(student, currentProfileProcessKey) ||
     normalizeStudentProcesses(student)[0] ||
@@ -1928,6 +1485,7 @@ function buildDefaultRouteState(student, baseRoute = {}) {
           completedAt: entry?.completedAt || null,
         }))
         .filter((entry) => entry.goalId)
+        .filter((entry) => presetGoalIds.has(entry.goalId))
     : [];
 
   const experience = deriveCurrentExperience(completedGoalIds, preset);
@@ -1942,6 +1500,7 @@ function buildDefaultRouteState(student, baseRoute = {}) {
     ...(baseRoute && typeof baseRoute === "object" ? baseRoute : {}),
     presetId: preset.id,
     routeName: preset.routeName,
+    customGoals: normalizeManualRouteGoals(baseRoute?.customGoals),
     processKey: toStringSafe(currentProfileProcessKey || activeProcess?.processKey),
     processLabel: firstNonEmpty(
       activeProcess?.label,
@@ -1991,6 +1550,81 @@ function buildStudentGoalsFromRoute(route = {}, student = null) {
     updatedAt:
       route.history?.find((entry) => entry.goalId === goal.id)?.completedAt || null,
   }));
+}
+
+function normalizeManualRouteGoals(goals = []) {
+  return (Array.isArray(goals) ? goals : [])
+    .map((goal, index) => {
+      const title = toStringSafe(goal?.title);
+      if (!title) return null;
+
+      const component = toLearningRouteComponentId(goal?.component || goal?.componentLabel);
+      const componentLabel =
+        toStringSafe(goal?.componentLabel) ||
+        getTitleFromArtKey(component) ||
+        toStringSafe(goal?.component) ||
+        "General";
+
+      return {
+        id: toStringSafe(goal?.id) || buildManualGoalId(component, title, index),
+        component,
+        componentLabel,
+        section: toStringSafe(goal?.section || componentLabel),
+        experience: Number(goal?.experience) || 1,
+        order: Number(goal?.order) || index + 1,
+        title,
+        description: toStringSafe(goal?.description || `Ruta manual · ${componentLabel}`),
+      };
+    })
+    .filter(Boolean);
+}
+
+function serializeManualRouteGoals(goals = []) {
+  return normalizeManualRouteGoals(goals)
+    .map((goal) =>
+      [
+        goal.componentLabel || goal.component || "General",
+        goal.title,
+        goal.experience || 1,
+      ].join(" | ")
+    )
+    .join("\n");
+}
+
+function parseManualRouteGoals(rawText = "") {
+  return String(rawText || "")
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const parts = line.split("|").map((part) => toStringSafe(part));
+      const [componentRaw = "General", titleRaw = "", experienceRaw = "1"] = parts;
+      const title = titleRaw || componentRaw;
+      if (!title) return null;
+
+      const component = titleRaw ? toLearningRouteComponentId(componentRaw) : "general";
+      const componentLabel = titleRaw ? componentRaw : "General";
+
+      return {
+        id: buildManualGoalId(component, title, index),
+        component,
+        componentLabel,
+        section: componentLabel,
+        experience: Number(experienceRaw) || 1,
+        order: index + 1,
+        title,
+        description: `Ruta manual · ${componentLabel}`,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildManualGoalId(component, title, index = 0) {
+  const safeComponent = toLearningRouteComponentId(component || "general");
+  const safeTitle = normalizeText(title)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
+  return `manual-${safeComponent}-${safeTitle || index + 1}`;
 }
 
 function buildRouteProgress(completedGoalIds = [], preset) {
@@ -2052,11 +1686,18 @@ function getNextGoalsByComponent(
   const safePreset = preset || { goals: GUITAR_ROUTE_PRESET };
   const completed = new Set(completedGoalIds);
 
-  return components.map(({ id }) =>
-    safePreset.goals.find(
-      (goal) => goal.component === id && !completed.has(goal.id)
-    )
-  ).filter(Boolean);
+  return components
+    .flatMap(({ id }) => {
+      const componentGoals = safePreset.goals
+        .filter((goal) => goal.component === id)
+        .sort(compareRouteGoals);
+      const sections = groupGoalsBySection(componentGoals);
+
+      return sections
+        .map((section) => section.goals.find((goal) => !completed.has(goal.id)))
+        .filter(Boolean);
+    })
+    .filter(Boolean);
 }
 
 function buildRouteRecommendations(nextGoals = [], components = ROUTE_COMPONENTS) {
@@ -2096,9 +1737,35 @@ function getRouteComponentsForPreset(preset = null) {
   return components.length ? components : ROUTE_COMPONENTS;
 }
 
+function compareRouteGoals(a = {}, b = {}) {
+  const expDiff = Number(a?.experience || 0) - Number(b?.experience || 0);
+  if (expDiff !== 0) return expDiff;
+  return Number(a?.order || 0) - Number(b?.order || 0);
+}
+
+function groupGoalsBySection(goals = []) {
+  const sectionMap = new Map();
+
+  [...goals].sort(compareRouteGoals).forEach((goal) => {
+    const sectionLabel = toStringSafe(goal?.section) || "General";
+    const sectionKey = normalizeText(sectionLabel) || "general";
+    if (!sectionMap.has(sectionKey)) {
+      sectionMap.set(sectionKey, {
+        key: sectionKey,
+        label: sectionLabel,
+        goals: [],
+      });
+    }
+    sectionMap.get(sectionKey).goals.push(goal);
+  });
+
+  return [...sectionMap.values()];
+}
+
 function renderLearningRoute(student) {
   const access = resolveUserAccess(getState()?.auth?.user);
-  const canEditRoute = access.canEditRoutes;
+  const canEditRouteStructure = Boolean(access.canEditRouteStructure);
+  const canUpdateRouteProgress = Boolean(access.canUpdateRouteProgress);
   const studentId = getStudentIdentity(student);
   const route = buildDefaultRouteState(student, getStudentRoute(studentId));
   const preset = resolveRoutePreset(student, route);
@@ -2110,13 +1777,7 @@ function renderLearningRoute(student) {
     preset,
     routeComponents
   );
-  const orderedGoals = [...(Array.isArray(preset?.goals) ? preset.goals : [])].sort(
-    (a, b) => {
-      const expDiff = Number(a?.experience || 0) - Number(b?.experience || 0);
-      if (expDiff !== 0) return expDiff;
-      return Number(a?.order || 0) - Number(b?.order || 0);
-    }
-  );
+  const orderedGoals = [...(Array.isArray(preset?.goals) ? preset.goals : [])].sort(compareRouteGoals);
   const lastGoal = orderedGoals[orderedGoals.length - 1] || null;
   const totalSections = new Set(
     orderedGoals.map((goal) => toStringSafe(goal?.section)).filter(Boolean)
@@ -2179,9 +1840,14 @@ function renderLearningRoute(student) {
 
       <section class="route-components" ${expanded ? "" : "hidden"}>
         ${routeComponents.map((component) =>
-          renderRouteComponentCard(component, route, preset, canEditRoute)
+          renderRouteComponentCard(component, route, preset, {
+            canEditRouteStructure,
+            canUpdateRouteProgress,
+          })
         ).join("")}
       </section>
+
+      ${canEditRouteStructure ? renderManualRouteEditor(route, preset, expanded, access) : ""}
 
       <section class="route-journey-map" ${expanded ? "" : "hidden"}>
         <article class="route-history-card">
@@ -2296,15 +1962,24 @@ function renderLearningRoute(student) {
   `;
 }
 
-function renderRouteComponentCard(component, route = {}, preset, canEditRoute = false) {
+function renderRouteComponentCard(component, route = {}, preset, permissions = {}) {
+  const canUpdateRouteProgress = Boolean(permissions.canUpdateRouteProgress);
   const completedIds = new Set(
     Array.isArray(route.completedGoalIds) ? route.completedGoalIds : []
   );
   const goals = (preset?.goals || GUITAR_ROUTE_PRESET).filter(
     (goal) => goal.component === component.id
   );
-  const nextGoal = goals.find((goal) => !completedIds.has(goal.id)) || null;
+  const sections = groupGoalsBySection(goals);
+  const activeSections = sections
+    .map((section) => ({
+      ...section,
+      nextGoal: section.goals.find((goal) => !completedIds.has(goal.id)) || null,
+      completedGoals: section.goals.filter((goal) => completedIds.has(goal.id)),
+    }))
+    .filter((section) => section.goals.length);
   const completedGoals = goals.filter((goal) => completedIds.has(goal.id));
+  const pendingSectionsCount = activeSections.filter((section) => section.nextGoal).length;
 
   return `
     <article class="route-component-card">
@@ -2312,53 +1987,229 @@ function renderRouteComponentCard(component, route = {}, preset, canEditRoute = 
         <div>
           <p class="route-component-card__eyebrow">${escapeHtml(component.label)}</p>
           <h3 class="route-component-card__title">${escapeHtml(
-            nextGoal ? `Objetivo activo: ${nextGoal.title}` : "Componente consolidado"
+            pendingSectionsCount
+              ? `${pendingSectionsCount} categorias con avance disponible`
+              : "Componente consolidado"
           )}</h3>
         </div>
         <span class="route-component-card__count">${escapeHtml(`${completedGoals.length}/${goals.length}`)}</span>
       </header>
 
-      ${
-        nextGoal
-          ? `
-            <label class="route-goal-check">
-              <input
-                type="checkbox"
-                data-route-goal-check="${escapeHtml(nextGoal.id)}"
-                ${!canEditRoute ? "disabled" : ""}
-              />
-              <span class="route-goal-check__body">
-                <span class="route-goal-check__title">${escapeHtml(nextGoal.title)}</span>
-                <span class="route-goal-check__text">${escapeHtml(nextGoal.description || "")}</span>
-                <span class="route-goal-check__meta">${escapeHtml(`Experiencia ${nextGoal.experience}`)}</span>
-              </span>
-            </label>
-          `
-          : `
-            <p class="route-component-card__done">
-              Todos los objetivos base de este componente ya fueron logrados.
-            </p>
-          `
-      }
+      <div class="route-section-list">
+        ${activeSections
+          .map(
+            (section) => `
+              <details class="route-section-card" ${section.nextGoal ? "open" : ""}>
+                <summary class="route-section-card__summary">
+                  <span>${escapeHtml(section.label)}</span>
+                  <span>${escapeHtml(`${section.completedGoals.length}/${section.goals.length}`)}</span>
+                </summary>
+                ${
+                  section.nextGoal
+                    ? `
+                      <label class="route-goal-check">
+                        <input
+                          type="checkbox"
+                          data-route-goal-check="${escapeHtml(section.nextGoal.id)}"
+                          ${!canUpdateRouteProgress ? "disabled" : ""}
+                        />
+                        <span class="route-goal-check__body">
+                          <span class="route-goal-check__title">${escapeHtml(section.nextGoal.title)}</span>
+                          <span class="route-goal-check__text">${escapeHtml(section.nextGoal.description || "")}</span>
+                          <span class="route-goal-check__meta">${escapeHtml(`Experiencia ${section.nextGoal.experience}`)}</span>
+                        </span>
+                      </label>
+                    `
+                    : `
+                      <p class="route-component-card__done">
+                        Todos los objetivos de esta categoria ya fueron logrados.
+                      </p>
+                    `
+                }
 
-      <div class="route-component-card__history">
-        <p class="route-component-card__history-title">Logrados</p>
-        ${
-          completedGoals.length
-            ? completedGoals
-                .map(
-                  (goal) => `
-                    <span class="route-achievement-chip">
-                      ${escapeHtml(goal.title)}
-                    </span>
-                  `
-                )
-                .join("")
-            : `<span class="route-achievement-chip route-achievement-chip--muted">Aun sin logros marcados</span>`
-        }
+                <div class="route-component-card__history">
+                  <p class="route-component-card__history-title">Logrados en ${escapeHtml(section.label)}</p>
+                  ${
+                    section.completedGoals.length
+                      ? section.completedGoals
+                          .map(
+                            (goal) => `
+                              <span class="route-achievement-chip">
+                                <span>${escapeHtml(goal.title)}</span>
+                                ${
+                                  canUpdateRouteProgress
+                                    ? `
+                                      <button
+                                        type="button"
+                                        class="route-achievement-chip__undo"
+                                        data-route-goal-undo="${escapeHtml(goal.id)}"
+                                        aria-label="Quitar objetivo logrado: ${escapeHtml(goal.title)}"
+                                        title="Quitar logro"
+                                      >
+                                        ×
+                                      </button>
+                                    `
+                                    : ""
+                                }
+                              </span>
+                            `
+                          )
+                          .join("")
+                      : `<span class="route-achievement-chip route-achievement-chip--muted">Aun sin logros marcados</span>`
+                  }
+                </div>
+              </details>
+            `
+          )
+          .join("")}
       </div>
     </article>
   `;
+}
+
+function renderManualRouteEditor(route = {}, preset = {}, expanded = false, access = {}) {
+  if (!access.canEditRouteStructure) return "";
+  const goals = normalizeManualRouteGoals(route.customGoals).length
+    ? normalizeManualRouteGoals(route.customGoals)
+    : normalizeManualRouteGoals(preset.goals);
+  const groupedGoals = groupGoalsByExperienceAndComponent(goals);
+
+  return `
+    <section class="route-manual-editor" ${expanded ? "" : "hidden"}>
+      <header class="route-manual-editor__header">
+        <div>
+          <p class="route-history-card__title">Editor manual de ruta</p>
+          <p class="route-overview__text">
+            Ajusta la estructura por experiencia y componente. Esta seccion solo aparece para admin.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn btn--secondary btn--sm"
+          data-route-action="save-manual-route"
+        >
+          Guardar ruta
+        </button>
+      </header>
+      <div class="route-structure-builder" aria-label="Constructor visual de ruta">
+        ${groupedGoals
+          .map(
+            (experienceGroup) => `
+              <article class="route-structure-builder__experience">
+                <h4 class="route-structure-builder__title">Experiencia ${escapeHtml(String(experienceGroup.experience))}</h4>
+                <div class="route-structure-builder__components">
+                  ${experienceGroup.components
+                    .map(
+                      (componentGroup) => `
+                        <details class="route-structure-builder__component">
+                          <summary class="route-structure-builder__component-toggle">
+                            <span class="route-structure-builder__component-title">${escapeHtml(componentGroup.label)}</span>
+                            <span class="route-structure-builder__component-count">${escapeHtml(`${componentGroup.goals.length} objetivos`)}</span>
+                          </summary>
+                          <div class="route-structure-builder__goal-list">
+                            ${componentGroup.goals
+                              .map(
+                                (goal) => `
+                                  <label class="route-structure-builder__goal">
+                                    <span>Objetivo ${escapeHtml(String(goal.goalNumber || 1))}</span>
+                                    <input
+                                      type="text"
+                                      data-route-visual-goal
+                                      data-route-goal-component="${escapeHtml(goal.componentLabel || goal.component || "General")}"
+                                      data-route-goal-experience="${escapeHtml(String(goal.experience || 1))}"
+                                      value="${escapeHtml(goal.title)}"
+                                    />
+                                  </label>
+                                `
+                              )
+                              .join("")}
+                          </div>
+                        </details>
+                      `
+                    )
+                    .join("")}
+                </div>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+      <textarea
+        class="route-manual-editor__textarea"
+        data-route-goals-editor
+        data-route-goals-original="${escapeHtml(serializeManualRouteGoals(goals))}"
+        rows="10"
+        spellcheck="false"
+      >${escapeHtml(serializeManualRouteGoals(goals))}</textarea>
+    </section>
+  `;
+}
+
+function groupGoalsByExperienceAndComponent(goals = []) {
+  const orderedGoals = normalizeManualRouteGoals(goals).sort((a, b) => {
+    const expDiff = Number(a.experience || 0) - Number(b.experience || 0);
+    if (expDiff !== 0) return expDiff;
+    const componentDiff = toStringSafe(a.componentLabel || a.component).localeCompare(
+      toStringSafe(b.componentLabel || b.component)
+    );
+    if (componentDiff !== 0) return componentDiff;
+    return Number(a.order || 0) - Number(b.order || 0);
+  });
+  const experienceMap = new Map();
+
+  orderedGoals.forEach((goal, index) => {
+    const experience = Number(goal.experience) || 1;
+    if (!experienceMap.has(experience)) {
+      experienceMap.set(experience, new Map());
+    }
+    const componentMap = experienceMap.get(experience);
+    const componentKey = goal.component || "general";
+    if (!componentMap.has(componentKey)) {
+      componentMap.set(componentKey, {
+        label: goal.componentLabel || getComponentLabel(componentKey),
+        goals: [],
+      });
+    }
+    componentMap.get(componentKey).goals.push({
+      ...goal,
+      goalNumber: index + 1,
+    });
+  });
+
+  return [...experienceMap.entries()].map(([experience, componentMap]) => ({
+    experience,
+    components: [...componentMap.values()],
+  }));
+}
+
+function getManualGoalsFromVisualEditor() {
+  const inputs = Array.from(
+    viewRoot?.querySelectorAll("[data-route-visual-goal]") || []
+  );
+
+  return inputs
+    .map((input, index) => {
+      const title = toStringSafe(input.value);
+      if (!title) return null;
+
+      const componentLabel =
+        toStringSafe(input.getAttribute("data-route-goal-component")) || "General";
+      const experience =
+        Number(input.getAttribute("data-route-goal-experience")) || 1;
+      const component = toLearningRouteComponentId(componentLabel);
+
+      return {
+        id: buildManualGoalId(component, title, index),
+        component,
+        componentLabel,
+        section: componentLabel,
+        experience,
+        order: index + 1,
+        title,
+        description: `Ruta manual · ${componentLabel}`,
+      };
+    })
+    .filter(Boolean);
 }
 
 async function completeLearningGoal(student, goalId) {
@@ -2366,7 +2217,7 @@ async function completeLearningGoal(student, goalId) {
   if (!studentId) return;
 
   const access = resolveUserAccess(getState()?.auth?.user);
-  if (!access.canEditRoutes) return;
+  if (!access.canUpdateRouteProgress) return;
 
   const routePreset = resolveRoutePreset(student, getStudentRoute(studentId));
   const goal = (routePreset?.goals || GUITAR_ROUTE_PRESET).find((item) => item.id === goalId);
@@ -2401,7 +2252,7 @@ async function completeLearningGoal(student, goalId) {
   setStudentGoals(studentId, nextGoals);
 
   try {
-    const savedRoute = await persistLearningRoute(student, nextRoute);
+    const savedRoute = await persistLearningRouteProgress(student, nextRoute);
     setStudentRoute(studentId, savedRoute);
     setStudentGoals(studentId, buildStudentGoalsFromRoute(savedRoute, student));
   } catch (error) {
@@ -2410,6 +2261,110 @@ async function completeLearningGoal(student, goalId) {
     setStudentGoals(studentId, previousGoals);
     setAppError(
       error?.message || "No se pudo guardar el avance de la ruta."
+    );
+  }
+}
+
+async function saveManualLearningRoute(student) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+
+  const access = resolveUserAccess(getState()?.auth?.user);
+  if (!access.canEditRouteStructure) return;
+
+  const visualGoals = getManualGoalsFromVisualEditor();
+  const textarea = viewRoot?.querySelector("[data-route-goals-editor]");
+  const rawManualText = textarea?.value || "";
+  const originalManualText = textarea?.getAttribute("data-route-goals-original") || "";
+  const manualGoals =
+    rawManualText !== originalManualText
+      ? parseManualRouteGoals(rawManualText)
+      : visualGoals;
+
+  if (!manualGoals.length) {
+    setAppError("La ruta manual necesita al menos un objetivo.");
+    return;
+  }
+
+  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
+  const validGoalIds = new Set(manualGoals.map((goal) => goal.id));
+  const completedGoalIds = (currentRoute.completedGoalIds || []).filter((goalId) =>
+    validGoalIds.has(goalId)
+  );
+  const history = (currentRoute.history || []).filter((entry) =>
+    validGoalIds.has(toStringSafe(entry?.goalId))
+  );
+  const nextRoute = buildDefaultRouteState(student, {
+    ...currentRoute,
+    presetId: "ruta_manual_v1",
+    routeName: currentRoute.routeName || "Ruta manual",
+    customGoals: manualGoals,
+    completedGoalIds,
+    history,
+  });
+
+  const previousGoals = buildStudentGoalsFromRoute(currentRoute, student);
+
+  clearAppError();
+  setStudentRoute(studentId, nextRoute);
+  setStudentGoals(studentId, buildStudentGoalsFromRoute(nextRoute, student));
+
+  try {
+    const savedRoute = await persistLearningRouteStructure(student, nextRoute);
+    setStudentRoute(studentId, savedRoute);
+    setStudentGoals(studentId, buildStudentGoalsFromRoute(savedRoute, student));
+  } catch (error) {
+    console.error("Error guardando ruta manual:", error);
+    setStudentRoute(studentId, currentRoute);
+    setStudentGoals(studentId, previousGoals);
+    setAppError(error?.message || "No se pudo guardar la ruta manual.");
+  }
+}
+
+async function undoLearningGoal(student, goalId) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+
+  const access = resolveUserAccess(getState()?.auth?.user);
+  if (!access.canUpdateRouteProgress) return;
+
+  const routePreset = resolveRoutePreset(student, getStudentRoute(studentId));
+  const goal = (routePreset?.goals || GUITAR_ROUTE_PRESET).find((item) => item.id === goalId);
+  if (!goal) return;
+
+  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
+  const completedGoalIds = new Set(currentRoute.completedGoalIds || []);
+  if (!completedGoalIds.has(goal.id)) return;
+
+  completedGoalIds.delete(goal.id);
+
+  const history = Array.isArray(currentRoute.history)
+    ? currentRoute.history.filter((entry) => toStringSafe(entry?.goalId) !== goal.id)
+    : [];
+
+  const nextRoute = buildDefaultRouteState(student, {
+    ...currentRoute,
+    completedGoalIds: [...completedGoalIds],
+    history,
+  });
+
+  const previousGoals = buildStudentGoalsFromRoute(currentRoute, student);
+  const nextGoals = buildStudentGoalsFromRoute(nextRoute, student);
+
+  clearAppError();
+  setStudentRoute(studentId, nextRoute);
+  setStudentGoals(studentId, nextGoals);
+
+  try {
+    const savedRoute = await persistLearningRouteProgress(student, nextRoute);
+    setStudentRoute(studentId, savedRoute);
+    setStudentGoals(studentId, buildStudentGoalsFromRoute(savedRoute, student));
+  } catch (error) {
+    console.error("Error quitando logro de la ruta:", error);
+    setStudentRoute(studentId, currentRoute);
+    setStudentGoals(studentId, previousGoals);
+    setAppError(
+      error?.message || "No se pudo quitar el objetivo logrado."
     );
   }
 }

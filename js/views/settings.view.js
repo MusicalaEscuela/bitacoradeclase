@@ -156,10 +156,10 @@ function buildMarkup(state) {
       <section class="view-shell view-shell--settings">
         <header class="view-header">
           <div class="view-header__content">
-            <p class="view-eyebrow">Configuracion</p>
+            <p class="view-eyebrow">Configuración</p>
             <h1 class="view-title">Acceso restringido</h1>
             <p class="view-description">
-              Esta vista es solo para administracion. Los docentes pueden trabajar desde perfil, busqueda y bitacoras.
+              Esta vista es solo para administracion. Los docentes pueden trabajar desde perfil, búsqueda y bitacoras.
             </p>
           </div>
           <div class="view-header__actions">
@@ -179,8 +179,8 @@ function buildMarkup(state) {
           <p class="view-eyebrow">Configuración</p>
           <h1 class="view-title">Catálogos del sistema</h1>
           <p class="view-description">
-            Administra docentes, categorias, componentes y accesos desde una
-            vista mas clara para mantenimiento del sistema.
+            Administra docentes, categorías, componentes y accesos desde una
+            vista más clara para mantenimiento del sistema.
           </p>
         </div>
         <div class="view-header__actions">
@@ -212,7 +212,7 @@ function buildMarkup(state) {
             </div>
             <div class="soft-card">
               <strong>${studentAccessCount}</strong>
-              <span>Correos de estudiantes</span>
+              <span>Accesos HUB Estudiantes</span>
             </div>
             ${STRING_CATALOGS.map(
               ({ key, label }) => `
@@ -244,13 +244,13 @@ function buildMarkup(state) {
           <header class="panel-header">
             <div class="panel-header__content">
               <p class="panel-header__eyebrow">Accesos</p>
-              <h2 class="panel-header__title">Correos de estudiantes</h2>
+              <h2 class="panel-header__title">Accesos del HUB Estudiantes</h2>
             </div>
           </header>
 
           <div class="settings-import-row">
             <p class="field__hint">
-              Sincroniza los correos de la hoja a Firebase para que el login de estudiantes se resuelva rÃ¡pido y sin depender de buscar toda la base en cada entrada.
+              Estos accesos no permiten entrar al HUB Docentes. Sirven unicamente para que los estudiantes puedan entrar al portal Estudiantes HUB y ver su proceso.
             </p>
           </div>
 
@@ -261,14 +261,22 @@ function buildMarkup(state) {
               id="settings-sync-students-btn"
               ${!isAuthenticated || !canManageSettings ? "disabled" : ""}
             >
-              Sincronizar estudiantes a Firebase
+              Sincronizar base de estudiantes
+            </button>
+            <button
+              type="button"
+              class="btn btn--secondary"
+              id="settings-sync-student-access-btn"
+              ${!isAuthenticated || !canManageSettings ? "disabled" : ""}
+            >
+              Sincronizar accesos del HUB Estudiantes
             </button>
             <button
               type="button"
               class="btn btn--ghost"
               id="settings-refresh-students-access-btn"
             >
-              Recargar lista
+              Actualizar lista de accesos estudiantiles
             </button>
           </div>
 
@@ -276,8 +284,8 @@ function buildMarkup(state) {
             currentStudentSyncReport
               ? `
                 <div class="message-box message-box--info">
-                  Leidos: ${escapeHtml(String(currentStudentSyncReport.totalStudentsRead || 0))} ·
-                  validos: ${escapeHtml(String(currentStudentSyncReport.validStudents || 0))} ·
+                  Leídos: ${escapeHtml(String(currentStudentSyncReport.totalStudentsRead || 0))} ·
+                  válidos: ${escapeHtml(String(currentStudentSyncReport.validStudents || 0))} ·
                   nuevos: ${escapeHtml(String(currentStudentSyncReport.created || 0))} ·
                   actualizados: ${escapeHtml(String(currentStudentSyncReport.updated || 0))} ·
                   sin cambios: ${escapeHtml(String(currentStudentSyncReport.unchanged || 0))} ·
@@ -313,7 +321,7 @@ function buildMarkup(state) {
 
           <div class="settings-import-row">
             <label class="field settings-import-field">
-              <span class="field__label">Archivo de bitácoras (.csv o .tsv)</span>
+              <span class="field__label">Archivo de bitacoras (.csv o .tsv)</span>
               <input type="file" class="field__input" id="settings-import-bitacoras" accept=".csv,.tsv,text/csv,text/tab-separated-values" multiple />
             </label>
             <p class="field__hint">
@@ -329,7 +337,7 @@ function buildMarkup(state) {
               id="settings-import-bitacoras-btn"
               ${!isAuthenticated || !canManageSettings ? "disabled" : ""}
             >
-              Importar bitácoras a Firebase
+              Importar bitacoras a Firebase
             </button>
           </div>
 
@@ -355,7 +363,7 @@ function buildMarkup(state) {
             </label>
             <label class="field">
               <span class="field__label">Email</span>
-              <input class="field__input" name="email" type="email" placeholder="correo@musicala.com" />
+              <input class="field__input" name="email" type="email" placeholder="correo@másicala.com" />
             </label>
             <label class="field">
               <span class="field__label">Orden</span>
@@ -512,7 +520,7 @@ function renderTeachersList(teachers = []) {
           <div class="settings-item-card__content">
             <h3>${escapeHtml(teacher.alias || teacher.nombre)}</h3>
             <p>${escapeHtml(teacher.nombre)}</p>
-            <small>${escapeHtml(teacher.email || "Sin email")} · Orden ${escapeHtml(String(teacher.orden || index + 1))}</small>
+            <small>${escapeHtml(teacher.email || "Sin email")} ? Orden ${escapeHtml(String(teacher.orden || index + 1))}</small>
           </div>
           <button type="button" class="btn btn--ghost btn--sm" data-remove-teacher="${escapeHtml(teacher.id || teacher.nombre)}">
             Quitar
@@ -528,7 +536,7 @@ function renderStudentAccessList(users = []) {
     return `
       <div class="empty-state empty-state--soft">
         <h3 class="empty-state__title">Sin correos sincronizados</h3>
-        <p class="empty-state__text">Usa el botÃ³n de actualizar para traer correos nuevos de estudiantes a Firebase.</p>
+        <p class="empty-state__text">Usa el botón de actualizar para traer correos nuevos de estudiantes a Firebase.</p>
       </div>
     `;
   }
@@ -540,7 +548,7 @@ function renderStudentAccessList(users = []) {
           <div class="settings-item-card__content">
             <h3>${escapeHtml(user.displayName || `Estudiante ${index + 1}`)}</h3>
             <p>${escapeHtml(user.email || "Sin email")}</p>
-            <small>${escapeHtml(user.studentId || "Sin studentId")} · ${
+            <small>${escapeHtml(user.studentId || "Sin studentId")} ? ${
               user.active ? "Activo" : "Inactivo"
             }</small>
           </div>
@@ -636,6 +644,7 @@ function bindEvents(state) {
   const refreshBtn = viewRoot.querySelector("#settings-refresh-btn");
   const saveBtn = viewRoot.querySelector("#settings-save-btn");
   const syncStudentsBtn = viewRoot.querySelector("#settings-sync-students-btn");
+  const syncStudentAccessBtn = viewRoot.querySelector("#settings-sync-student-access-btn");
   const refreshStudentAccessBtn = viewRoot.querySelector(
     "#settings-refresh-students-access-btn"
   );
@@ -694,7 +703,7 @@ function bindEvents(state) {
       if (!state?.auth?.isAuthenticated) {
         currentMessage = {
           type: "warning",
-          text: "Necesitas iniciar sesiÃ³n para sincronizar correos.",
+          text: "Necesitas iniciar sesión para sincronizar datos de estudiantes.",
         };
         renderView(getState());
         return;
@@ -703,7 +712,7 @@ function bindEvents(state) {
       if (!access.canManageSettings) {
         currentMessage = {
           type: "warning",
-          text: "Solo un administrador puede sincronizar accesos de estudiantes.",
+          text: "Solo un administrador puede sincronizar la base de estudiantes.",
         };
         renderView(getState());
         return;
@@ -711,12 +720,44 @@ function bindEvents(state) {
 
       await withLoading(async () => {
         currentStudentSyncReport = await syncStudentsFromSheetToFirestore();
-        await syncStudentAccessUsersFromSheet();
+        currentMessage = {
+          type: "success",
+          text: `Sincronizacion completada. Estudiantes nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
+        };
+        renderView(getState());
+      });
+    });
+  }
+
+  if (syncStudentAccessBtn) {
+    syncStudentAccessBtn.addEventListener("click", async () => {
+      const access = resolveUserAccess(getState()?.auth?.user);
+
+      if (!state?.auth?.isAuthenticated) {
+        currentMessage = {
+          type: "warning",
+          text: "Necesitas iniciar sesión para sincronizar accesos.",
+        };
+        renderView(getState());
+        return;
+      }
+
+      if (!access.canManageSettings) {
+        currentMessage = {
+          type: "warning",
+          text: "Solo un administrador puede sincronizar accesos del HUB Estudiantes.",
+        };
+        renderView(getState());
+        return;
+      }
+
+      await withLoading(async () => {
+        currentStudentSyncReport = await syncStudentAccessUsersFromSheet();
         await refreshStudentAccessUsers();
         expandedSettingsPanels.add("student-access-list");
         currentMessage = {
           type: "success",
-          text: `Sincronizacion completada. Estudiantes nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
+          text: `Accesos del HUB Estudiantes sincronizados. Nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
         };
         renderView(getState());
       });
@@ -804,7 +845,7 @@ function bindEvents(state) {
       if (!state?.auth?.isAuthenticated) {
         currentMessage = {
           type: "warning",
-          text: "Necesitas iniciar sesión para importar bitácoras.",
+          text: "Necesitas iniciar sesión para importar bitacoras.",
         };
         renderView(getState());
         return;
@@ -813,7 +854,7 @@ function bindEvents(state) {
       if (!access.canManageSettings) {
         currentMessage = {
           type: "warning",
-          text: "Solo un administrador puede importar bitácoras históricas.",
+          text: "Solo un administrador puede importar bitacoras históricas.",
         };
         renderView(getState());
         return;
@@ -1163,7 +1204,7 @@ function parseFlexibleDate(value) {
   if (!raw) return "";
 
   // Prioridad: formato local del archivo (dd/mm/yyyy o dd-mm-yyyy),
-  // con o sin hora, para evitar inversiones mes/día.
+  // con o sin hora, para evitar inversiónes más/día.
   const dmyMatch = raw.match(
     /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/
   );
@@ -1225,8 +1266,8 @@ function extractStudentNames(rawStudent) {
   return [...new Set(names)];
 }
 function resolveImportedProcess(student, parsedRow = {}) {
-  // Importaci�n replanteada: no auto-categorizar por proceso.
-  // La asignaci�n queda manual desde el front.
+  // Importación replanteada: no auto-categorizar por proceso.
+  // La asignación queda manual desde el front.
   return {
     processKey: "",
     processLabel: "",
@@ -1349,8 +1390,8 @@ function createBitacoraPayloadFromRow(parsedRow, students = []) {
   });
 
   const titleBase = isGroup
-    ? `Bit�cora grupal (${linkedStudents.length})`
-    : `Bit�cora ${primary.name}`;
+    ? `Bitácora grupal (${linkedStudents.length})`
+    : `Bitácora ${primary.name}`;
 
   return {
     mode: isGroup ? CONFIG.modes.group : CONFIG.modes.individual,
@@ -1607,7 +1648,7 @@ async function importBitacoraPlan(plan) {
         existingByFingerprint.set(fingerprint, entry);
       });
     } catch (error) {
-      console.warn("No se pudo cargar historial para deduplicar bitácoras:", studentId, error);
+      console.warn("No se pudo cargar historial para deduplicar bitacoras:", studentId, error);
     }
   }
 
