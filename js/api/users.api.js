@@ -19,6 +19,7 @@ import { toStringSafe } from "../utils/shared.js";
 
 const USERS_COLLECTION = "users";
 const STUDENT_ROLE = "student";
+const STUDENT_ROLE_ALIASES = new Set(["student", "estudiante"]);
 const TEACHER_ROLE = "teacher";
 const FIRESTORE_BATCH_LIMIT = 400;
 
@@ -52,6 +53,11 @@ function normalizeUserAccess(docSnap) {
     role: toStringSafe(data.role || data.rol).toLowerCase(),
     studentId: toStringSafe(data.studentId || data.studentKey || data.estudianteId),
     studentKey: toStringSafe(data.studentKey || data.studentId || data.estudianteId),
+    studentIds: Array.isArray(data.studentIds)
+      ? data.studentIds.map(toStringSafe).filter(Boolean)
+      : Array.isArray(data.students)
+      ? data.students.map(toStringSafe).filter(Boolean)
+      : [],
     displayName: toStringSafe(data.displayName || data.name || data.nombre),
     studentStatus: toStringSafe(data.studentStatus || data.estado || data.status),
     active: data.active !== false,
@@ -274,7 +280,7 @@ export async function listStudentAccessUsers() {
   const users = await listAllUserAccessProfiles();
 
   return users
-    .filter((user) => user.role === STUDENT_ROLE)
+    .filter((user) => STUDENT_ROLE_ALIASES.has(user.role))
     .sort((a, b) =>
       a.displayName.localeCompare(b.displayName, "es", { sensitivity: "base" })
     );

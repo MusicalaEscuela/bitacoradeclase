@@ -1,4 +1,7 @@
-import { getStudentRoutesCollectionName } from "../config.js";
+import {
+  getStudentRouteProgressCollectionName,
+  getStudentRoutesCollectionName,
+} from "../config.js";
 import {
   db,
   doc,
@@ -16,7 +19,17 @@ import {
 } from "../utils/shared.js";
 
 const STUDENT_ROUTES_COLLECTION = getStudentRoutesCollectionName();
+const STUDENT_ROUTE_PROGRESS_COLLECTION = getStudentRouteProgressCollectionName();
 const DEFAULT_PROCESS_KEY = "general";
+const PROGRESS_FIELDS = [
+  "completedGoalIds",
+  "activeGoalIds",
+  "history",
+  "milestones",
+  "stage",
+  "experience",
+  "recommendations",
+];
 
 function createApiError(message, extra = {}) {
   const error = new Error(message);
@@ -49,6 +62,24 @@ function normalizeHistoryEntry(entry = {}) {
     component: toStringSafe(entry.component),
     experience: Number(entry.experience) || 1,
     completedAt: entry.completedAt || null,
+  };
+}
+
+function normalizeCustomGoal(goal = {}, index = 0) {
+  if (!isPlainObject(goal)) return null;
+
+  const title = toStringSafe(goal.title);
+  if (!title) return null;
+
+  return {
+    id: toStringSafe(goal.id) || `custom-goal-${index + 1}`,
+    title,
+    component: toStringSafe(goal.component) || "general",
+    componentLabel: toStringSafe(goal.componentLabel),
+    section: toStringSafe(goal.section),
+    experience: Number(goal.experience) || 1,
+    order: Number(goal.order) || index + 1,
+    description: toStringSafe(goal.description),
   };
 }
 
@@ -93,6 +124,9 @@ function normalizeStudentRouteRecord(data = {}, studentId = "") {
       .map(normalizeMilestone)
       .filter(Boolean),
     recommendations: uniqueStrings(normalized.recommendations),
+    customGoals: toArraySafe(normalized.customGoals)
+      .map(normalizeCustomGoal)
+      .filter(Boolean),
     history: toArraySafe(normalized.history)
       .map(normalizeHistoryEntry)
       .filter(Boolean),
@@ -106,6 +140,60 @@ function normalizeStudentRouteRecord(data = {}, studentId = "") {
         }
       : null,
   };
+}
+
+function splitRouteStructure(route = {}) {
+  const normalized = normalizeStudentRouteRecord(route);
+  return {
+    studentId: normalized.studentId,
+    studentKey: normalized.studentKey,
+    processKey: normalized.processKey,
+    processLabel: normalized.processLabel,
+    studentName: normalized.studentName,
+    presetId: normalized.presetId,
+    routeName: normalized.routeName,
+    focusArea: normalized.focusArea,
+    customGoals: normalized.customGoals,
+    createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt,
+    lastUpdatedBy: normalized.lastUpdatedBy,
+  };
+}
+
+function splitRouteProgress(route = {}) {
+  const normalized = normalizeStudentRouteRecord(route);
+  return {
+    studentId: normalized.studentId,
+    studentKey: normalized.studentKey,
+    processKey: normalized.processKey,
+    processLabel: normalized.processLabel,
+    studentName: normalized.studentName,
+    stage: normalized.stage,
+    experience: normalized.experience,
+    completedGoalIds: normalized.completedGoalIds,
+    activeGoalIds: normalized.activeGoalIds,
+    milestones: normalized.milestones,
+    recommendations: normalized.recommendations,
+    history: normalized.history,
+    createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt,
+    lastUpdatedBy: normalized.lastUpdatedBy,
+  };
+}
+
+function mergeRouteStructureAndProgress(structure = null, progress = null) {
+  if (!structure && !progress) return null;
+  const route = {
+    ...(structure || progress || {}),
+  };
+
+  PROGRESS_FIELDS.forEach((field) => {
+    if (progress && progress[field] !== undefined && progress[field] !== null) {
+      route[field] = progress[field];
+    }
+  });
+
+  return route;
 }
 
 function buildStudentRouteDocId(studentId, processKey = "") {
@@ -163,40 +251,77 @@ export async function getStudentRouteRecord(studentId, options = {}) {
     snapshot = await getDoc(doc(db, STUDENT_ROUTES_COLLECTION, safeStudentId));
   }
 
-  if (!snapshot.exists()) {
-    return null;
+  const structure = snapshot.exists()
+    ? splitRouteStructure(normalizeStudentRouteRecord(snapshot.data(), safeStudentId))
+    : null;
+  const legacyProgress = snapshot.exists()
+    ? splitRouteProgress(normalizeStudentRouteRecord(snapshot.data(), safeStudentId))
+    : null;
+
+  let progressSnapshot = await getDoc(
+    doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, processDocId)
+  );
+
+  if (!progressSnapshot.exists()) {
+    progressSnapshot = await getDoc(
+      doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, safeStudentId)
+    );
   }
 
-  return normalizeStudentRouteRecord(snapshot.data(), safeStudentId);
+  const progress = progressSnapshot.exists()
+    ? splitRouteProgress(normalizeStudentRouteRecord(progressSnapshot.data(), safeStudentId))
+    : legacyProgress;
+
+  return mergeRouteStructureAndProgress(structure, progress);
 }
 
-export async function saveStudentRouteRecord(studentId, route = {}, options = {}) {
+async function saveRouteDocument(collectionName, studentId, route = {}, options = {}, picker) {
   const safeStudentId = toStringSafe(studentId);
   const payload = buildPersistedRoutePayload(safeStudentId, route, options);
+  const persistedPayload = picker(payload);
   const processKey =
-    toStringSafe(options.processKey || payload.processKey) || DEFAULT_PROCESS_KEY;
+    toStringSafe(options.processKey || persistedPayload.processKey) || DEFAULT_PROCESS_KEY;
   const ref = doc(
     db,
-    STUDENT_ROUTES_COLLECTION,
+    collectionName,
     buildStudentRouteDocId(safeStudentId, processKey)
   );
 
   await setDoc(
     ref,
     {
-      ...payload,
+      ...persistedPayload,
       updatedAt: serverTimestamp(),
-      createdAt: payload.createdAt || serverTimestamp(),
+      createdAt: persistedPayload.createdAt || serverTimestamp(),
     },
     { merge: true }
   );
 
-  return (
-    (await getStudentRouteRecord(safeStudentId, { processKey })) || payload
+  return (await getStudentRouteRecord(safeStudentId, { processKey })) || payload;
+}
+
+export async function saveStudentRouteRecord(studentId, route = {}, options = {}) {
+  return saveRouteDocument(
+    STUDENT_ROUTES_COLLECTION,
+    studentId,
+    route,
+    options,
+    splitRouteStructure
+  );
+}
+
+export async function saveStudentRouteProgressRecord(studentId, route = {}, options = {}) {
+  return saveRouteDocument(
+    STUDENT_ROUTE_PROGRESS_COLLECTION,
+    studentId,
+    route,
+    options,
+    splitRouteProgress
   );
 }
 
 export default {
   getStudentRouteRecord,
   saveStudentRouteRecord,
+  saveStudentRouteProgressRecord,
 };
