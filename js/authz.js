@@ -6,8 +6,8 @@ export function normalizeRole(role) {
 
   if (safeRole === CONFIG.roles.admin) return CONFIG.roles.admin;
   if (safeRole === CONFIG.roles.teacher) return CONFIG.roles.teacher;
-  if (safeRole === CONFIG.roles.student) return CONFIG.roles.student;
-  return "";
+  if (safeRole === "docente") return CONFIG.roles.teacher;
+  return "unauthorized";
 }
 
 export function resolveUserAccess(user = null) {
@@ -17,6 +17,8 @@ export function resolveUserAccess(user = null) {
       linkedStudentId: "",
       canManageSettings: false,
       canEditBitacoras: false,
+      canEditRouteStructure: false,
+      canUpdateRouteProgress: false,
       canEditRoutes: false,
       canViewSearch: false,
       canUseGroupBitacoras: false,
@@ -29,51 +31,36 @@ export function resolveUserAccess(user = null) {
     : [];
 
   const explicitRole = normalizeRole(user.role);
-  const linkedStudentId = toStringSafe(
-    user.linkedStudentId || user.studentId || user.studentKey
-  );
+  const isActive = user?.active !== false;
 
   const role =
     bootstrapAdmins.includes(email)
       ? CONFIG.roles.admin
-      : linkedStudentId && explicitRole !== CONFIG.roles.admin
-      ? CONFIG.roles.student
       : explicitRole;
 
-  const isAllowedStudent =
-    role !== CONFIG.roles.student || user?.active === true;
-
-  if (role === CONFIG.roles.admin) {
+  if (role === CONFIG.roles.admin && (bootstrapAdmins.includes(email) || isActive)) {
     return {
       role,
-      linkedStudentId,
+      linkedStudentId: "",
       canManageSettings: true,
       canEditBitacoras: true,
+      canEditRouteStructure: true,
+      canUpdateRouteProgress: true,
       canEditRoutes: true,
       canViewSearch: true,
       canUseGroupBitacoras: true,
     };
   }
 
-  if (role === CONFIG.roles.student && isAllowedStudent) {
-    return {
-      role,
-      linkedStudentId,
-      canManageSettings: false,
-      canEditBitacoras: false,
-      canEditRoutes: false,
-      canViewSearch: false,
-      canUseGroupBitacoras: false,
-    };
-  }
-
-  if (role === CONFIG.roles.teacher) {
+  if (role === CONFIG.roles.teacher && isActive) {
     return {
       role: CONFIG.roles.teacher,
-      linkedStudentId: linkedStudentId || "",
+      linkedStudentId: "",
       canManageSettings: false,
       canEditBitacoras: true,
-      canEditRoutes: true,
+      canEditRouteStructure: false,
+      canUpdateRouteProgress: true,
+      canEditRoutes: false,
       canViewSearch: true,
       canUseGroupBitacoras: true,
     };
@@ -84,6 +71,8 @@ export function resolveUserAccess(user = null) {
     linkedStudentId: "",
     canManageSettings: false,
     canEditBitacoras: false,
+    canEditRouteStructure: false,
+    canUpdateRouteProgress: false,
     canEditRoutes: false,
     canViewSearch: false,
     canUseGroupBitacoras: false,
@@ -95,19 +84,15 @@ export function canViewStudent(user, studentRef) {
   const safeRef = toStringSafe(studentRef);
 
   if (!safeRef) return false;
-  if (access.role === "guest") return false;
-  if (access.role === CONFIG.roles.student) {
-    return toStringSafe(access.linkedStudentId) === safeRef;
-  }
-
-  return true;
+  return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
 }
 
 export function getDefaultViewForUser(user) {
   const access = resolveUserAccess(user);
-  return access.role === CONFIG.roles.student
-    ? CONFIG.routes.profile
-    : CONFIG.routes.search;
+  if (access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher) {
+    return CONFIG.routes.search;
+  }
+  return CONFIG.routes.search;
 }
 
 export function canAccessRoute(user, routeName) {
@@ -119,11 +104,11 @@ export function canAccessRoute(user, routeName) {
   }
 
   if (route === CONFIG.routes.search) {
-    return access.canViewSearch;
+    return access.canViewSearch || access.role === "guest";
   }
 
   if (route === CONFIG.routes.libraries) {
-    return access.role !== "guest";
+    return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
   }
 
   if (route === CONFIG.routes.editor) {
@@ -131,17 +116,16 @@ export function canAccessRoute(user, routeName) {
   }
 
   if (route === CONFIG.routes.profile) {
-    return access.role !== "guest";
+    return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
   }
 
-  return access.role !== "guest";
+  return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
 }
 
 export function getRoleLabel(role) {
   const safeRole = normalizeRole(role);
   if (safeRole === CONFIG.roles.admin) return "Admin";
-  if (safeRole === CONFIG.roles.student) return "Estudiante";
   if (safeRole === CONFIG.roles.teacher) return "Docente";
-  if (toStringSafe(role) === "unauthorized") return "Sin acceso";
-  return "Usuario";
+  if (toStringSafe(role) === "guest") return "Invitado";
+  return "Sin acceso";
 }

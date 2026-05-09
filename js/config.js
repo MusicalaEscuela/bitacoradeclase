@@ -18,15 +18,15 @@ const ENV = detectEnvironment();
 const BASE_URLS = {
   development: {
     appsScript:
-      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
+      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
     uploads:
-      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
+      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
   },
   production: {
     appsScript:
-      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
+      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
     uploads:
-      "https://script.google.com/macros/s/AKfycbxPHiGDWQhBoA1qGrMP9QxAJaMJc0I6sb-TY84dmzZn5ASwBsnXwV5bsmClLHIRWSe_qA/exec",
+      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
   },
 };
 
@@ -46,7 +46,6 @@ const APP_MODES = Object.freeze({
 const APP_ROLES = Object.freeze({
   admin: "admin",
   teacher: "teacher",
-  student: "student",
 });
 
 const STORAGE_KEYS = Object.freeze({
@@ -109,6 +108,7 @@ const FIRESTORE_CONFIG = Object.freeze({
   studentsCollection: "students",
   bitacorasCollection: "bitacoras",
   studentRoutesCollection: "student_routes",
+  studentRouteProgressCollection: "student_route_progress",
   appConfigCollection: "app_config",
   catalogsDocumentId: "catalogos",
 });
@@ -162,6 +162,7 @@ export const CONFIG = Object.freeze({
   access: Object.freeze({
     bootstrapAdminEmails: Object.freeze([
       "alekcaballeromusic@gmail.com",
+      "catalina.medina.leal@gmail.com",
       "catalina.medina.lea@gmail.com",
       "imusicala@gmail.com",
     ]),
@@ -284,6 +285,10 @@ export function getStudentsCollectionName() {
 
 export function getStudentRoutesCollectionName() {
   return CONFIG.firestore.studentRoutesCollection || "student_routes";
+}
+
+export function getStudentRouteProgressCollectionName() {
+  return CONFIG.firestore.studentRouteProgressCollection || "student_route_progress";
 }
 
 export function getAppConfigCollectionName() {
