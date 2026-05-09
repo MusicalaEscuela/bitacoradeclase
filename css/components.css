@@ -2460,6 +2460,51 @@
   font-size: 0.9rem;
 }
 
+.route-section-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.route-section-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem;
+}
+
+.route-section-card__summary {
+  align-items: center;
+  color: var(--text-main);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.88rem;
+  font-weight: 800;
+  gap: 0.75rem;
+  justify-content: space-between;
+  list-style: none;
+}
+
+.route-section-card__summary::-webkit-details-marker {
+  display: none;
+}
+
+.route-section-card__summary::after {
+  color: var(--text-muted);
+  content: "+";
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.route-section-card[open] .route-section-card__summary::after {
+  content: "-";
+}
+
+.route-section-card .route-goal-check {
+  margin-top: 0.65rem;
+}
+
 .route-component-card__history {
   display: flex;
   flex-wrap: wrap;
@@ -2475,6 +2520,7 @@
 .route-achievement-chip {
   display: inline-flex;
   align-items: center;
+  gap: 0.35rem;
   min-height: 30px;
   padding: 0.35rem 0.7rem;
   border-radius: 999px;
@@ -2484,9 +2530,150 @@
   font-weight: 700;
 }
 
+.route-achievement-chip__undo {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(23, 106, 69, 0.12);
+  color: #176a45;
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.route-achievement-chip__undo:hover,
+.route-achievement-chip__undo:focus-visible {
+  background: rgba(23, 106, 69, 0.22);
+  outline: none;
+}
+
 .route-achievement-chip--muted {
   background: #f1f5f9;
   color: var(--text-muted);
+}
+
+.route-manual-editor {
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.route-manual-editor__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.route-structure-builder {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.route-structure-builder__experience {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+
+.route-structure-builder__title,
+.route-structure-builder__component-title {
+  color: var(--text-main);
+  font-size: 0.9rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.route-structure-builder__components {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.route-structure-builder__component {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.route-structure-builder__component-toggle {
+  align-items: center;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  list-style: none;
+  padding: 0.75rem 0.85rem;
+}
+
+.route-structure-builder__component-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.route-structure-builder__component-toggle::after {
+  color: var(--text-muted);
+  content: "+";
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.route-structure-builder__component[open] .route-structure-builder__component-toggle::after {
+  content: "-";
+}
+
+.route-structure-builder__component-count {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-left: auto;
+}
+
+.route-structure-builder__goal-list {
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 0.55rem;
+}
+
+.route-structure-builder__goal {
+  color: var(--text-muted);
+  display: grid;
+  font-size: 0.78rem;
+  font-weight: 700;
+  gap: 0.3rem;
+}
+
+.route-structure-builder__goal input {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  color: var(--text-main);
+  font: inherit;
+  font-weight: 600;
+  min-width: 0;
+  padding: 0.65rem 0.7rem;
+}
+
+.route-manual-editor__textarea {
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  color: var(--text-main);
+  font: inherit;
+  line-height: 1.45;
+  min-height: 220px;
+  padding: 0.9rem;
+  resize: vertical;
+  width: 100%;
 }
 
 .route-log-list,
