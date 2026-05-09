@@ -26,11 +26,6 @@ import {
 } from "./firebase.client.js";
 import { getCatalogs } from "./api/catalogs.api.js";
 import { getUserAccessProfile } from "./api/users.api.js";
-import {
-  getStudents,
-  getStudentByEmail,
-  isStudentAllowedToLogIn,
-} from "./api/students.api.js";
 
 const appModules = {
   views: new Map(),
@@ -361,7 +356,7 @@ async function handleObservedAuthUser(user) {
         accessProfile = await getUserAccessProfile(user);
       } catch (error) {
         console.warn(
-          "[Bitacoras App] No se pudo cargar el perfil de acceso:",
+          "[Bitácoras App] No se pudo cargar el perfil de acceso:",
           error
         );
       }
@@ -375,8 +370,7 @@ async function handleObservedAuthUser(user) {
       const explicitRole = String(accessProfile?.role || "").trim().toLowerCase();
       const allowedTeacherAccessProfile =
         isAllowedTeacherAccessProfile(accessProfile);
-      const allowedStudentAccessProfile = isAllowedStudentAccessProfile(accessProfile);
-      const deniedStudentAccessProfile = isDeniedStudentAccessProfile(accessProfile);
+      const isStudentAccessProfile = isStudentPortalAccessProfile(accessProfile);
       const shouldCheckTeacher =
         !isBootstrapAdmin &&
         explicitRole !== CONFIG.roles.admin &&
@@ -384,19 +378,6 @@ async function handleObservedAuthUser(user) {
       const matchedTeacher = shouldCheckTeacher
         ? await findTeacherByEmail(email)
         : null;
-      const shouldCheckStudent =
-        !isBootstrapAdmin &&
-        explicitRole !== CONFIG.roles.admin &&
-        explicitRole !== CONFIG.roles.teacher &&
-        !matchedTeacher;
-      const studentAccess = shouldCheckStudent
-        ? await findStudentAccessByEmail(email)
-        : { student: null, blockedByStatus: false, lookupFailed: false };
-      const matchedStudent = studentAccess.student;
-      const canUseSyncedStudentProfile =
-        Boolean(allowedStudentAccessProfile) && studentAccess.lookupFailed;
-      const deniedByStudentStatus =
-        deniedStudentAccessProfile || studentAccess.blockedByStatus;
       const mergedUser = {
         ...user,
         role: isBootstrapAdmin
@@ -405,49 +386,35 @@ async function handleObservedAuthUser(user) {
           ? CONFIG.roles.admin
           : allowedTeacherAccessProfile || matchedTeacher
           ? CONFIG.roles.teacher
-          : matchedStudent || canUseSyncedStudentProfile
-          ? CONFIG.roles.student
           : "unauthorized",
-        linkedStudentId:
-          matchedStudent?.studentKey ||
-          matchedStudent?.id ||
-          allowedStudentAccessProfile?.studentId ||
-          allowedStudentAccessProfile?.studentKey ||
-          "",
+        linkedStudentId: "",
         active:
           isBootstrapAdmin ||
-          explicitRole === CONFIG.roles.admin ||
+          accessProfile?.active !== false ||
           Boolean(allowedTeacherAccessProfile) ||
-          matchedTeacher
-            ? true
-            : Boolean(matchedStudent || canUseSyncedStudentProfile),
-        studentStatus:
-          matchedStudent?.estado ||
-          matchedStudent?.status ||
-          allowedStudentAccessProfile?.studentStatus ||
-          "",
-        accessDeniedReason: deniedByStudentStatus ? "student-status" : "",
+          Boolean(matchedTeacher),
+        accessDeniedReason: isStudentAccessProfile ? "student-portal" : "",
       };
 
       setAuthUser(mergedUser);
       clearAppError();
 
       if (resolveUserAccess(mergedUser).role === "unauthorized") {
-        if (mergedUser.accessDeniedReason === "student-status") {
+        if (mergedUser.accessDeniedReason === "student-portal") {
           setAppError(
-            "Tu estado actual no habilita el ingreso como estudiante."
+            "Este correo pertenece al portal de estudiantes."
           );
           renderInlineError(
-            "Tu correo esta registrado, pero tu estado actual no permite ingresar. Solo pueden entrar estudiantes con estado Activo, Activo no registro, Activo en pausa o Inactivo en pausa."
+            "Este correo pertenece al portal de estudiantes. Para este HUB solo pueden ingresar Admin y Docentes."
           );
           return;
         }
 
         setAppError(
-          "Este correo no tiene acceso habilitado. Debe existir como admin, docente o estudiante valido."
+          "Este correo no tiene acceso habilitado a HUB Docentes Musicala."
         );
         renderInlineError(
-          "Tu cuenta no esta autorizada para entrar a Musicala. Si crees que es un error, revisa que tu correo exista en admins, docentes o estudiantes."
+          "Este correo no tiene acceso habilitado a HUB Docentes Musicala. Debe estar registrado como Admin o Docente."
         );
         return;
       }
@@ -473,7 +440,7 @@ async function handleObservedAuthUser(user) {
       return;
     } catch (error) {
       console.warn(
-        "[Bitacoras App] No se pudo resolver el acceso del usuario:",
+        "[Bitácoras App] No se pudo resolver el acceso del usuario:",
         error
       );
       setAuthUser(user);
@@ -482,128 +449,21 @@ async function handleObservedAuthUser(user) {
   }
 
   setAuthUser(null);
-  logDebug("Sin sesion activa en Firebase Auth.");
+  logDebug("Sin sesión activa en Firebase Auth.");
 }
 
 function isAllowedTeacherAccessProfile(accessProfile = null) {
   const safeRole = String(accessProfile?.role || "").trim().toLowerCase();
 
-  return safeRole === CONFIG.roles.teacher && accessProfile?.active !== false
+  return (safeRole === CONFIG.roles.teacher || safeRole === "docente") &&
+    accessProfile?.active !== false
     ? accessProfile
     : null;
 }
 
-function isAllowedStudentAccessProfile(accessProfile = null) {
+function isStudentPortalAccessProfile(accessProfile = null) {
   const safeRole = String(accessProfile?.role || "").trim().toLowerCase();
-  const studentId = String(
-    accessProfile?.studentId || accessProfile?.studentKey || ""
-  ).trim();
-
-  return (
-    safeRole === CONFIG.roles.student &&
-    accessProfile?.active === true &&
-    Boolean(studentId)
-  )
-    ? accessProfile
-    : null;
-}
-
-function isDeniedStudentAccessProfile(accessProfile = null) {
-  const safeRole = String(accessProfile?.role || "").trim().toLowerCase();
-  const studentId = String(
-    accessProfile?.studentId || accessProfile?.studentKey || ""
-  ).trim();
-
-  return (
-    safeRole === CONFIG.roles.student &&
-    Boolean(studentId) &&
-    accessProfile?.active === false
-  );
-}
-
-async function findStudentAccessByEmail(email) {
-  const safeEmail = String(email || "").trim().toLowerCase();
-  if (!safeEmail) {
-    return {
-      student: null,
-      blockedByStatus: false,
-      lookupFailed: false,
-    };
-  }
-
-  let blockedByStatus = false;
-  let lookupFailed = false;
-
-  try {
-    const directMatch = await getStudentByEmail(safeEmail);
-    if (directMatch) {
-      if (isStudentAllowedToLogIn(directMatch)) {
-        return {
-          student: directMatch,
-          blockedByStatus: false,
-          lookupFailed: false,
-        };
-      }
-
-      blockedByStatus = true;
-    }
-  } catch (error) {
-    lookupFailed = true;
-    console.warn(
-      "[Bitacoras App] No se pudo resolver estudiante por email directo:",
-      error
-    );
-  }
-
-  try {
-    const students = await getStudents({
-      includeInactive: true,
-      estado: "todos",
-    });
-
-    const matchedStudent =
-      students.find((student) => {
-        const candidates = [
-          student?.email,
-          student?.correo,
-          student?.correoElectronico,
-          student?.mail,
-        ]
-          .map((value) => String(value || "").trim().toLowerCase())
-          .filter(Boolean);
-
-        return candidates.includes(safeEmail);
-      }) || null;
-
-    if (!matchedStudent) {
-      return {
-        student: null,
-        blockedByStatus,
-        lookupFailed: false,
-      };
-    }
-
-    if (isStudentAllowedToLogIn(matchedStudent)) {
-      return {
-        student: matchedStudent,
-        blockedByStatus: false,
-        lookupFailed: false,
-      };
-    }
-
-    return {
-      student: null,
-      blockedByStatus: true,
-      lookupFailed: false,
-    };
-  } catch (error) {
-    console.warn("[Bitacoras App] No se pudo resolver estudiante por correo:", error);
-    return {
-      student: null,
-      blockedByStatus,
-      lookupFailed,
-    };
-  }
+  return safeRole === "student" || safeRole === "estudiante";
 }
 
 async function findTeacherByEmail(email) {
@@ -634,7 +494,7 @@ async function findTeacherByEmail(email) {
     }
   } catch (error) {
     console.warn(
-      "[Bitacoras App] No se pudo resolver docente desde catalogos:",
+      "[Bitácoras App] No se pudo resolver docente desde catalogos:",
       error
     );
   }
@@ -780,7 +640,7 @@ async function runCurrentUnmount() {
       });
     } catch (error) {
       console.warn(
-        "[BitÃ¡coras App] Error ejecutando beforeLeave() de la vista anterior:",
+        "[Bitácoras App] Error ejecutando beforeLeave() de la vista anterior:",
         error
       );
     }
