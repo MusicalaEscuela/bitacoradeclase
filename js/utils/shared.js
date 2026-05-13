@@ -68,8 +68,61 @@ export function normalizeText(value) {
    FECHAS
    ========================================================================== */
 
+export function normalizeLocalDateInput(value) {
+  const text = toStringSafe(value);
+  if (!text) return "";
+
+  const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) {
+    return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+  }
+
+  const slashDate = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (slashDate) {
+    const day = Number(slashDate[1]);
+    const month = Number(slashDate[2]);
+    const year = Number(slashDate[3]);
+    if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+  }
+
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+
+  return [
+    parsed.getFullYear(),
+    String(parsed.getMonth() + 1).padStart(2, "0"),
+    String(parsed.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+export function parseLocalDate(value) {
+  const safeDate = normalizeLocalDateInput(value);
+  const match = safeDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
 export function getTimestamp(value) {
   if (!value) return 0;
+  const localDate = parseLocalDate(value);
+  if (localDate) return localDate.getTime();
+
   const parsed = new Date(value).getTime();
   return Number.isNaN(parsed) ? 0 : parsed;
 }
@@ -77,7 +130,7 @@ export function getTimestamp(value) {
 export function formatDisplayDate(value) {
   if (!value) return "Sin fecha";
 
-  const date = new Date(value);
+  const date = parseLocalDate(value) || new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
 
   return new Intl.DateTimeFormat("es-CO", {
@@ -88,7 +141,12 @@ export function formatDisplayDate(value) {
 }
 
 export function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 /* ==========================================================================
