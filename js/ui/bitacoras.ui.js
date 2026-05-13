@@ -8,6 +8,7 @@ import {
   delegate,
   escapeHtml,
 } from "./dom.js";
+import { formatDisplayDate } from "../utils/shared.js";
 
 const DEFAULT_SELECTORS = {
   list: "#bitacoras-list",
@@ -561,16 +562,7 @@ function formatDateLabel(value) {
   if (!value) return "";
 
   if (typeof value === "string" && value.trim()) {
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleDateString("es-CO", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    }
-
-    return value;
+    return formatDisplayDate(value);
   }
 
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
