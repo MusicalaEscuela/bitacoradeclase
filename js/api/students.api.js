@@ -10,6 +10,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
 } from "../firebase.client.js";
@@ -88,16 +89,23 @@ export async function updateStudentTeacher(studentId, teacherName = "") {
 
   const docente = normalizeScalar(teacherName);
   const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
+  const snapshot = await getDoc(ref);
 
-  await setDoc(
+  if (!snapshot.exists()) {
+    throw createApiError("No se encontró el estudiante en Firebase para asignar docente.", {
+      code: "STUDENT_NOT_FOUND",
+      studentId: safeStudentId,
+    });
+  }
+
+  await updateDoc(
     ref,
     {
       docente,
       teacher: docente,
       updatedAt: serverTimestamp(),
       updatedBy: "profile_teacher_assignment",
-    },
-    { merge: true }
+    }
   );
 
   return {
