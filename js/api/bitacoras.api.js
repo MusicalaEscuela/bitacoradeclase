@@ -26,8 +26,11 @@ import {
 
 import {
   isPlainObject,
+  normalizeLocalDateInput,
+  normalizeText,
   toStringSafe,
   uniqueStrings,
+  getTimestamp,
 } from "../utils/shared.js";
 
 const BITACORAS_COLLECTION = getBitacorasCollectionName();
@@ -160,6 +163,13 @@ function normalizeTags(tags = []) {
   return uniqueStrings(tags).slice(0, CONFIG.limits.maxTags);
 }
 
+function normalizeTeachers(value, fallback = "") {
+  return uniqueStrings([
+    ...(Array.isArray(value) ? value : [value]),
+    fallback,
+  ]).slice(0, 8);
+}
+
 function normalizeOverrideValues(values = []) {
   const source = Array.isArray(values) ? values : [values];
 
@@ -268,8 +278,9 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
 
   const title = safeString(input.title || input.titulo);
   const content = safeString(input.content || input.contenido);
-  const fechaClase = safeString(input.fechaClase || input.fecha || "");
+  const fechaClase = normalizeLocalDateInput(input.fechaClase || input.fecha || "");
   const tags = normalizeTags(input.tags || input.etiquetas);
+  const docentes = normalizeTeachers(input.docentes, input.docente || input.process?.docente);
   const attachments = normalizeAttachments(
     input.attachments || input.archivos || []
   );
@@ -344,6 +355,8 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
     primaryStudentId,
     author,
     process,
+    docentes,
+    docente: docentes[0] || "",
     tags,
     attachments,
     status: safeString(input.status || "active"),
@@ -375,6 +388,8 @@ function normalizeBitacoraRecord(docSnap) {
     primaryStudentId: safeString(normalized.primaryStudentId),
     author: normalizeAuthor(normalized.author),
     process: normalizeProcess(normalized.process),
+    docentes: normalizeTeachers(normalized.docentes, normalized.docente || normalized.process?.docente),
+    docente: safeString(normalized.docente || normalized.process?.docente),
     tags: normalizeTags(normalized.tags),
     attachments: normalizeAttachments(
       normalized.attachments || normalized.archivos
@@ -389,15 +404,15 @@ function normalizeBitacoraRecord(docSnap) {
 
 function sortBitacoras(items = []) {
   return [...items].sort((a, b) => {
-    const dateA = Date.parse(a.fechaClase || a.updatedAt || a.createdAt || 0) || 0;
-    const dateB = Date.parse(b.fechaClase || b.updatedAt || b.createdAt || 0) || 0;
+    const dateA = getTimestamp(a.fechaClase || a.updatedAt || a.createdAt);
+    const dateB = getTimestamp(b.fechaClase || b.updatedAt || b.createdAt);
     return dateB - dateA;
   });
 }
 
 function applyClientFilters(items = [], options = {}) {
   const mode = safeString(options.mode).toLowerCase();
-  const search = safeString(options.search || options.query).toLowerCase();
+  const search = normalizeText(options.search || options.query);
   const status = safeString(options.status).toLowerCase();
   const processKey = safeString(options.processKey || options.processRef);
 
@@ -429,17 +444,18 @@ function applyClientFilters(items = [], options = {}) {
         item.author?.email,
         item.process?.area,
         item.process?.modalidad,
+        item.docente,
         item.process?.docente,
         item.process?.programa,
+        ...(item.docentes || []),
         ...(item.tags || []),
         ...(item.studentRefs || []).map((student) => student.name),
         ...(item.studentIds || []),
       ]
         .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+        .join(" ");
 
-      return haystack.includes(search);
+      return normalizeText(haystack).includes(search);
     });
   }
 

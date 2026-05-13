@@ -78,6 +78,37 @@ export function isStudentAllowedToLogIn(studentOrStatus) {
   );
 }
 
+export async function updateStudentTeacher(studentId, teacherName = "") {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) {
+    throw createApiError("Se requiere estudiante para asignar docente.", {
+      code: "MISSING_STUDENT_ID",
+    });
+  }
+
+  const docente = normalizeScalar(teacherName);
+  const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
+
+  await setDoc(
+    ref,
+    {
+      docente,
+      teacher: docente,
+      updatedAt: serverTimestamp(),
+      updatedBy: "profile_teacher_assignment",
+    },
+    { merge: true }
+  );
+
+  return {
+    id: safeStudentId,
+    studentId: safeStudentId,
+    studentKey: safeStudentId,
+    docente,
+    teacher: docente,
+  };
+}
+
 function buildUrl(baseUrl, queryParams = {}) {
   if (!baseUrl) {
     throw createApiError("La URL base del endpoint no es valida.", {
@@ -749,4 +780,5 @@ export default {
   syncStudentsFromSheetToFirestore,
   normalizeStudentStatus,
   isStudentAllowedToLogIn,
+  updateStudentTeacher,
 };
