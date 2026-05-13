@@ -107,6 +107,7 @@ const FEATURE_FLAGS = Object.freeze({
 const FIRESTORE_CONFIG = Object.freeze({
   studentsCollection: "students",
   bitacorasCollection: "bitacoras",
+  routeTemplatesCollection: "route_templates",
   studentRoutesCollection: "student_routes",
   studentRouteProgressCollection: "student_route_progress",
   appConfigCollection: "app_config",
@@ -285,6 +286,10 @@ export function getStudentsCollectionName() {
 
 export function getStudentRoutesCollectionName() {
   return CONFIG.firestore.studentRoutesCollection || "student_routes";
+}
+
+export function getRouteTemplatesCollectionName() {
+  return CONFIG.firestore.routeTemplatesCollection || "route_templates";
 }
 
 export function getStudentRouteProgressCollectionName() {
