@@ -14,6 +14,7 @@ import {
   uniqueStrings,
   normalizeMode,
   getTimestamp,
+  normalizeLocalDateInput,
 } from "./utils/shared.js";
 
 /* ==========================================================================
@@ -204,12 +205,14 @@ function normalizeBitacoraItem(item = {}) {
     titulo: toStringSafe(item.titulo || item.title || "Bitácora sin título"),
     contenido: toStringSafe(item.contenido || item.content),
     etiquetas: uniqueStrings(item.etiquetas || item.tags),
+    docentes: uniqueStrings(item.docentes || item.docente || item.process?.docente),
+    docente: toStringSafe(item.docente || item.process?.docente),
     archivos: Array.isArray(item.archivos)
       ? [...item.archivos]
       : Array.isArray(item.attachments)
       ? [...item.attachments]
       : [],
-    fechaClase: toStringSafe(item.fechaClase || item.fecha || item.classDate),
+    fechaClase: normalizeLocalDateInput(item.fechaClase || item.fecha || item.classDate),
     studentId: studentId || null,
     studentIds,
     studentRefs: normalizeStudentRefs(item.studentRefs),
@@ -368,12 +371,14 @@ function createEmptyDraft(overrides = {}) {
     studentKey: primaryId || studentKey || null,
     studentIds: normalizedStudentIds,
     studentRefs: normalizedStudentRefs,
-    fechaClase: toStringSafe(overrides.fechaClase),
+    fechaClase: normalizeLocalDateInput(overrides.fechaClase),
     titulo: toStringSafe(overrides.titulo || overrides.title || base.title),
     contenido: toStringSafe(
       overrides.contenido || overrides.content || base.content
     ),
     etiquetas: uniqueStrings(overrides.etiquetas || overrides.tags || base.tags),
+    docentes: uniqueStrings(overrides.docentes || overrides.docente),
+    docente: toStringSafe(overrides.docente),
     archivos: Array.isArray(overrides.archivos)
       ? [...overrides.archivos]
       : Array.isArray(overrides.attachments)
