@@ -49,6 +49,7 @@ import {
   getTimestamp,
   getTodayDate,
   isPlainObject,
+  normalizeLocalDateInput,
   normalizeBitacorasResponse as normalizeBitacorasResponseShared,
   normalizeText,
   normalizeMode,
@@ -73,6 +74,8 @@ let groupSearchDebounceTimer = null;
 
 const DRAFT_INPUT_DEBOUNCE_MS = 140;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
+const RECENT_PICKERS_KEY = "bitacoras_recent_pickers_v1";
+const RECENT_PICKERS_LIMIT = 12;
 
 export async function beforeEnter({ payload, navigateTo } = {}) {
   clearAppError();
@@ -170,6 +173,7 @@ export async function render({
     allStudents: getAllStudentsFromState(safeState),
   });
 
+  placeTasksAndCategoriesAfterComponents();
   bindEditorEvents(student);
   renderReactiveBlocks(getState(), safeConfig, currentEditorStudentKey);
   setupSubscription(safeConfig, currentEditorStudentKey);
@@ -544,7 +548,6 @@ function bindEditorEvents(student) {
   const processSelect = viewRoot.querySelector("#bitacora-process-select");
   const fechaInput = viewRoot.querySelector("#bitacora-fecha");
   const tituloInput = viewRoot.querySelector("#bitacora-titulo");
-  const docenteInput = viewRoot.querySelector("#bitacora-docente");
   const etiquetasInput = viewRoot.querySelector("#bitacora-etiquetas");
   const tareasInput = viewRoot.querySelector("#bitacora-tareas");
   const corporalInput = viewRoot.querySelector("#bitacora-componente-corporal");
@@ -568,7 +571,6 @@ function bindEditorEvents(student) {
   [
     fechaInput,
     tituloInput,
-    docenteInput,
     tareasInput,
     contenidoInput,
   ].forEach((input) => {
@@ -706,6 +708,7 @@ function bindEditorEvents(student) {
   }
 
   const multiInputKeys = [
+    "docentes",
     "etiquetas",
     "componenteCorporal",
     "componenteTecnico",
@@ -846,6 +849,33 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   syncModeInputs();
 }
 
+function placeTasksAndCategoriesAfterComponents() {
+  if (!viewRoot) return;
+
+  const categoriesInput = viewRoot.querySelector("#bitacora-etiquetas-input");
+  const tasksInput = viewRoot.querySelector("#bitacora-tareas");
+  const obrasInput = viewRoot.querySelector("#bitacora-componente-obras-input");
+  const categoriesBlock = categoriesInput?.closest(".editor-form-grid");
+  const tasksBlock = tasksInput?.closest(".field");
+  const componentsBlock = obrasInput?.closest(".editor-form-grid");
+
+  if (!componentsBlock) return;
+
+  if (tasksBlock && tasksBlock !== componentsBlock && componentsBlock.nextElementSibling !== tasksBlock) {
+    componentsBlock.insertAdjacentElement("afterend", tasksBlock);
+  }
+
+  const anchorBlock = tasksBlock || componentsBlock;
+  if (
+    categoriesBlock &&
+    categoriesBlock !== componentsBlock &&
+    categoriesBlock !== tasksBlock &&
+    anchorBlock.nextElementSibling !== categoriesBlock
+  ) {
+    anchorBlock.insertAdjacentElement("afterend", categoriesBlock);
+  }
+}
+
 function handleDraftInput(student) {
   const draft = updateDraftFromForm(student);
   renderDraftMetaBlock(student);
@@ -919,16 +949,17 @@ function refillFormIfNeeded(student) {
   const draft = getDraftForContext(student);
   const structured = getStructuredDraftFields(draft, student);
 
-  syncInputValue("#bitacora-fecha", draft.fechaClase || getTodayDate());
+  syncInputValue("#bitacora-fecha", normalizeLocalDateInput(draft.fechaClase) || getTodayDate());
   syncInputValue("#bitacora-titulo", draft.titulo || buildAutoTitle(student, draft.fechaClase));
-  syncInputValue("#bitacora-docente", structured.docente || "");
   syncTextareaValue("#bitacora-tareas", structured.tareas || "");
   syncTextareaValue("#bitacora-contenido", draft.contenido || "");
+  syncInputValue("#bitacora-docentes-input", "");
   syncInputValue("#bitacora-etiquetas-input", "");
   syncInputValue("#bitacora-componente-corporal-input", "");
   syncInputValue("#bitacora-componente-tecnico-input", "");
   syncInputValue("#bitacora-componente-teorico-input", "");
   syncInputValue("#bitacora-componente-obras-input", "");
+  renderMultiValueSelection("docentes", getDraftTeachers(draft, structured, student));
   renderMultiValueSelection("etiquetas", draft.etiquetas || []);
   renderMultiValueSelection("componenteCorporal", structured.componenteCorporal || []);
   renderMultiValueSelection("componenteTecnico", structured.componenteTecnico || []);
@@ -980,7 +1011,54 @@ function addMultiValueSelection(key, rawValue, student) {
 
   renderMultiValueSelection(key, nextValues);
   if (input) input.value = "";
+  rememberPickerValues(key, valuesToAdd);
+  applySuggestedCategoriesFromSelection(key, valuesToAdd, student);
   handleDraftInput(student);
+}
+
+function applySuggestedCategoriesFromSelection(key, values = [], student) {
+  if (key === "etiquetas" || key === "docentes") return;
+
+  const categoryByKey = {
+    componenteCorporal: "Componente corporal",
+    componenteTecnico: "Componente tecnico",
+    componenteTeorico: "Componente teorico",
+    componenteObras: "Componente de obras",
+  };
+  const directCategory = categoryByKey[key];
+  const inferred = inferCategoriesFromActivities(values, directCategory);
+  if (!inferred.length) return;
+
+  const nextCategories = normalizeListValues([
+    ...getMultiValueSelection("etiquetas"),
+    ...inferred,
+  ]);
+  renderMultiValueSelection("etiquetas", nextCategories);
+  rememberPickerValues("etiquetas", inferred);
+}
+
+function inferCategoriesFromActivities(values = [], fallbackCategory = "") {
+  const catalogs = cachedCatalogs || getEmptyCatalogs();
+  const categories = getCatalogOptions(catalogs.categorias);
+  const matches = [];
+
+  normalizeListValues(values).forEach((value) => {
+    const normalizedValue = normalizeText(value);
+    const matchedCategory = categories.find((category) => {
+      const normalizedCategory = normalizeText(category);
+      return (
+        normalizedValue.includes(normalizedCategory) ||
+        normalizedCategory.includes(normalizedValue)
+      );
+    });
+    if (matchedCategory) matches.push(matchedCategory);
+  });
+
+  if (!matches.length && fallbackCategory) {
+    matches.push(fallbackCategory);
+  }
+
+  return normalizeListValues(matches);
 }
 
 function getDatalistOptions(listId) {
@@ -1033,9 +1111,14 @@ async function handleSubmit(student) {
     return;
   }
 
-  setAppSaving(true);
-
   try {
+    const duplicatePayload = buildBitacoraPayload(student, draft);
+    const duplicate = await findPotentialDuplicateBitacora(student, duplicatePayload);
+    if (duplicate && !confirmDuplicateBitacora(duplicate)) {
+      return;
+    }
+
+    setAppSaving(true);
     draft = await uploadDraftFilesToStorage(student, draft);
     const payload = buildBitacoraPayload(student, draft);
     const created = await createBitacora(payload);
@@ -1175,6 +1258,113 @@ async function reloadHistory(student) {
   } finally {
     setBitacorasLoading(false);
   }
+}
+
+async function findPotentialDuplicateBitacora(student, payload = {}) {
+  const relatedIds = new Set(normalizeStudentIds(payload.studentIds || [payload.studentId]));
+  if (!relatedIds.size) return null;
+
+  let items = [
+    ...getBitacorasFromState(student),
+    ...[...relatedIds].flatMap((studentId) => getBitacorasFromState(studentId)),
+  ];
+  items = dedupeBitacorasById(items);
+  if (!items.length) {
+    try {
+      items = await safeLoadBitacoras(getStudentIdentity(student));
+    } catch (error) {
+      console.warn("No se pudo consultar historial para validar duplicados:", error);
+      return null;
+    }
+  }
+
+  const targetDate = normalizeClassDate(payload.fechaClase);
+  const targetTeacher = normalizeDuplicateToken(payload.process?.docente);
+  const targetProcess = normalizeDuplicateProcess(payload);
+
+  if (!targetDate) return null;
+
+  return items.find((item) => {
+    const itemStudentIds = normalizeStudentIds(item.studentIds || [item.studentId]);
+    const hasSameStudent = itemStudentIds.some((id) => relatedIds.has(id));
+    if (!hasSameStudent) return false;
+
+    if (normalizeClassDate(item.fechaClase) !== targetDate) return false;
+
+    const itemTeacher = normalizeDuplicateToken(
+      item?.process?.docente || item?.docente || item?.teacher
+    );
+    if (targetTeacher && itemTeacher && itemTeacher !== targetTeacher) return false;
+
+    const itemProcess = normalizeDuplicateProcess(item);
+    if (targetProcess && itemProcess && itemProcess !== targetProcess) return false;
+
+    return true;
+  }) || null;
+}
+
+function dedupeBitacorasById(items = []) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = toStringSafe(item?.id || item?.bitacoraId);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function confirmDuplicateBitacora(duplicate = {}) {
+  const dateLabel = formatDisplayDate(duplicate.fechaClase || duplicate.createdAt);
+  const processLabel = firstNonEmpty(
+    duplicate?.process?.processLabel,
+    duplicate?.process?.programa,
+    duplicate?.process?.area,
+    duplicate?.processKey
+  );
+  const teacherLabel = firstNonEmpty(
+    duplicate?.process?.docente,
+    duplicate?.docente,
+    duplicate?.teacher
+  );
+
+  const details = [
+    dateLabel ? `Fecha: ${dateLabel}` : "",
+    processLabel ? `Proceso: ${processLabel}` : "",
+    teacherLabel ? `Docente: ${teacherLabel}` : "",
+  ].filter(Boolean);
+
+  return window.confirm(
+    [
+      "Ya existe una bitácora muy parecida para este estudiante.",
+      "",
+      ...details,
+      "",
+      "¿Estás segura de que hay otra clase en la misma fecha?",
+    ].join("\n")
+  );
+}
+
+function normalizeClassDate(value = "") {
+  const raw = toStringSafe(value);
+  if (!raw) return "";
+  return raw.includes("T") ? raw.slice(0, 10) : raw;
+}
+
+function normalizeDuplicateToken(value = "") {
+  return normalizeText(value);
+}
+
+function normalizeDuplicateProcess(item = {}) {
+  return normalizeText(
+    firstNonEmpty(
+      item?.process?.processKey,
+      item?.processKey,
+      item?.process?.processLabel,
+      item?.process?.programa,
+      item?.process?.area
+    )
+  );
 }
 
 function handlePrintHistory(student) {
@@ -1573,7 +1763,9 @@ function normalizeBitacora(item) {
     titulo: item.titulo || item.title || "Bitácora sin título",
     contenido: item.contenido || item.content || "",
     etiquetas: normalizeTags(item.etiquetas || item.tags || []),
-    fechaClase: item.fechaClase || item.fecha || item.classDate || "",
+    docentes: normalizeListValues(item.docentes || item.docente || item.process?.docente),
+    docente: firstNonEmpty(item.docente, item.process?.docente),
+    fechaClase: normalizeLocalDateInput(item.fechaClase || item.fecha || item.classDate || ""),
     archivos: normalizeFiles(item.archivos || item.attachments || []),
     studentIds: normalizeStudentIds(item.studentIds || [item.studentId]),
     studentRefs: normalizeStudentRefs(item.studentRefs || []),
@@ -1615,10 +1807,13 @@ function buildBitacoraPayload(student, draft) {
   const selectedStudents = getSelectedStudentsForDraft(draft, student, allStudents);
   const mode = getAllowedMode(draft.mode);
   const structured = getStructuredDraftFields(draft, student);
-  const selectedTeacher =
-    toStringSafe(viewRoot?.querySelector("#bitacora-docente")?.value) ||
-    structured.docente ||
-    firstNonEmpty(student.docente, student.teacher);
+  const selectedTeachers = normalizeListValues([
+    ...(Array.isArray(draft.docentes) ? draft.docentes : []),
+    structured.docentes,
+    structured.docente,
+    firstNonEmpty(student.docente, student.teacher),
+  ]);
+  const selectedTeacher = selectedTeachers[0] || "";
   const activeProcess =
     resolveStudentProcess(student, currentEditorProcessKey || draft.processKey) ||
     normalizeStudentProcesses(student)[0] ||
@@ -1652,7 +1847,9 @@ function buildBitacoraPayload(student, draft) {
     title: String(draft.titulo || buildAutoTitle(student, draft.fechaClase)).trim(),
     content: String(draft.contenido || "").trim(),
     tags: normalizeTags(draft.etiquetas),
-    fechaClase: draft.fechaClase || getTodayDate(),
+    fechaClase: normalizeLocalDateInput(draft.fechaClase) || getTodayDate(),
+    docentes: selectedTeachers,
+    docente: selectedTeacher,
     attachments: normalizeFiles(draft.archivos),
     archivos: normalizeFiles(draft.archivos),
     studentOverrides: normalizeStudentOverrides(draft.studentOverrides, studentIds),
@@ -1788,7 +1985,7 @@ function updateDraftFromForm(student) {
   );
 
   const structuredFields = {
-    docente: viewRoot?.querySelector("#bitacora-docente")?.value || "",
+    docentes: getMultiValueSelection("docentes"),
     tareas: viewRoot?.querySelector("#bitacora-tareas")?.value || "",
     componenteCorporal: getMultiValueSelection("componenteCorporal"),
     componenteTecnico: getMultiValueSelection("componenteTecnico"),
@@ -1796,7 +1993,7 @@ function updateDraftFromForm(student) {
     componenteObras: getMultiValueSelection("componenteObras"),
   };
 
-  const nextFecha = viewRoot?.querySelector("#bitacora-fecha")?.value || "";
+  const nextFecha = normalizeLocalDateInput(viewRoot?.querySelector("#bitacora-fecha")?.value || "");
   const nextTitulo = buildAutoTitle(student, nextFecha);
   const nextContenido = buildStructuredContent(structuredFields);
 
@@ -1823,6 +2020,8 @@ function updateDraftFromForm(student) {
           ],
     fechaClase: nextFecha,
     titulo: nextTitulo,
+    docentes: structuredFields.docentes,
+    docente: structuredFields.docentes[0] || "",
     etiquetas: getMultiValueSelection("etiquetas"),
     contenido: nextContenido,
     archivos: Array.isArray(existingDraft.archivos)
@@ -1899,8 +2098,10 @@ function getDraftForContext(student) {
               name: isPlainObject(student) ? getStudentName(student) : studentRef,
             },
           ],
-    fechaClase: draft.fechaClase || getTodayDate(),
+    fechaClase: normalizeLocalDateInput(draft.fechaClase) || getTodayDate(),
     titulo: draft.titulo || "",
+    docentes: normalizeListValues(draft.docentes || draft.docente),
+    docente: firstNonEmpty(draft.docente, ...(Array.isArray(draft.docentes) ? draft.docentes : [])),
     etiquetas: Array.isArray(draft.etiquetas) ? draft.etiquetas : [],
     contenido: draft.contenido || "",
     archivos: normalizeFiles(draft.archivos || []),
@@ -1931,6 +2132,8 @@ function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual)
     processKey: activeProcess?.processKey || "",
     fechaClase: getTodayDate(),
     titulo: "",
+    docentes: [],
+    docente: "",
     etiquetas: [],
     contenido: "",
     archivos: [],
@@ -2155,7 +2358,8 @@ function renderBitacoraCard(item, index = 0, total = 0) {
     item.studentIds || []
   );
   const authorName = getBitacoraAuthorName(item, structuredContent);
-  const sequence = formatBitacoraSequence(index + 1);
+  const chronologicalNumber = Math.max(total - index, 1);
+  const sequence = formatBitacoraSequence(chronologicalNumber);
 
   return `
     <article class="bitacora-card">
@@ -2175,11 +2379,12 @@ function renderBitacoraCard(item, index = 0, total = 0) {
           </div>
 
         <div class="bitacora-card__meta">
+          <span class="badge badge--soft">Clase ${escapeHtml(sequence)}</span>
           <span class="badge">${escapeHtml(mode === CONFIG.modes.group ? "Grupal" : "Individual")}</span>
           <span class="badge">${escapeHtml(studentsLabel)}</span>
           ${
             total > 1
-              ? `<span class="badge badge--soft">${escapeHtml(`${index + 1} de ${total}`)}</span>`
+              ? `<span class="badge badge--soft">${escapeHtml(`${chronologicalNumber} de ${total}`)}</span>`
               : ""
           }
         </div>
@@ -2447,7 +2652,7 @@ function renderGroupStudentsResults(
   searchTerm = ""
 ) {
   const selectedIds = new Set(selectedStudents.map((item) => item.id));
-  const queryText = toStringSafe(searchTerm).toLowerCase();
+  const queryText = normalizeText(searchTerm);
 
   if (!queryText.trim()) {
     return `
@@ -2482,10 +2687,9 @@ function renderGroupStudentsResults(
         student.teacher,
       ]
         .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+        .join(" ");
 
-      return haystack.includes(queryText);
+      return normalizeText(haystack).includes(queryText);
     })
     .slice(0, 8);
 
@@ -3140,7 +3344,7 @@ function buildMusicalaEditorMarkup({
     catalogs.docentes,
     allStudents,
     student,
-    draftFields.docente
+    getDraftTeachers(draft, draftFields, student).join(", ")
   );
   const categoriasOptions = getCatalogOptions(catalogs.categorias);
   const corporalOptions = getCatalogOptions(catalogs.componenteCorporal);
@@ -3255,25 +3459,16 @@ function buildMusicalaEditorMarkup({
                   />
                 </label>
 
-                  <label class="field">
-                    <span class="field__label">Docente</span>
-                    <select id="bitacora-docente" name="docente" class="field__input">
-                      <option value="" ${draftFields.docente ? "" : "selected"}>
-                        Selecciona un docente...
-                      </option>
-                      ${teacherOptions
-                        .map(
-                          (option) => `
-                          <option value="${escapeHtml(option)}" ${
-                            option === draftFields.docente ? "selected" : ""
-                          }>
-                            ${escapeHtml(option)}
-                          </option>
-                        `
-                      )
-                      .join("")}
-                  </select>
-                </label>
+                ${renderMultiValueField({
+                  key: "docentes",
+                  label: "Docentes",
+                  inputId: "bitacora-docentes-input",
+                  listId: "bitacora-docentes-list",
+                  placeholder: "Escribe o elige docentes para esta clase...",
+                  hint: "Puedes agregar más de un docente para clases compartidas.",
+                  options: teacherOptions,
+                  selectedValues: getDraftTeachers(draft, draftFields, student),
+                })}
               </div>
 
                 <section class="field field--selection ${isGroup ? "" : "is-hidden"}" id="group-editor-block">
@@ -3571,6 +3766,9 @@ function renderBitacoraStructuredSections(content = {}) {
 }
 
 function getBitacoraAuthorName(item = {}, structuredContent = {}) {
+  const docentes = normalizeListValues(item?.docentes || item?.docente || structuredContent?.docente);
+  if (docentes.length) return docentes.join(", ");
+
   return firstNonEmpty(
     item?.author?.name,
     item?.author?.displayName,
@@ -3656,7 +3854,65 @@ function getTeacherOptions(
 }
 
 function getCatalogOptions(values = []) {
-  return [...new Set((Array.isArray(values) ? values : []).map((item) => toStringSafe(item)).filter(Boolean))];
+  return uniqueByNormalized((Array.isArray(values) ? values : []).map((item) => toStringSafe(item)).filter(Boolean));
+}
+
+function uniqueByNormalized(values = []) {
+  const seen = new Set();
+  const result = [];
+
+  values.forEach((value) => {
+    const label = toStringSafe(value);
+    const key = normalizeText(label);
+    if (!label || seen.has(key)) return;
+    seen.add(key);
+    result.push(label);
+  });
+
+  return result;
+}
+
+function getRecentPickers() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_PICKERS_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberPickerValues(key, values = []) {
+  const cleanValues = normalizeListValues(values);
+  if (!key || !cleanValues.length) return;
+
+  try {
+    const recent = getRecentPickers();
+    recent[key] = uniqueByNormalized([
+      ...cleanValues,
+      ...(Array.isArray(recent[key]) ? recent[key] : []),
+    ]).slice(0, RECENT_PICKERS_LIMIT);
+    localStorage.setItem(RECENT_PICKERS_KEY, JSON.stringify(recent));
+  } catch (error) {
+    console.warn("No se pudieron guardar opciones recientes:", error);
+  }
+}
+
+function prioritizePickerOptions(key, options = []) {
+  const recent = getRecentPickers();
+  return uniqueByNormalized([
+    ...(Array.isArray(recent[key]) ? recent[key] : []),
+    ...options,
+  ]);
+}
+
+function getDraftTeachers(draft = {}, structured = {}, student = {}) {
+  return normalizeListValues([
+    ...(Array.isArray(draft.docentes) ? draft.docentes : []),
+    draft.docente,
+    structured.docente,
+    student?.docente,
+    student?.teacher,
+  ]);
 }
 
 function renderDatalist(id, values = []) {
@@ -3684,6 +3940,7 @@ function renderMultiValueField({
   options = [],
   selectedValues = [],
   }) {
+    const prioritizedOptions = prioritizePickerOptions(key, options);
     return `
       <section class="field field--multi-value">
         <span class="field__label">${escapeHtml(label)}</span>
@@ -3701,7 +3958,7 @@ function renderMultiValueField({
         <div class="multi-value-list" data-multi-values="${escapeHtml(key)}">
           ${renderMultiValueChips(key, selectedValues)}
       </div>
-      ${renderDatalist(listId, options)}
+      ${renderDatalist(listId, prioritizedOptions)}
     </section>
   `;
 }
@@ -3993,8 +4250,9 @@ function parseStructuredContent(content = "") {
 }
 
 function buildStructuredContent(fields = {}) {
+  const docentes = normalizeListValues(fields.docentes || fields.docente);
   const normalized = {
-    docente: toStringSafe(fields.docente),
+    docente: docentes.join(", "),
     tareas: toStringSafe(fields.tareas),
     componenteCorporal: normalizeListValues(fields.componenteCorporal),
     componenteTecnico: normalizeListValues(fields.componenteTecnico),
@@ -4029,6 +4287,7 @@ function getStructuredDraftFields(draft, student) {
 
   return {
     docente: safeDocente || "",
+    docentes: normalizeListValues(draft?.docentes || draft?.docente || safeDocente),
     tareas: safeTareas || "",
     componenteCorporal: normalizeListValues(parsed.componenteCorporal),
     componenteTecnico: normalizeListValues(parsed.componenteTecnico),

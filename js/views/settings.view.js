@@ -27,6 +27,7 @@ import {
 import {
   escapeHtml,
   isPlainObject,
+  normalizeLocalDateInput,
   normalizeText,
   toStringSafe,
 } from "../utils/shared.js";
@@ -1218,15 +1219,17 @@ function parseFlexibleDate(value) {
     const parsed = new Date(year, month - 1, day, hours, minutes, seconds);
 
     if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toISOString().slice(0, 10);
+      return [
+        parsed.getFullYear(),
+        String(parsed.getMonth() + 1).padStart(2, "0"),
+        String(parsed.getDate()).padStart(2, "0"),
+      ].join("-");
     }
   }
 
   // Soporte secundario para yyyy-mm-dd o strings ISO.
-  const direct = new Date(raw);
-  if (!Number.isNaN(direct.getTime())) {
-    return direct.toISOString().slice(0, 10);
-  }
+  const direct = normalizeLocalDateInput(raw);
+  if (direct) return direct;
 
   return raw;
 }
@@ -1703,7 +1706,6 @@ async function withLoading(task) {
     setAppLoading(false);
   }
 }
-
 
 
 

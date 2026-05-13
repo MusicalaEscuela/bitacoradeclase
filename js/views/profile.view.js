@@ -17,13 +17,21 @@ import {
   setStudentGoals,
   setStudentProfile,
   setStudentRoute,
+  updateStudentProfile,
 } from "../state.js";
 import {
   getBitacoraById,
   getBitacorasByStudent,
   updateBitacora,
 } from "../api/bitacoras.api.js";
-import { getStudentProfile } from "../api/students.api.js";
+import {
+  getStudentProfile,
+  updateStudentTeacher,
+} from "../api/students.api.js";
+import {
+  getCatalogs,
+  getEmptyCatalogs,
+} from "../api/catalogs.api.js";
 import {
   getStudentRouteRecord,
   saveStudentRouteProgressRecord,
@@ -42,6 +50,7 @@ import {
   normalizeStudentProcesses,
   resolveStudentProcess,
   getTimestamp,
+  normalizeLocalDateInput,
   normalizeBitacorasResponse as normalizeBitacorasResponseShared,
   normalizeMode,
   normalizeText,
@@ -59,6 +68,8 @@ let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let historyExpansionState = new Map();
+let cachedCatalogs = getEmptyCatalogs();
+let catalogsLoadAttempted = false;
 
 const ROUTE_COMPONENTS = Object.freeze([
   { id: "corporal", label: "Componente corporal" },
@@ -592,6 +603,8 @@ const ROUTE_PRESETS = Object.freeze({
 
 const routePresetCache = new Map();
 const routeExpansionState = new Map();
+const routeHistoryState = new Map();
+const routeEditorState = new Map();
 
 export async function beforeEnter({ payload, navigateTo } = {}) {
   clearAppError();
@@ -617,6 +630,7 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   currentProfileStudentKey = getStudentIdentity(student);
   currentProfileProcessKey =
     resolveStudentProcess(student, requestedProcessRef)?.processKey || "";
+  await ensureCatalogsLoaded();
   await ensureStudentBitacorasLoaded(student);
   await ensureLearningRouteLoaded(student);
 }
@@ -681,6 +695,7 @@ export async function render({
     resolveStudentProcess(student, requestedProcessRef || currentProfileProcessKey)
       ?.processKey || "";
 
+  await ensureCatalogsLoaded();
   root.innerHTML = buildProfileMarkup(student, safeState, safeConfig);
 
   bindProfileEvents(student);
@@ -731,6 +746,20 @@ function setupSubscription(config, preferredStudentRef = null) {
     currentProfileStudentKey = getStudentIdentity(student);
     renderReactiveBlocks(state, config, currentProfileStudentKey);
   });
+}
+
+async function ensureCatalogsLoaded() {
+  if (catalogsLoadAttempted) return cachedCatalogs;
+
+  catalogsLoadAttempted = true;
+  try {
+    cachedCatalogs = await getCatalogs();
+  } catch (error) {
+    console.warn("No se pudo cargar catálogo de docentes:", error);
+    cachedCatalogs = getEmptyCatalogs();
+  }
+
+  return cachedCatalogs;
 }
 
 function buildProfileMarkup(student, state, config) {
@@ -816,7 +845,7 @@ function buildProfileMarkup(student, state, config) {
                 <p class="panel-header__eyebrow">Ruta</p>
                 <h2 class="panel-header__title">Ruta de aprendizaje</h2>
                 <p class="panel__description">
-                  Proceso actual: <strong>${escapeHtml(activeProcessLabel)}</strong>. Resumen del estado actual y objetivos en curso.
+                  Proceso actual: <strong>${escapeHtml(activeProcessLabel)}</strong>. Objetivos actuales por categoria.
                 </p>
               </div>
               <div class="panel-header__actions">
@@ -825,7 +854,7 @@ function buildProfileMarkup(student, state, config) {
                   class="btn btn--ghost btn--sm"
                   data-route-action="toggle-full"
                 >
-                  ${routeExpanded ? "Ocultar ruta completa" : "Ver ruta completa"}
+                  ${routeExpanded ? "Ocultar avance detallado" : "Ver avance detallado"}
                 </button>
                 <button
                   type="button"
@@ -893,6 +922,7 @@ function bindProfileEvents(student) {
   const routeContainer = viewRoot.querySelector("#profile-route-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const processSelect = viewRoot.querySelector("#profile-process-select");
+  const gridContainer = viewRoot.querySelector("#profile-grid");
 
   if (backBtn) {
     backBtn.addEventListener("click", () => {
@@ -911,6 +941,20 @@ function bindProfileEvents(student) {
       currentProfileProcessKey = toStringSafe(processSelect.value);
       await Promise.all([reloadHistory(student), reloadLearningRoute(student)]);
       renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+    });
+  }
+
+  if (gridContainer) {
+    gridContainer.addEventListener("click", async (event) => {
+      const saveButton = event.target.closest("[data-profile-save-teacher]");
+      if (!saveButton) return;
+      await saveProfileTeacher(student);
+    });
+
+    gridContainer.addEventListener("change", async (event) => {
+      const select = event.target.closest("[data-profile-teacher-select]");
+      if (!select) return;
+      await saveProfileTeacher(student);
     });
   }
 
@@ -968,8 +1012,18 @@ function bindProfileEvents(student) {
     if (!actionButton) return;
 
     const action = actionButton.getAttribute("data-route-action");
-    if (action === "toggle-full") {
+  if (action === "toggle-full") {
       toggleRouteExpanded(student, actionButton);
+      return;
+    }
+
+    if (action === "toggle-route-history") {
+      toggleRouteHistory(student);
+      return;
+    }
+
+    if (action === "toggle-route-editor") {
+      toggleRouteEditor(student);
       return;
     }
 
@@ -1089,27 +1143,123 @@ function renderStudentBadges(student) {
     ${renderBadge(student.estado)}
     ${renderBadge(student.modalidad)}
     ${renderBadge(student.area || student.instrumento || student.programa)}
-    ${renderBadge(student.sede)}
   `;
 }
 
 function renderProfileGrid(student) {
+  const shouldShowAddress = isHomeModality(student?.modalidad);
+
   return `
     ${renderProfileItem("Estado", getReadableValue(student.estado))}
     ${renderProfileItem("Edad", getReadableValue(student.edad || student.age))}
-    ${renderProfileItem("Fecha de nacimiento", getReadableValue(student.fechaNacimiento || student.birthDate))}
     ${renderProfileItem("Procesos", getReadableValue(getStudentProcessesSummary(student), "Sin procesos registrados"))}
     ${renderProfileItem("Área / instrumento", getReadableValue(student.area || student.instrumento || student.programa))}
     ${renderProfileItem("Modalidad", getReadableValue(student.modalidad))}
-    ${renderProfileItem("Docente", getReadableValue(student.docente || student.teacher))}
-    ${renderProfileItem("Sede", getReadableValue(student.sede))}
+    ${renderTeacherProfileItem(student)}
     ${renderProfileItem("Acudiente", getReadableValue(student.acudiente || student.responsable))}
-    ${renderProfileItem("Teléfono", getReadableValue(student.telefono || student.phone))}
-    ${renderProfileItem("Correo", getReadableValue(student.correo || student.email))}
-    ${renderProfileItem("Dirección", getReadableValue(student.direccion || student.address))}
+    ${shouldShowAddress ? renderProfileItem("Dirección", getReadableValue(student.direccion || student.address)) : ""}
     ${renderProfileItem("Intereses", getReadableValue(student.interesesMusicales || student.intereses))}
     ${renderProfileItem("Observaciones", getReadableValue(student.observaciones || student.notes, "Sin observaciones"))}
   `;
+}
+
+function isHomeModality(value = "") {
+  const modality = normalizeText(value);
+  return modality.includes("hogar") || modality.includes("domicilio");
+}
+
+function renderTeacherProfileItem(student = {}) {
+  const currentTeacher = getReadableValue(student.docente || student.teacher, "");
+  const teacherOptions = getTeacherCatalogOptions(currentTeacher);
+
+  return `
+    <div class="profile-grid__item profile-grid__item--editable">
+      <dt class="profile-grid__label">Docente</dt>
+      <dd class="profile-grid__value">
+        <div class="profile-inline-edit">
+          <select
+            class="profile-inline-edit__input"
+            data-profile-teacher-select
+          >
+            <option value="">Sin docente asignado</option>
+            ${teacherOptions
+              .map(
+                (teacherName) => `
+                  <option value="${escapeHtml(teacherName)}" ${
+                    normalizeText(teacherName) === normalizeText(currentTeacher)
+                      ? "selected"
+                      : ""
+                  }>
+                    ${escapeHtml(teacherName)}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-profile-save-teacher
+          >
+            Guardar
+          </button>
+        </div>
+      </dd>
+    </div>
+  `;
+}
+
+function getTeacherCatalogOptions(currentTeacher = "") {
+  const teachers = Array.isArray(cachedCatalogs?.docentes)
+    ? cachedCatalogs.docentes
+    : [];
+  const values = [
+    currentTeacher,
+    ...teachers.map((teacher) =>
+      firstNonEmpty(teacher?.nombre, teacher?.alias, teacher?.name)
+    ),
+  ];
+  const seen = new Set();
+
+  return values
+    .map((value) => toStringSafe(value))
+    .filter(Boolean)
+    .filter((value) => {
+      const key = normalizeText(value);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+async function saveProfileTeacher(student) {
+  const input = viewRoot?.querySelector("[data-profile-teacher-select]");
+  const button = viewRoot?.querySelector("[data-profile-save-teacher]");
+  const studentId = getStudentIdentity(student);
+  const docente = toStringSafe(input?.value);
+
+  if (!studentId) {
+    setAppError("No hay estudiante seleccionado para asignar docente.");
+    return;
+  }
+
+  try {
+    clearAppError();
+    if (button) button.disabled = true;
+
+    const updated = await updateStudentTeacher(studentId, docente);
+    updateStudentProfile({
+      ...student,
+      ...updated,
+      docente,
+      teacher: docente,
+    });
+  } catch (error) {
+    console.error("No se pudo asignar docente:", error);
+    setAppError(error?.message || "No se pudo guardar el docente.");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function renderSummary(student, bitacoras = []) {
@@ -1210,6 +1360,7 @@ async function ensureLearningRouteLoaded(student, options = {}) {
   try {
     const persistedRoute = await getStudentRouteRecord(studentId, {
       processKey: activeProcessKey,
+      routeTemplateId: normalizeArtKey(student),
     });
     const currentMatchesActiveProcess =
       toStringSafe(currentRoute?.processKey || "") === activeProcessKey;
@@ -1250,10 +1401,14 @@ function getActiveProcessContext(student) {
 
 function getRouteSaveOptions(student) {
   const activeProcess = getActiveProcessContext(student);
+  const routeTemplateId = normalizeArtKey(student);
   return {
     student,
     processKey: currentProfileProcessKey || "",
     processLabel: activeProcess?.label || "",
+    routeTemplateId,
+    areaKey: routeTemplateId,
+    instrumentKey: routeTemplateId,
   };
 }
 
@@ -1309,6 +1464,7 @@ function normalizeArtKey(student) {
     .replace(/^-+|-+$/g, "");
 
   if (!normalized) return "general";
+  if (normalized.includes("bateria") || normalized.includes("percusion")) return "bateria";
   if (normalized.includes("guitarra")) return "guitarra";
   if (normalized.includes("cello") || normalized.includes("violoncello")) return "cello";
   if (normalized.includes("canto")) return "canto";
@@ -1463,8 +1619,28 @@ function buildDefaultRouteState(student, baseRoute = {}) {
     normalizeStudentProcesses(student)[0] ||
     null;
   const preset = resolveRoutePreset(student, baseRoute);
+  const routeTemplateId =
+    toStringSafe(baseRoute?.routeTemplateId) || normalizeArtKey(student);
   const routeComponents = getRouteComponentsForPreset(preset);
   const presetGoalIds = new Set(preset.goals.map((goal) => goal.id));
+  const orphanCompletedGoalIds = Array.isArray(baseRoute?.completedGoalIds)
+    ? [
+        ...new Set(
+          baseRoute.completedGoalIds
+            .map((item) => toStringSafe(item))
+            .filter((goalId) => goalId && !presetGoalIds.has(goalId))
+        ),
+      ]
+    : [];
+  if (orphanCompletedGoalIds.length) {
+    console.warn(
+      "La ruta tiene objetivos completados que ya no existen en la plantilla activa.",
+      {
+        routeTemplateId,
+        orphanCompletedGoalIds,
+      }
+    );
+  }
   const completedGoalIds = Array.isArray(baseRoute?.completedGoalIds)
     ? [
         ...new Set(
@@ -1498,6 +1674,9 @@ function buildDefaultRouteState(student, baseRoute = {}) {
 
   return {
     ...(baseRoute && typeof baseRoute === "object" ? baseRoute : {}),
+    routeTemplateId,
+    areaKey: toStringSafe(baseRoute?.areaKey) || routeTemplateId,
+    instrumentKey: toStringSafe(baseRoute?.instrumentKey) || routeTemplateId,
     presetId: preset.id,
     routeName: preset.routeName,
     customGoals: normalizeManualRouteGoals(baseRoute?.customGoals),
@@ -1566,7 +1745,11 @@ function normalizeManualRouteGoals(goals = []) {
         "General";
 
       return {
-        id: toStringSafe(goal?.id) || buildManualGoalId(component, title, index),
+        id:
+          toStringSafe(goal?.id) ||
+          buildManualGoalId(component, title, index, {
+            experience: Number(goal?.experience) || 1,
+          }),
         component,
         componentLabel,
         section: toStringSafe(goal?.section || componentLabel),
@@ -1591,7 +1774,8 @@ function serializeManualRouteGoals(goals = []) {
     .join("\n");
 }
 
-function parseManualRouteGoals(rawText = "") {
+function parseManualRouteGoals(rawText = "", existingGoals = [], routeTemplateId = "") {
+  const existingByIndex = Array.isArray(existingGoals) ? existingGoals : [];
   return String(rawText || "")
     .split(/\r?\n/)
     .map((line, index) => {
@@ -1603,12 +1787,20 @@ function parseManualRouteGoals(rawText = "") {
       const component = titleRaw ? toLearningRouteComponentId(componentRaw) : "general";
       const componentLabel = titleRaw ? componentRaw : "General";
 
+      const experience = Number(experienceRaw) || 1;
+      const existingGoal = existingByIndex[index] || null;
+
       return {
-        id: buildManualGoalId(component, title, index),
+        id:
+          toStringSafe(existingGoal?.id) ||
+          buildManualGoalId(component, title, index, {
+            routeTemplateId,
+            experience,
+          }),
         component,
         componentLabel,
         section: componentLabel,
-        experience: Number(experienceRaw) || 1,
+        experience,
         order: index + 1,
         title,
         description: `Ruta manual · ${componentLabel}`,
@@ -1617,14 +1809,28 @@ function parseManualRouteGoals(rawText = "") {
     .filter(Boolean);
 }
 
-function buildManualGoalId(component, title, index = 0) {
+function buildManualGoalId(component, title, index = 0, context = {}) {
   const safeComponent = toLearningRouteComponentId(component || "general");
-  const safeTitle = normalizeText(title)
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+  const safeTemplate = toStringSafe(context.routeTemplateId || "ruta")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const safeExperience = Number(context.experience) || 1;
+  const safeIndex = String(index + 1).padStart(3, "0");
 
-  return `manual-${safeComponent}-${safeTitle || index + 1}`;
+  return `${safeTemplate || "ruta"}_exp${safeExperience}_${safeComponent}_${safeIndex}`;
+}
+
+function getCurrentRouteTemplateId() {
+  const state = getState();
+  const studentId = getSelectedStudentId();
+  const student =
+    state?.profile?.byStudentId?.[studentId] ||
+    state?.students?.byId?.[studentId] ||
+    {};
+  return normalizeArtKey(student);
 }
 
 function buildRouteProgress(completedGoalIds = [], preset) {
@@ -1796,19 +2002,22 @@ function renderLearningRoute(student) {
       percent,
     };
   });
-  const currentGoals = nextGoals.slice(0, 2);
   const expanded = routeExpansionState.get(studentId) === true;
+  const routeHistoryOpen = routeHistoryState.get(studentId) === true;
+  const routeEditorOpen = routeEditorState.get(studentId) === true;
 
   return `
     <div class="route-overview">
-      <section class="route-overview__hero route-overview__hero--compact">
+      ${renderCurrentRouteGoals(route, preset, routeComponents, {
+        canUpdateRouteProgress,
+      })}
+
+      <section class="route-overview__hero route-overview__hero--compact" ${expanded ? "" : "hidden"}>
         <div>
           <p class="route-overview__kicker">${escapeHtml(route.routeName || "Ruta de aprendizaje")}</p>
           <h3 class="route-overview__title">${escapeHtml(route.stage || "Experiencia 1")}</h3>
           <p class="route-overview__text">
-            ${escapeHtml(
-              `Experiencia actual: ${route.stage || "Experiencia 1"} · Objetivos actuales: ${currentGoals.length ? currentGoals.map((goal) => goal.title).join(" / ") : "Ruta base completada"}`
-            )}
+            ${escapeHtml(`Resumen completo de la ruta y avance acumulado.`)}
           </p>
         </div>
 
@@ -1838,18 +2047,20 @@ function renderLearningRoute(student) {
           .join("")}
       </section>
 
-      <section class="route-components" ${expanded ? "" : "hidden"}>
-        ${routeComponents.map((component) =>
-          renderRouteComponentCard(component, route, preset, {
-            canEditRouteStructure,
-            canUpdateRouteProgress,
-          })
-        ).join("")}
-      </section>
+      <div class="route-secondary-actions">
+        <button type="button" class="btn btn--ghost btn--sm" data-route-action="toggle-route-history">
+          ${routeHistoryOpen ? "Ocultar logros" : "Ver logros"}
+        </button>
+        ${
+          canEditRouteStructure
+            ? `<button type="button" class="btn btn--ghost btn--sm" data-route-action="toggle-route-editor">
+                ${routeEditorOpen ? "Cerrar editor" : "Editar ruta"}
+              </button>`
+            : ""
+        }
+      </div>
 
-      ${canEditRouteStructure ? renderManualRouteEditor(route, preset, expanded, access) : ""}
-
-      <section class="route-journey-map" ${expanded ? "" : "hidden"}>
+      <section class="route-journey-map">
         <article class="route-history-card">
           <p class="route-history-card__title">Mapa de avance</p>
           <p class="route-overview__text">
@@ -1902,7 +2113,7 @@ function renderLearningRoute(student) {
         </article>
       </section>
 
-      <section class="route-history-grid" ${expanded ? "" : "hidden"}>
+      <section class="route-history-grid">
         <article class="route-history-card">
           <p class="route-history-card__title">Alcance total de la ruta</p>
           <div class="route-focus-list">
@@ -1915,27 +2126,6 @@ function renderLearningRoute(student) {
               <strong class="route-focus-item__title">${escapeHtml(lastGoal?.title || "No disponible")}</strong>
             </div>
           </div>
-        </article>
-
-        <article class="route-history-card">
-          <p class="route-history-card__title">Logros recientes</p>
-          ${
-            history.length
-              ? `<div class="route-log-list">
-                  ${history
-                    .slice(0, 8)
-                    .map(
-                      (entry) => `
-                        <article class="route-log-item">
-                          <p class="route-log-item__title">${escapeHtml(entry.title || "Objetivo completado")}</p>
-                          <p class="route-log-item__meta">${escapeHtml(`${getComponentLabel(entry.component, routeComponents)} · Experiencia ${entry.experience} · ${formatDisplayDate(entry.completedAt)}`)}</p>
-                        </article>
-                      `
-                    )
-                    .join("")}
-                </div>`
-              : `<p class="route-history-card__empty">Aun no hay logros marcados. Cuando empieces a completar objetivos, aqui quedara el historial del proceso.</p>`
-          }
         </article>
 
         <article class="route-history-card">
@@ -1958,7 +2148,102 @@ function renderLearningRoute(student) {
           </div>
         </article>
       </section>
+
+      <section class="route-history-grid" ${routeHistoryOpen ? "" : "hidden"}>
+        <article class="route-history-card route-history-card--wide">
+          <p class="route-history-card__title">Objetivos logrados</p>
+          ${
+            history.length
+              ? `<div class="route-log-list">
+                  ${history
+                    .map(
+                      (entry) => `
+                        <article class="route-log-item">
+                          <p class="route-log-item__title">${escapeHtml(entry.title || "Objetivo completado")}</p>
+                          <p class="route-log-item__meta">${escapeHtml(`${getComponentLabel(entry.component, routeComponents)} · Experiencia ${entry.experience} · ${formatDisplayDate(entry.completedAt)}`)}</p>
+                        </article>
+                      `
+                    )
+                    .join("")}
+                </div>`
+              : `<p class="route-history-card__empty">Aun no hay logros marcados. Cuando empieces a completar objetivos, aqui quedara el historial del proceso.</p>`
+          }
+        </article>
+      </section>
+
+      ${canEditRouteStructure ? renderManualRouteEditor(route, preset, routeEditorOpen, access) : ""}
     </div>
+  `;
+}
+
+function renderCurrentRouteGoals(route = {}, preset = {}, components = [], permissions = {}) {
+  const canUpdateRouteProgress = Boolean(permissions.canUpdateRouteProgress);
+  const completedIds = new Set(
+    Array.isArray(route.completedGoalIds) ? route.completedGoalIds : []
+  );
+  const currentByComponent = components
+    .map((component) => {
+      const goals = (preset?.goals || GUITAR_ROUTE_PRESET)
+        .filter((goal) => goal.component === component.id)
+        .sort(compareRouteGoals);
+      const nextGoal = goals.find((goal) => !completedIds.has(goal.id)) || null;
+      const completed = goals.filter((goal) => completedIds.has(goal.id)).length;
+      return {
+        component,
+        nextGoal,
+        completed,
+        total: goals.length,
+      };
+    })
+    .filter((item) => item.total);
+
+  return `
+    <section class="route-current">
+      <header class="route-current__header">
+        <div>
+          <p class="route-overview__kicker">${escapeHtml(route.routeName || "Ruta de aprendizaje")}</p>
+          <h3 class="route-current__title">Objetivos actuales por categoria</h3>
+        </div>
+        <span class="route-current__stage">${escapeHtml(route.stage || "Experiencia 1")} · ${escapeHtml(`${currentByComponent.filter((item) => item.nextGoal).length} activos`)}</span>
+      </header>
+
+      <div class="route-current__grid">
+        ${
+          currentByComponent.length
+            ? currentByComponent
+                .map(
+                  ({ component, nextGoal, completed, total }) => `
+                    <article class="route-current-card ${nextGoal ? "" : "is-complete"}">
+                      <div class="route-current-card__head">
+                        <span class="route-current-card__label">${escapeHtml(component.label)}</span>
+                        <span class="route-current-card__count">${escapeHtml(`${completed}/${total}`)}</span>
+                      </div>
+                      ${
+                        nextGoal
+                          ? `
+                            <label class="route-goal-check route-goal-check--compact">
+                              <input
+                                type="checkbox"
+                                data-route-goal-check="${escapeHtml(nextGoal.id)}"
+                                ${!canUpdateRouteProgress ? "disabled" : ""}
+                              />
+                              <span class="route-goal-check__body">
+                                <span class="route-goal-check__title">${escapeHtml(nextGoal.title)}</span>
+                                <span class="route-goal-check__text">${escapeHtml(nextGoal.description || "")}</span>
+                                <span class="route-goal-check__meta">${escapeHtml(`Experiencia ${nextGoal.experience}`)}</span>
+                              </span>
+                            </label>
+                          `
+                          : `<p class="route-current-card__done">Categoria completada.</p>`
+                      }
+                    </article>
+                  `
+                )
+                .join("")
+            : `<p class="route-history-card__empty">No hay objetivos configurados para esta ruta.</p>`
+        }
+      </div>
+    </section>
   `;
 }
 
@@ -2078,9 +2363,9 @@ function renderManualRouteEditor(route = {}, preset = {}, expanded = false, acce
     <section class="route-manual-editor" ${expanded ? "" : "hidden"}>
       <header class="route-manual-editor__header">
         <div>
-          <p class="route-history-card__title">Editor manual de ruta</p>
+          <p class="route-history-card__title">Editor general de ruta</p>
           <p class="route-overview__text">
-            Ajusta la estructura por experiencia y componente. Esta seccion solo aparece para admin.
+            Los cambios se aplican a todos los estudiantes de esta area o instrumento.
           </p>
         </div>
         <button
@@ -2115,6 +2400,7 @@ function renderManualRouteEditor(route = {}, preset = {}, expanded = false, acce
                                     <input
                                       type="text"
                                       data-route-visual-goal
+                                      data-route-goal-id="${escapeHtml(goal.id)}"
                                       data-route-goal-component="${escapeHtml(goal.componentLabel || goal.component || "General")}"
                                       data-route-goal-experience="${escapeHtml(String(goal.experience || 1))}"
                                       value="${escapeHtml(goal.title)}"
@@ -2199,7 +2485,12 @@ function getManualGoalsFromVisualEditor() {
       const component = toLearningRouteComponentId(componentLabel);
 
       return {
-        id: buildManualGoalId(component, title, index),
+        id:
+          toStringSafe(input.getAttribute("data-route-goal-id")) ||
+          buildManualGoalId(component, title, index, {
+            routeTemplateId: getCurrentRouteTemplateId(),
+            experience,
+          }),
         component,
         componentLabel,
         section: componentLabel,
@@ -2272,13 +2563,21 @@ async function saveManualLearningRoute(student) {
   const access = resolveUserAccess(getState()?.auth?.user);
   if (!access.canEditRouteStructure) return;
 
+  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
+  const routePreset = resolveRoutePreset(student, currentRoute);
   const visualGoals = getManualGoalsFromVisualEditor();
   const textarea = viewRoot?.querySelector("[data-route-goals-editor]");
   const rawManualText = textarea?.value || "";
   const originalManualText = textarea?.getAttribute("data-route-goals-original") || "";
   const manualGoals =
     rawManualText !== originalManualText
-      ? parseManualRouteGoals(rawManualText)
+      ? parseManualRouteGoals(
+          rawManualText,
+          normalizeManualRouteGoals(currentRoute.customGoals).length
+            ? normalizeManualRouteGoals(currentRoute.customGoals)
+            : normalizeManualRouteGoals(routePreset?.goals || []),
+          currentRoute.routeTemplateId
+        )
       : visualGoals;
 
   if (!manualGoals.length) {
@@ -2286,7 +2585,6 @@ async function saveManualLearningRoute(student) {
     return;
   }
 
-  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
   const validGoalIds = new Set(manualGoals.map((goal) => goal.id));
   const completedGoalIds = (currentRoute.completedGoalIds || []).filter((goalId) =>
     validGoalIds.has(goalId)
@@ -2296,8 +2594,8 @@ async function saveManualLearningRoute(student) {
   );
   const nextRoute = buildDefaultRouteState(student, {
     ...currentRoute,
-    presetId: "ruta_manual_v1",
-    routeName: currentRoute.routeName || "Ruta manual",
+    presetId: currentRoute.routeTemplateId || "ruta_manual_v1",
+    routeName: currentRoute.routeName || `Ruta de aprendizaje - ${currentRoute.focusArea || "Proceso"}`,
     customGoals: manualGoals,
     completedGoalIds,
     history,
@@ -2388,8 +2686,31 @@ function toggleRouteExpanded(student, triggerButton) {
 
   if (triggerButton) {
     triggerButton.textContent = nextValue
-      ? "Volver al perfil"
-      : "Ver ruta completa";
+      ? "Ocultar avance detallado"
+      : "Ver avance detallado";
+  }
+}
+
+function toggleRouteHistory(student) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+
+  routeHistoryState.set(studentId, !(routeHistoryState.get(studentId) === true));
+  rerenderRoutePanel(student);
+}
+
+function toggleRouteEditor(student) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+
+  routeEditorState.set(studentId, !(routeEditorState.get(studentId) === true));
+  rerenderRoutePanel(student);
+}
+
+function rerenderRoutePanel(student) {
+  const routeContainer = viewRoot?.querySelector("#profile-route-content");
+  if (routeContainer) {
+    routeContainer.innerHTML = renderLearningRoute(student);
   }
 }
 
@@ -2461,7 +2782,7 @@ function applyProfileFocusLayout(student) {
     profileSide.hidden = true;
     summaryCard.hidden = true;
     historyCard.hidden = true;
-    if (routeToggleButton) routeToggleButton.textContent = "Volver al perfil";
+    if (routeToggleButton) routeToggleButton.textContent = "Ocultar avance detallado";
     return;
   }
 
@@ -2474,7 +2795,7 @@ function applyProfileFocusLayout(student) {
     profileSide.hidden = false;
     summaryCard.hidden = true;
     historyCard.hidden = false;
-    if (routeToggleButton) routeToggleButton.textContent = "Ver ruta completa";
+    if (routeToggleButton) routeToggleButton.textContent = "Ver avance detallado";
     return;
   }
 
@@ -2486,7 +2807,7 @@ function applyProfileFocusLayout(student) {
   profileSide.hidden = false;
   summaryCard.hidden = false;
   historyCard.hidden = false;
-  if (routeToggleButton) routeToggleButton.textContent = "Ver ruta completa";
+  if (routeToggleButton) routeToggleButton.textContent = "Ver avance detallado";
 }
 
 async function reloadLearningRoute(student) {
@@ -2717,6 +3038,9 @@ function renderHistoryProcessOptions(processes = [], selectedKey = "") {
 }
 
 function getHistoryTeacherName(item = {}) {
+  const docentes = normalizeTags(item?.docentes || item?.docente || item?.process?.docente);
+  if (docentes.length) return docentes.join(", ");
+
   return firstNonEmpty(
     item?.process?.docente,
     item?.author?.name,
@@ -3051,10 +3375,12 @@ function normalizeBitacora(item) {
     ...item,
     id: String(fallbackId),
     mode: normalizeMode(item.mode || item.modo || CONFIG.modes.individual),
-    titulo: item.titulo || item.title || "Bitácora sin título",
-    contenido: item.contenido || item.content || "",
-    etiquetas: normalizeTags(item.etiquetas || item.tags || []),
-    fechaClase: item.fechaClase || item.fecha || item.classDate || "",
+    titulo: repairVisibleText(item.titulo || item.title || "Bitácora sin título"),
+    contenido: repairVisibleText(item.contenido || item.content || ""),
+    etiquetas: normalizeTags(item.etiquetas || item.tags || []).map(repairVisibleText),
+    docentes: normalizeTags(item.docentes || item.docente || item.process?.docente).map(repairVisibleText),
+    docente: repairVisibleText(firstNonEmpty(item.docente, item.process?.docente)),
+    fechaClase: normalizeLocalDateInput(item.fechaClase || item.fecha || item.classDate || ""),
     studentIds: normalizeStudentIds(item.studentIds || [item.studentId]),
     studentRefs: normalizeStudentRefs(item.studentRefs || []),
     studentOverrides: normalizeStudentOverrides(
@@ -3082,15 +3408,15 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       }
 
       const source = value && typeof value === "object" ? value : {};
-      const normalized = {
-        enabled: Boolean(source.enabled),
-        tareas: toStringSafe(source.tareas),
-        etiquetas: normalizeTags(source.etiquetas || []),
-        componenteCorporal: normalizeTags(source.componenteCorporal || []),
-        componenteTecnico: normalizeTags(source.componenteTecnico || []),
-        componenteTeorico: normalizeTags(source.componenteTeorico || []),
-        componenteObras: normalizeTags(source.componenteObras || []),
-      };
+    const normalized = {
+      enabled: Boolean(source.enabled),
+      tareas: repairVisibleText(source.tareas),
+      etiquetas: normalizeTags(source.etiquetas || []).map(repairVisibleText),
+      componenteCorporal: normalizeTags(source.componenteCorporal || []).map(repairVisibleText),
+      componenteTecnico: normalizeTags(source.componenteTecnico || []).map(repairVisibleText),
+      componenteTeorico: normalizeTags(source.componenteTeorico || []).map(repairVisibleText),
+      componenteObras: normalizeTags(source.componenteObras || []).map(repairVisibleText),
+    };
 
       if (
         !normalized.enabled &&
@@ -3109,6 +3435,32 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
   );
 
   return next;
+}
+
+function repairVisibleText(value) {
+  let text = toStringSafe(value);
+  if (!text) return "";
+
+  if (/[ÃÂ]/.test(text)) {
+    try {
+      text = decodeURIComponent(escape(text));
+    } catch (error) {
+      // Si el navegador no puede recodificarlo, caemos al mapa puntual.
+    }
+  }
+
+  return text
+    .replaceAll("Bit�cora", "Bitácora")
+    .replaceAll("bit�cora", "bitácora")
+    .replaceAll("M�SICA", "MÚSICA")
+    .replaceAll("M�sica", "Música")
+    .replaceAll("m�sica", "música")
+    .replaceAll("Viol�n", "Violín")
+    .replaceAll("viol�n", "violín")
+    .replaceAll("T�cnico", "Técnico")
+    .replaceAll("t�cnico", "técnico")
+    .replaceAll("Te�rico", "Teórico")
+    .replaceAll("te�rico", "teórico");
 }
 
 /**
