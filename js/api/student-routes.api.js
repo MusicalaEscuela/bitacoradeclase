@@ -85,6 +85,19 @@ function normalizeCustomGoal(goal = {}, index = 0) {
   };
 }
 
+function normalizeExperienceDescriptions(descriptions = {}) {
+  if (!isPlainObject(descriptions)) return {};
+
+  return Object.entries(descriptions).reduce((acc, [key, value]) => {
+    const experience = Number(key);
+    const description = toStringSafe(value);
+    if (Number.isFinite(experience) && experience > 0 && description) {
+      acc[String(experience)] = description;
+    }
+    return acc;
+  }, {});
+}
+
 function normalizeMilestone(milestone = {}) {
   if (!isPlainObject(milestone)) return null;
 
@@ -140,6 +153,9 @@ function normalizeStudentRouteRecord(data = {}, studentId = "") {
     customGoals: toArraySafe(normalized.customGoals || normalized.goals)
       .map(normalizeCustomGoal)
       .filter(Boolean),
+    experienceDescriptions: normalizeExperienceDescriptions(
+      normalized.experienceDescriptions
+    ),
     history: toArraySafe(normalized.history)
       .map(normalizeHistoryEntry)
       .filter(Boolean),
@@ -169,6 +185,7 @@ function splitRouteStructure(route = {}) {
     focusArea: normalized.focusArea,
     customGoals: normalized.customGoals,
     goals: normalized.customGoals,
+    experienceDescriptions: normalized.experienceDescriptions,
     active: route?.active !== false,
     createdAt: normalized.createdAt,
     updatedAt: normalized.updatedAt,
