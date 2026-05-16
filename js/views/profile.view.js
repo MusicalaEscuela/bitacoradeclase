@@ -766,8 +766,6 @@ function buildProfileMarkup(student, state, config) {
   const bitacoras = getBitacorasFromState(student);
   const isAuthenticated = Boolean(state?.auth?.isAuthenticated);
   const access = resolveUserAccess(state?.auth?.user);
-  const studentId = getStudentIdentity(student);
-  const routeExpanded = studentId ? routeExpansionState.get(studentId) === true : false;
   const title =
     config?.app?.name ||
     config?.appName ||
@@ -785,128 +783,123 @@ function buildProfileMarkup(student, state, config) {
 
   return `
     <section class="view-shell view-shell--profile">
-      <header class="view-header">
-        <div class="view-header__content">
+      <header class="profile-quick-header">
+        <div class="profile-quick-header__identity">
           <p class="view-eyebrow">${escapeHtml(title)}</p>
-          <h1 class="view-title">Perfil del estudiante</h1>
-          <p class="view-description">
-            Revisa la informacion principal del estudiante, su ruta de
-            aprendizaje y las ultimas bitacoras desde una sola vista.
-          </p>
+          <h1 class="profile-card__name">${escapeHtml(getStudentName(student))}</h1>
+          <p class="profile-card__doc">${escapeHtml(getStudentDocument(student) || "Sin documento")}</p>
+          <div class="profile-card__badges" id="profile-badges">
+            ${renderStudentBadges(student)}
+          </div>
         </div>
 
-        <div class="view-header__actions">
+        <div class="profile-quick-header__tools">
           <label class="field field--compact">
             <span class="field__label">Proceso activo</span>
             <select id="profile-process-select" class="field__input">
               ${renderProcessSelectOptions(processOptions, activeProcessKey)}
             </select>
           </label>
-          <button
-            type="button"
-            class="btn btn--ghost"
-            id="profile-back-btn"
-          >
-            Volver a búsqueda
-          </button>
-          <button
-            type="button"
-            class="btn btn--primary"
-            id="profile-open-editor-btn"
-          >
-            Abrir editor
-          </button>
+          <p class="profile-quick-header__process">
+            ${escapeHtml(activeProcessLabel)}
+          </p>
+          <div class="profile-quick-header__actions">
+            <button type="button" class="btn btn--ghost" id="profile-back-btn">
+              Volver a búsqueda
+            </button>
+            <button type="button" class="btn btn--primary" id="profile-open-editor-btn">
+              Nueva bitácora
+            </button>
+          </div>
         </div>
       </header>
 
-      <section class="profile-layout">
-        <div class="profile-main">
-          <article class="card profile-card">
-            <header class="profile-card__header">
-              <div class="profile-card__identity">
-                <p class="profile-card__eyebrow">Estudiante seleccionado</p>
-                <h2 class="profile-card__name">${escapeHtml(getStudentName(student))}</h2>
-                <p class="profile-card__doc">${escapeHtml(getStudentDocument(student) || "Sin documento")}</p>
-              </div>
-
-              <div class="profile-card__badges" id="profile-badges">
-                ${renderStudentBadges(student)}
+      <section class="profile-workspace">
+        <section class="profile-dashboard" aria-label="Resumen de trabajo rápido">
+          <article class="card profile-last-bitacora">
+            <header class="panel-header">
+              <div>
+                <p class="panel-header__eyebrow">Última bitácora</p>
+                <h2 class="panel-header__title" id="profile-history-title">Registro más reciente</h2>
               </div>
             </header>
+            <div id="profile-history-content">
+              ${renderLastBitacoraPreview(student, bitacoras, config, isAuthenticated)}
+            </div>
+          </article>
 
+          <article class="card profile-route-preview">
+            <header class="panel-header">
+              <div>
+                <p class="panel-header__eyebrow">Ruta actual</p>
+                <h2 class="panel-header__title">Objetivos actuales</h2>
+                <p class="panel__description">
+                  Proceso activo: <strong>${escapeHtml(activeProcessLabel)}</strong>
+                </p>
+              </div>
+            </header>
+            <div id="profile-route-preview-content">
+              ${renderCurrentRoutePreview(student)}
+            </div>
+          </article>
+
+          <article class="card profile-quick-actions">
+            <header class="panel-header">
+              <div>
+                <p class="panel-header__eyebrow">Accesos rápidos</p>
+                <h2 class="panel-header__title">Profundizar</h2>
+              </div>
+            </header>
+            ${renderQuickActions(access)}
+          </article>
+        </section>
+
+        <section class="profile-panels" id="profile-panels" aria-live="polite">
+          <article class="card profile-panel" data-profile-panel="student-info" hidden>
+            <header class="panel-header profile-panel__header">
+              <div>
+                <p class="panel-header__eyebrow">Información</p>
+                <h2 class="panel-header__title">Información del estudiante</h2>
+              </div>
+              <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-close>Cerrar</button>
+            </header>
             <dl class="profile-grid" id="profile-grid">
               ${renderProfileGrid(student)}
             </dl>
           </article>
 
-          <section class="card route-panel">
-            <header class="panel-header route-panel__header">
-              <div class="panel-header__content">
-                <p class="panel-header__eyebrow">Ruta</p>
-                <h2 class="panel-header__title">Ruta de aprendizaje</h2>
-                <p class="panel__description">
-                  Proceso actual: <strong>${escapeHtml(activeProcessLabel)}</strong>. Objetivos actuales por categoria.
-                </p>
+          <article class="card profile-panel" data-profile-panel="bitacoras" hidden>
+            <header class="panel-header profile-panel__header">
+              <div>
+                <p class="panel-header__eyebrow">Bitácoras</p>
+                <h2 class="panel-header__title">Todas las bitácoras</h2>
               </div>
               <div class="panel-header__actions">
-                <button
-                  type="button"
-                  class="btn btn--ghost btn--sm"
-                  data-route-action="toggle-full"
-                >
-                  ${routeExpanded ? "Ocultar avance detallado" : "Ver avance detallado"}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn--ghost btn--sm"
-                  data-route-action="refresh-route"
-                >
-                  Recargar ruta
-                </button>
+                <button type="button" class="btn btn--ghost btn--sm" id="profile-refresh-history-btn">Recargar</button>
+                <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-close>Cerrar</button>
               </div>
             </header>
+            <div id="profile-all-history-content">
+              ${renderAllBitacorasPanel(student, bitacoras, config, isAuthenticated)}
+            </div>
+          </article>
 
+          <article class="card profile-panel route-panel" data-profile-panel="route" hidden>
+            <header class="panel-header route-panel__header profile-panel__header">
+              <div class="panel-header__content">
+                <p class="panel-header__eyebrow">Ruta completa</p>
+                <h2 class="panel-header__title">Ruta de aprendizaje</h2>
+              </div>
+              <div class="panel-header__actions">
+                <button type="button" class="btn btn--ghost btn--sm" data-route-action="refresh-route">Recargar ruta</button>
+                <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-close>Cerrar</button>
+              </div>
+            </header>
             <div id="profile-route-content">
               ${renderLearningRoute(student)}
             </div>
-          </section>
-        </div>
-
-        <aside class="profile-side">
-          <section class="card profile-summary">
-            <header class="panel-header">
-              <div>
-                <p class="panel-header__eyebrow">Resumen</p>
-                <h2 class="panel-header__title">Vista rápida</h2>
-              </div>
-            </header>
-
-            <div id="profile-summary-content">
-              ${renderSummary(student, bitacoras)}
-            </div>
-          </section>
-
-          <section class="card profile-history">
-            <header class="panel-header profile-history__header">
-              <div>
-                <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title" id="profile-history-title">Última bitácora (${escapeHtml(activeProcessLabel)})</h2>
-              </div>
-
-              <button
-                type="button"
-                class="btn btn--ghost btn--sm"
-                id="profile-refresh-history-btn"
-              >
-                Recargar
-              </button>
-            </header>
-
-            <div id="profile-history-content">
-              ${renderHistoryPreview(student, bitacoras, config, isAuthenticated)}
-            </div>
-          </section>
-        </aside>
+          </article>
+        </section>
       </section>
     </section>
   `;
@@ -919,7 +912,9 @@ function bindProfileEvents(student) {
   const openEditorBtn = viewRoot.querySelector("#profile-open-editor-btn");
   const refreshBtn = viewRoot.querySelector("#profile-refresh-history-btn");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
+  const allHistoryContainer = viewRoot.querySelector("#profile-all-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
+  const routePreviewContainer = viewRoot.querySelector("#profile-route-preview-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const processSelect = viewRoot.querySelector("#profile-process-select");
   const gridContainer = viewRoot.querySelector("#profile-grid");
@@ -964,8 +959,8 @@ function bindProfileEvents(student) {
     });
   }
 
-  if (historyContainer) {
-    historyContainer.addEventListener("click", async (event) => {
+  [historyContainer, allHistoryContainer].filter(Boolean).forEach((container) => {
+    container.addEventListener("click", async (event) => {
       const actionButton = event.target.closest("[data-history-action]");
       if (!actionButton) return;
 
@@ -1005,9 +1000,25 @@ function bindProfileEvents(student) {
         await assignProcessToBitacora(student, bitacoraId, processKey);
       }
     });
-  }
+  });
 
   viewRoot.addEventListener("click", async (event) => {
+    const panelButton = event.target.closest("[data-profile-panel-target]");
+    if (panelButton) {
+      const target = panelButton.getAttribute("data-profile-panel-target");
+      openProfilePanel(target);
+      if (target === "route-editor") {
+        routeEditorState.set(getStudentIdentity(student), true);
+        rerenderRoutePanel(student);
+      }
+      return;
+    }
+
+    if (event.target.closest("[data-profile-panel-close]")) {
+      closeProfilePanels();
+      return;
+    }
+
     const actionButton = event.target.closest("[data-route-action]");
     if (!actionButton) return;
 
@@ -1036,8 +1047,8 @@ function bindProfileEvents(student) {
     }
   });
 
-  if (routeContainer) {
-    routeContainer.addEventListener("click", async (event) => {
+  [routeContainer, routePreviewContainer].filter(Boolean).forEach((container) => {
+    container.addEventListener("click", async (event) => {
       const undoButton = event.target.closest("[data-route-goal-undo]");
       if (!undoButton) return;
 
@@ -1046,10 +1057,10 @@ function bindProfileEvents(student) {
 
       await undoLearningGoal(student, goalId);
     });
-  }
+  });
 
-  if (routeContainer) {
-    routeContainer.addEventListener("change", async (event) => {
+  [routeContainer, routePreviewContainer].filter(Boolean).forEach((container) => {
+    container.addEventListener("change", async (event) => {
       const checkbox = event.target.closest("[data-route-goal-check]");
       if (!checkbox) return;
 
@@ -1058,7 +1069,7 @@ function bindProfileEvents(student) {
 
       await completeLearningGoal(student, goalId);
     });
-  }
+  });
 }
 
 function bindMissingStateEvents() {
@@ -1082,7 +1093,9 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
 
   const summaryContainer = viewRoot.querySelector("#profile-summary-content");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
+  const allHistoryContainer = viewRoot.querySelector("#profile-all-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
+  const routePreviewContainer = viewRoot.querySelector("#profile-route-preview-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const titleNode = viewRoot.querySelector(".profile-card__name");
   const docNode = viewRoot.querySelector(".profile-card__doc");
@@ -1111,6 +1124,10 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
     summaryContainer.innerHTML = renderSummary(student, bitacoras);
   }
 
+  if (routePreviewContainer) {
+    routePreviewContainer.innerHTML = renderCurrentRoutePreview(student);
+  }
+
   if (routeContainer) {
     routeContainer.innerHTML = renderLearningRoute(student);
   }
@@ -1127,7 +1144,16 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   }
 
   if (historyContainer) {
-    historyContainer.innerHTML = renderHistoryPreview(
+    historyContainer.innerHTML = renderLastBitacoraPreview(
+      student,
+      bitacoras,
+      config,
+      Boolean(state?.auth?.isAuthenticated)
+    );
+  }
+
+  if (allHistoryContainer) {
+    allHistoryContainer.innerHTML = renderAllBitacorasPanel(
       student,
       bitacoras,
       config,
@@ -1171,6 +1197,15 @@ function isHomeModality(value = "") {
 function renderTeacherProfileItem(student = {}) {
   const currentTeacher = getReadableValue(student.docente || student.teacher, "");
   const teacherOptions = getTeacherCatalogOptions(currentTeacher);
+  const access = resolveUserAccess(getState()?.auth?.user);
+  const canEditTeacher = access.role === CONFIG.roles.admin;
+
+  if (!canEditTeacher) {
+    return renderProfileItem(
+      "Docente",
+      getReadableValue(currentTeacher, "Sin docente asignado")
+    );
+  }
 
   return `
     <div class="profile-grid__item profile-grid__item--editable">
@@ -1204,6 +1239,12 @@ function renderTeacherProfileItem(student = {}) {
             Guardar
           </button>
         </div>
+        <div
+          class="profile-inline-message"
+          data-profile-teacher-message
+          role="status"
+          aria-live="polite"
+        ></div>
       </dd>
     </div>
   `;
@@ -1233,8 +1274,15 @@ function getTeacherCatalogOptions(currentTeacher = "") {
 }
 
 async function saveProfileTeacher(student) {
+  const access = resolveUserAccess(getState()?.auth?.user);
+  if (access.role !== CONFIG.roles.admin) {
+    setAppError("Solo un administrador puede modificar el docente asignado.");
+    return;
+  }
+
   const input = viewRoot?.querySelector("[data-profile-teacher-select]");
   const button = viewRoot?.querySelector("[data-profile-save-teacher]");
+  const message = viewRoot?.querySelector("[data-profile-teacher-message]");
   const studentId = getStudentIdentity(student);
   const docente = toStringSafe(input?.value);
 
@@ -1246,6 +1294,7 @@ async function saveProfileTeacher(student) {
   try {
     clearAppError();
     if (button) button.disabled = true;
+    clearProfileTeacherMessage(message);
 
     const updated = await updateStudentTeacher(studentId, docente);
     updateStudentProfile({
@@ -1254,12 +1303,161 @@ async function saveProfileTeacher(student) {
       docente,
       teacher: docente,
     });
+    showProfileTeacherMessage(
+      viewRoot?.querySelector("[data-profile-teacher-message]") || message,
+      "Docente guardado correctamente.",
+      "success"
+    );
   } catch (error) {
     console.error("No se pudo asignar docente:", error);
+    showProfileTeacherMessage(
+      message,
+      error?.message || "No se pudo guardar el docente.",
+      "error"
+    );
     setAppError(error?.message || "No se pudo guardar el docente.");
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+function showProfileTeacherMessage(target, text = "", type = "success") {
+  if (!target) return;
+
+  target.textContent = text;
+  target.dataset.type = type;
+  target.classList.add("is-visible");
+}
+
+function clearProfileTeacherMessage(target) {
+  if (!target) return;
+
+  target.textContent = "";
+  target.removeAttribute("data-type");
+  target.classList.remove("is-visible");
+}
+
+function renderLastBitacoraPreview(student, bitacoras = [], config, isAuthenticated = true) {
+  if (!isAuthenticated) {
+    return renderHistoryPreview(student, [], config, false);
+  }
+
+  const latest = sortBitacorasByDate(bitacoras)[0] || null;
+  if (!latest) {
+    return renderHistoryPreview(student, [], config, true);
+  }
+
+  return `
+    <div class="profile-latest-card">
+      ${renderHistoryCard(latest, normalizeStudentProcesses(student), {
+        compact: true,
+      })}
+      <div class="profile-panel-actions">
+        <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-target="bitacoras">
+          Ver todas las bitácoras
+        </button>
+        <button type="button" class="btn btn--primary btn--sm" data-history-action="open-editor">
+          Nueva bitácora
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderCurrentRoutePreview(student) {
+  const access = resolveUserAccess(getState()?.auth?.user);
+  const studentId = getStudentIdentity(student);
+  const route = buildDefaultRouteState(student, getStudentRoute(studentId));
+  const preset = resolveRoutePreset(student, route);
+  const components = getRouteComponentsForPreset(preset);
+
+  return `
+    <div class="profile-route-summary">
+      ${renderCurrentRouteGoals(route, preset, components, {
+        canUpdateRouteProgress: access.canUpdateRouteProgress,
+      })}
+      <div class="profile-panel-actions">
+        <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-target="route">
+          Ver ruta completa
+        </button>
+        ${
+          access.canEditRouteStructure
+            ? `<button type="button" class="btn btn--primary btn--sm" data-profile-panel-target="route-editor">
+                Editar ruta
+              </button>`
+            : ""
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderQuickActions(access = {}) {
+  return `
+    <div class="profile-actions-grid">
+      <button type="button" class="btn btn--ghost" data-profile-panel-target="student-info">
+        Ver información del estudiante
+      </button>
+      <button type="button" class="btn btn--ghost" data-profile-panel-target="bitacoras">
+        Ver todas las bitácoras
+      </button>
+      <button type="button" class="btn btn--ghost" data-profile-panel-target="route">
+        Ver ruta completa
+      </button>
+      ${
+        access.canEditRouteStructure
+          ? `<button type="button" class="btn btn--primary" data-profile-panel-target="route-editor">
+              Editar ruta
+            </button>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderAllBitacorasPanel(student, bitacoras = [], config, isAuthenticated = true) {
+  if (!isAuthenticated || !Array.isArray(bitacoras) || !bitacoras.length) {
+    return renderHistoryPreview(student, bitacoras, config, isAuthenticated);
+  }
+
+  const processOptions = normalizeStudentProcesses(student);
+  return `
+    <div class="history-preview-list">
+      ${sortBitacorasByDate(bitacoras)
+        .map((item) => renderHistoryCard(item, processOptions))
+        .join("")}
+      <div class="profile-panel-actions">
+        <button type="button" class="btn btn--primary btn--sm" data-history-action="open-editor">
+          Nueva bitácora
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function openProfilePanel(target = "") {
+  const normalizedTarget = target === "route-editor" ? "route" : target;
+  const panels = Array.from(viewRoot?.querySelectorAll("[data-profile-panel]") || []);
+  if (!panels.length || !normalizedTarget) return;
+
+  panels.forEach((panel) => {
+    panel.hidden = panel.getAttribute("data-profile-panel") !== normalizedTarget;
+  });
+
+  const activePanel = panels.find(
+    (panel) => panel.getAttribute("data-profile-panel") === normalizedTarget
+  );
+  if (activePanel) {
+    activePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function closeProfilePanels() {
+  Array.from(viewRoot?.querySelectorAll("[data-profile-panel]") || []).forEach(
+    (panel) => {
+      panel.hidden = true;
+    }
+  );
 }
 
 function renderSummary(student, bitacoras = []) {
@@ -1680,6 +1878,9 @@ function buildDefaultRouteState(student, baseRoute = {}) {
     presetId: preset.id,
     routeName: preset.routeName,
     customGoals: normalizeManualRouteGoals(baseRoute?.customGoals),
+    experienceDescriptions: normalizeExperienceDescriptions(
+      baseRoute?.experienceDescriptions
+    ),
     processKey: toStringSafe(currentProfileProcessKey || activeProcess?.processKey),
     processLabel: firstNonEmpty(
       activeProcess?.label,
@@ -1762,6 +1963,19 @@ function normalizeManualRouteGoals(goals = []) {
     .filter(Boolean);
 }
 
+function normalizeExperienceDescriptions(descriptions = {}) {
+  if (!descriptions || typeof descriptions !== "object") return {};
+
+  return Object.entries(descriptions).reduce((acc, [key, value]) => {
+    const experience = Number(key);
+    const description = toStringSafe(value);
+    if (Number.isFinite(experience) && experience > 0 && description) {
+      acc[String(experience)] = description;
+    }
+    return acc;
+  }, {});
+}
+
 function serializeManualRouteGoals(goals = []) {
   return normalizeManualRouteGoals(goals)
     .map((goal) =>
@@ -1769,6 +1983,7 @@ function serializeManualRouteGoals(goals = []) {
         goal.componentLabel || goal.component || "General",
         goal.title,
         goal.experience || 1,
+        goal.description || "",
       ].join(" | ")
     )
     .join("\n");
@@ -1780,7 +1995,12 @@ function parseManualRouteGoals(rawText = "", existingGoals = [], routeTemplateId
     .split(/\r?\n/)
     .map((line, index) => {
       const parts = line.split("|").map((part) => toStringSafe(part));
-      const [componentRaw = "General", titleRaw = "", experienceRaw = "1"] = parts;
+      const [
+        componentRaw = "General",
+        titleRaw = "",
+        experienceRaw = "1",
+        descriptionRaw = "",
+      ] = parts;
       const title = titleRaw || componentRaw;
       if (!title) return null;
 
@@ -1803,7 +2023,10 @@ function parseManualRouteGoals(rawText = "", existingGoals = [], routeTemplateId
         experience,
         order: index + 1,
         title,
-        description: `Ruta manual · ${componentLabel}`,
+        description:
+          descriptionRaw ||
+          toStringSafe(existingGoal?.description) ||
+          `Ruta manual · ${componentLabel}`,
       };
     })
     .filter(Boolean);
@@ -2358,6 +2581,9 @@ function renderManualRouteEditor(route = {}, preset = {}, expanded = false, acce
     ? normalizeManualRouteGoals(route.customGoals)
     : normalizeManualRouteGoals(preset.goals);
   const groupedGoals = groupGoalsByExperienceAndComponent(goals);
+  const experienceDescriptions = normalizeExperienceDescriptions(
+    route.experienceDescriptions
+  );
 
   return `
     <section class="route-manual-editor" ${expanded ? "" : "hidden"}>
@@ -2382,6 +2608,14 @@ function renderManualRouteEditor(route = {}, preset = {}, expanded = false, acce
             (experienceGroup) => `
               <article class="route-structure-builder__experience">
                 <h4 class="route-structure-builder__title">Experiencia ${escapeHtml(String(experienceGroup.experience))}</h4>
+                <label class="route-structure-builder__goal">
+                  <span>Descripcion general de la experiencia</span>
+                  <textarea
+                    data-route-experience-description
+                    data-route-experience="${escapeHtml(String(experienceGroup.experience))}"
+                    rows="2"
+                  >${escapeHtml(experienceDescriptions[String(experienceGroup.experience)] || "")}</textarea>
+                </label>
                 <div class="route-structure-builder__components">
                   ${experienceGroup.components
                     .map(
@@ -2405,6 +2639,14 @@ function renderManualRouteEditor(route = {}, preset = {}, expanded = false, acce
                                       data-route-goal-experience="${escapeHtml(String(goal.experience || 1))}"
                                       value="${escapeHtml(goal.title)}"
                                     />
+                                  </label>
+                                  <label class="route-structure-builder__goal">
+                                    <span>Descripcion del objetivo ${escapeHtml(String(goal.goalNumber || 1))}</span>
+                                    <textarea
+                                      data-route-visual-goal-description
+                                      data-route-goal-id="${escapeHtml(goal.id)}"
+                                      rows="2"
+                                    >${escapeHtml(goal.description || "")}</textarea>
                                   </label>
                                 `
                               )
@@ -2483,10 +2725,18 @@ function getManualGoalsFromVisualEditor() {
       const experience =
         Number(input.getAttribute("data-route-goal-experience")) || 1;
       const component = toLearningRouteComponentId(componentLabel);
+      const goalId = toStringSafe(input.getAttribute("data-route-goal-id"));
+      const descriptionInput = Array.from(
+        viewRoot?.querySelectorAll("[data-route-visual-goal-description]") || []
+      ).find(
+        (item) => toStringSafe(item.getAttribute("data-route-goal-id")) === goalId
+      );
+      const description =
+        toStringSafe(descriptionInput?.value) || `Ruta manual · ${componentLabel}`;
 
       return {
         id:
-          toStringSafe(input.getAttribute("data-route-goal-id")) ||
+          goalId ||
           buildManualGoalId(component, title, index, {
             routeTemplateId: getCurrentRouteTemplateId(),
             experience,
@@ -2497,10 +2747,25 @@ function getManualGoalsFromVisualEditor() {
         experience,
         order: index + 1,
         title,
-        description: `Ruta manual · ${componentLabel}`,
+        description,
       };
     })
     .filter(Boolean);
+}
+
+function getExperienceDescriptionsFromVisualEditor() {
+  const inputs = Array.from(
+    viewRoot?.querySelectorAll("[data-route-experience-description]") || []
+  );
+
+  return inputs.reduce((acc, input) => {
+    const experience = Number(input.getAttribute("data-route-experience"));
+    const description = toStringSafe(input.value);
+    if (Number.isFinite(experience) && experience > 0 && description) {
+      acc[String(experience)] = description;
+    }
+    return acc;
+  }, {});
 }
 
 async function completeLearningGoal(student, goalId) {
@@ -2579,6 +2844,7 @@ async function saveManualLearningRoute(student) {
           currentRoute.routeTemplateId
         )
       : visualGoals;
+  const experienceDescriptions = getExperienceDescriptionsFromVisualEditor();
 
   if (!manualGoals.length) {
     setAppError("La ruta manual necesita al menos un objetivo.");
@@ -2597,6 +2863,7 @@ async function saveManualLearningRoute(student) {
     presetId: currentRoute.routeTemplateId || "ruta_manual_v1",
     routeName: currentRoute.routeName || `Ruta de aprendizaje - ${currentRoute.focusArea || "Proceso"}`,
     customGoals: manualGoals,
+    experienceDescriptions,
     completedGoalIds,
     history,
   });
@@ -2708,6 +2975,11 @@ function toggleRouteEditor(student) {
 }
 
 function rerenderRoutePanel(student) {
+  const routePreviewContainer = viewRoot?.querySelector("#profile-route-preview-content");
+  if (routePreviewContainer) {
+    routePreviewContainer.innerHTML = renderCurrentRoutePreview(student);
+  }
+
   const routeContainer = viewRoot?.querySelector("#profile-route-content");
   if (routeContainer) {
     routeContainer.innerHTML = renderLearningRoute(student);
@@ -2730,7 +3002,7 @@ function toggleHistoryExpanded(student, triggerButton, forceOpen = false) {
   if (historyContainer) {
     const state = getState();
     const bitacoras = getBitacorasFromState(student);
-    historyContainer.innerHTML = renderHistoryPreview(
+    historyContainer.innerHTML = renderLastBitacoraPreview(
       student,
       bitacoras,
       CONFIG,
@@ -2738,7 +3010,19 @@ function toggleHistoryExpanded(student, triggerButton, forceOpen = false) {
     );
   }
 
-  applyProfileFocusLayout(student);
+  const allHistoryContainer = viewRoot?.querySelector("#profile-all-history-content");
+  if (allHistoryContainer) {
+    const state = getState();
+    const bitacoras = getBitacorasFromState(student);
+    allHistoryContainer.innerHTML = renderAllBitacorasPanel(
+      student,
+      bitacoras,
+      CONFIG,
+      Boolean(state?.auth?.isAuthenticated)
+    );
+  }
+
+  openProfilePanel("bitacoras");
 
   if (triggerButton) {
     triggerButton.textContent = nextValue
@@ -2812,6 +3096,11 @@ function applyProfileFocusLayout(student) {
 
 async function reloadLearningRoute(student) {
   await ensureLearningRouteLoaded(student, { forceReload: true });
+
+  const routePreviewContainer = viewRoot?.querySelector("#profile-route-preview-content");
+  if (routePreviewContainer) {
+    routePreviewContainer.innerHTML = renderCurrentRoutePreview(student);
+  }
 
   const routeContainer = viewRoot?.querySelector("#profile-route-content");
   if (routeContainer) {
@@ -2906,7 +3195,8 @@ function renderHistoryPreview(student, items = [], config, isAuthenticated = tru
   `;
 }
 
-function renderHistoryCard(item, processOptions = []) {
+function renderHistoryCard(item, processOptions = [], options = {}) {
+  const compact = Boolean(options.compact);
   const mode = normalizeMode(item.mode);
   const overrides = normalizeStudentOverrides(
     item.studentOverrides,
@@ -2952,23 +3242,27 @@ function renderHistoryCard(item, processOptions = []) {
         </div>
       </header>
 
-      <div class="history-preview-card__group">
-        <p class="history-preview-card__group-title">Proceso</p>
-        <div class="empty-state__actions">
-          <select class="field__input" data-history-process-select>
-            <option value="">Sin categorizar</option>
-            ${renderHistoryProcessOptions(processOptions, selectedProcessKey)}
-          </select>
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm"
-            data-history-action="assign-process"
-            data-bitacora-id="${escapeHtml(item.id)}"
-          >
-            Guardar proceso
-          </button>
-        </div>
-      </div>
+      ${
+        compact
+          ? ""
+          : `<div class="history-preview-card__group">
+              <p class="history-preview-card__group-title">Proceso</p>
+              <div class="empty-state__actions">
+                <select class="field__input" data-history-process-select>
+                  <option value="">Sin categorizar</option>
+                  ${renderHistoryProcessOptions(processOptions, selectedProcessKey)}
+                </select>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-history-action="assign-process"
+                  data-bitacora-id="${escapeHtml(item.id)}"
+                >
+                  Guardar proceso
+                </button>
+              </div>
+            </div>`
+      }
 
       ${
         Array.isArray(item.etiquetas) && item.etiquetas.length
@@ -2986,7 +3280,7 @@ function renderHistoryCard(item, processOptions = []) {
         ${escapeHtml(truncateText(item.contenido || "", 180))}
       </p>
 
-      ${renderHistoryOverrides(item, overrides)}
+      ${compact ? "" : renderHistoryOverrides(item, overrides)}
 
       ${
         Array.isArray(item.studentRefs) && item.studentRefs.length > 1

@@ -180,9 +180,11 @@ export async function render({
 }
 
 export async function afterEnter() {
-  const tareas = viewRoot?.querySelector("#bitacora-tareas");
-  if (tareas) {
-    tareas.focus();
+  const firstField = viewRoot?.querySelector(
+    "#bitacora-process-select, #bitacora-fecha, #bitacora-form input:not([type='hidden']):not([type='radio']):not([disabled]), #bitacora-form select:not([disabled]), #bitacora-form textarea:not([disabled])"
+  );
+  if (firstField) {
+    firstField.focus();
     return;
   }
 
