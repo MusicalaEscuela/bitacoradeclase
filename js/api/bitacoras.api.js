@@ -19,6 +19,7 @@ import {
   orderBy,
   limit,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
   normalizeTimestamps,
   getCurrentUser,
@@ -656,10 +657,40 @@ export async function updateBitacora(bitacoraId, updates = {}, options = {}) {
   return updated;
 }
 
+/**
+ * Elimina una bitacora existente.
+ */
+export async function deleteBitacora(bitacoraId) {
+  assertFirestoreEnabled();
+  assertAuthenticated();
+
+  const safeBitacoraId = safeString(bitacoraId);
+
+  if (!safeBitacoraId) {
+    throw createApiError("Se requiere bitacoraId para eliminar la bitacora.", {
+      code: "MISSING_BITACORA_ID",
+    });
+  }
+
+  const current = await getBitacoraById(safeBitacoraId);
+
+  if (!current) {
+    throw createApiError("No existe la bitacora que se intenta eliminar.", {
+      code: "BITACORA_NOT_FOUND",
+      bitacoraId: safeBitacoraId,
+    });
+  }
+
+  await deleteDoc(doc(db, BITACORAS_COLLECTION, safeBitacoraId));
+
+  return current;
+}
+
 export default {
   getBitacoras,
   getBitacorasByStudent,
   getBitacoraById,
   createBitacora,
   updateBitacora,
+  deleteBitacora,
 };
