@@ -282,6 +282,10 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
 
       const normalizedValue = isPlainObject(value) ? value : {};
       const enabled = Boolean(normalizedValue.enabled);
+      if (!enabled) {
+        return;
+      }
+
       const tareas = toStringSafe(normalizedValue.tareas);
       const etiquetas = normalizeOverrideValues(normalizedValue.etiquetas);
       const componenteCorporal = normalizeOverrideValues(
@@ -310,7 +314,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       }
 
       next[safeStudentId] = {
-        enabled,
+        enabled: true,
         tareas,
         etiquetas,
         componenteCorporal,
@@ -1219,6 +1223,24 @@ export function addBitacoraForStudent(studentId, bitacora) {
     byStudentId: {
       ...state.bitacoras.byStudentId,
       [safeStudentId]: sortBitacoras([normalizedBitacora, ...withoutDuplicate]),
+    },
+  });
+}
+
+export function removeBitacoraForStudent(studentId, bitacoraId) {
+  const safeStudentId = toStringSafe(studentId);
+  const safeBitacoraId = toStringSafe(bitacoraId);
+
+  if (!safeStudentId || !safeBitacoraId) return;
+
+  const current = state.bitacoras.byStudentId?.[safeStudentId] || [];
+
+  patchSlice("bitacoras", {
+    byStudentId: {
+      ...state.bitacoras.byStudentId,
+      [safeStudentId]: current.filter(
+        (item) => toStringSafe(item.id || item.bitacoraId) !== safeBitacoraId
+      ),
     },
   });
 }
