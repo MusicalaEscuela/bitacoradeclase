@@ -11,6 +11,7 @@ import {
   setAppError,
   clearAppError,
   setBitacorasForStudent,
+  removeBitacoraForStudent,
   setBitacorasLoading,
   setProfileLoading,
   setSelectedStudent,
@@ -23,6 +24,7 @@ import {
   getBitacoraById,
   getBitacorasByStudent,
   updateBitacora,
+  deleteBitacora,
 } from "../api/bitacoras.api.js";
 import {
   getStudentProfile,
@@ -986,6 +988,14 @@ function bindProfileEvents(student) {
         return;
       }
 
+      if (action === "delete-bitacora") {
+        const bitacoraId = toStringSafe(
+          actionButton.getAttribute("data-bitacora-id")
+        );
+        await handleDeleteBitacoraFromProfile(student, bitacoraId);
+        return;
+      }
+
       if (action === "assign-process") {
         const bitacoraId = toStringSafe(
           actionButton.getAttribute("data-bitacora-id")
@@ -1422,9 +1432,9 @@ function renderAllBitacorasPanel(student, bitacoras = [], config, isAuthenticate
 
   const processOptions = normalizeStudentProcesses(student);
   return `
-    <div class="history-preview-list">
+    <div class="teaching-history-list">
       ${sortBitacorasByDate(bitacoras)
-        .map((item) => renderHistoryCard(item, processOptions))
+        .map((item) => renderTeachingHistoryCard(item, student, processOptions))
         .join("")}
       <div class="profile-panel-actions">
         <button type="button" class="btn btn--primary btn--sm" data-history-action="open-editor">
@@ -1432,6 +1442,107 @@ function renderAllBitacorasPanel(student, bitacoras = [], config, isAuthenticate
         </button>
       </div>
     </div>
+  `;
+}
+
+function renderTeachingHistoryCard(item, student, processOptions = []) {
+  const mode = normalizeMode(item.mode);
+  const structuredContent = parseStructuredContent(item.contenido || "");
+  const teacherName = firstNonEmpty(
+    structuredContent.docente,
+    getHistoryTeacherName(item)
+  );
+  const selectedProcessKey = toStringSafe(
+    item?.process?.processKey || item?.processKey
+  );
+  const selectedProcess = processOptions.find(
+    (process) => toStringSafe(process?.processKey) === selectedProcessKey
+  );
+  const processLabel = getProcessDisplayLabel(selectedProcess || item?.process);
+  const currentOverride = getCurrentStudentOverride(item, student);
+  const hasOverrideContent = hasStudentOverrideContent(currentOverride);
+  const hasGeneralContent = hasStructuredHistoryContent(structuredContent);
+  const title = toStringSafe(item.titulo || "Bitácora sin título");
+  const tags = normalizeTags(item.etiquetas || []);
+  const overrideTags = normalizeTags(currentOverride?.etiquetas || []);
+
+  return `
+    <article class="teaching-history-card" data-history-card>
+      <header class="teaching-history-card__header">
+        <div>
+          <p class="teaching-history-card__date">
+            ${escapeHtml(formatDisplayDate(item.fechaClase || item.createdAt))}
+          </p>
+          <h3 class="teaching-history-card__title">${escapeHtml(title)}</h3>
+        </div>
+        <div class="teaching-history-card__meta">
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-history-action="delete-bitacora"
+            data-bitacora-id="${escapeHtml(item.id || "")}"
+          >
+            Eliminar
+          </button>
+          <span class="badge">${escapeHtml(mode === CONFIG.modes.group ? "Grupal" : "Individual")}</span>
+          ${
+            teacherName
+              ? `<span class="badge badge--soft">Docente: ${escapeHtml(teacherName)}</span>`
+              : ""
+          }
+          ${
+            processLabel
+              ? `<span class="badge badge--soft">Proceso: ${escapeHtml(processLabel)}</span>`
+              : ""
+          }
+        </div>
+      </header>
+
+      ${
+        tags.length
+          ? `<div class="teaching-history-card__chips">
+              ${tags.map((tag) => `<span class="badge badge--soft">${escapeHtml(tag)}</span>`).join("")}
+            </div>`
+          : ""
+      }
+
+      ${
+        hasOverrideContent
+          ? `<section class="teaching-history-section teaching-history-section--highlight">
+              <p class="teaching-history-section__label">Ajustes para este estudiante</p>
+              <div class="teaching-history-card__sections">
+                ${renderHistorySection("Tareas / observaciones", currentOverride.tareas)}
+                ${renderHistoryListSection("Componente corporal", currentOverride.componenteCorporal)}
+                ${renderHistoryListSection("Componente técnico", currentOverride.componenteTecnico)}
+                ${renderHistoryListSection("Componente teórico", currentOverride.componenteTeorico)}
+                ${renderHistoryListSection("Componente de obras", currentOverride.componenteObras)}
+                ${renderHistoryListSection("Etiquetas individuales", overrideTags)}
+              </div>
+            </section>`
+          : ""
+      }
+
+      ${
+        hasOverrideContent && hasGeneralContent
+          ? `<p class="teaching-history-card__subtitle">Trabajo general de la clase</p>`
+          : ""
+      }
+
+      <div class="teaching-history-card__sections">
+        ${renderHistorySection("Tareas / observaciones", structuredContent.tareas)}
+        ${renderHistoryListSection("Componente corporal", structuredContent.componenteCorporal)}
+        ${renderHistoryListSection("Componente técnico", structuredContent.componenteTecnico)}
+        ${renderHistoryListSection("Componente teórico", structuredContent.componenteTeorico)}
+        ${renderHistoryListSection("Componente de obras", structuredContent.componenteObras)}
+        ${
+          hasGeneralContent
+            ? ""
+            : renderHistorySection("Tareas / observaciones", item.contenido || "Sin contenido registrado.")
+        }
+      </div>
+
+      ${renderProcessAssignmentControl(item, processOptions, selectedProcessKey)}
+    </article>
   `;
 }
 
@@ -3221,6 +3332,14 @@ function renderHistoryCard(item, processOptions = [], options = {}) {
         </div>
 
         <div class="history-preview-card__meta">
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-history-action="delete-bitacora"
+            data-bitacora-id="${escapeHtml(item.id || "")}"
+          >
+            Eliminar
+          </button>
           <span class="badge">
             ${escapeHtml(mode === CONFIG.modes.group ? "Grupal" : "Individual")}
           </span>
@@ -3329,6 +3448,115 @@ function renderHistoryProcessOptions(processes = [], selectedKey = "") {
       return `<option value="${escapeHtml(processKey)}"${selectedAttr}>${escapeHtml(processLabel)}</option>`;
     })
     .join("");
+}
+
+function renderHistorySection(label, value, options = {}) {
+  const text = toStringSafe(value);
+  if (!text) return "";
+
+  const highlightClass = options.highlight ? " teaching-history-section--highlight" : "";
+  return `
+    <section class="teaching-history-section${highlightClass}">
+      <p class="teaching-history-section__label">${escapeHtml(label)}</p>
+      <p class="teaching-history-section__value">${escapeHtml(text)}</p>
+    </section>
+  `;
+}
+
+function renderHistoryListSection(label, values = []) {
+  const list = normalizeTags(values);
+  if (!list.length) return "";
+
+  return `
+    <section class="teaching-history-section">
+      <p class="teaching-history-section__label">${escapeHtml(label)}</p>
+      <div class="teaching-history-card__chips">
+        ${list.map((value) => `<span class="badge badge--soft">${escapeHtml(value)}</span>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderProcessAssignmentControl(item, processOptions = [], selectedProcessKey = "") {
+  return `
+    <details class="teaching-history-process">
+      <summary>Cambiar proceso</summary>
+      <div class="teaching-history-process__body">
+        <select class="field__input" data-history-process-select>
+          <option value="">Sin categorizar</option>
+          ${renderHistoryProcessOptions(processOptions, selectedProcessKey)}
+        </select>
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm"
+          data-history-action="assign-process"
+          data-bitacora-id="${escapeHtml(item.id)}"
+        >
+          Guardar proceso
+        </button>
+      </div>
+    </details>
+  `;
+}
+
+function getProcessDisplayLabel(process = {}) {
+  return toStringSafe(
+    process?.label ||
+      process?.detalle ||
+      process?.arte ||
+      process?.programa ||
+      process?.instrumento ||
+      process?.processKey
+  );
+}
+
+function getCurrentStudentOverride(item = {}, student = {}) {
+  const studentIds = [
+    getStudentIdentity(student),
+    getStudentFallbackId(student),
+    student?.id,
+    student?.studentId,
+    student?.studentKey,
+  ]
+    .map(toStringSafe)
+    .filter(Boolean);
+  const allowedIds = normalizeStudentIds([
+    ...(item.studentIds || []),
+    ...studentIds,
+  ]);
+  const overrides = normalizeStudentOverrides(
+    item.studentOverrides || item.overrides,
+    allowedIds
+  );
+
+  for (const studentId of studentIds) {
+    if (overrides[studentId]) return overrides[studentId];
+  }
+
+  return null;
+}
+
+function hasStudentOverrideContent(override = null) {
+  if (!override) return false;
+  return Boolean(
+    toStringSafe(override.tareas) ||
+      normalizeTags(override.etiquetas || []).length ||
+      normalizeTags(override.componenteCorporal || []).length ||
+      normalizeTags(override.componenteTecnico || []).length ||
+      normalizeTags(override.componenteTeorico || []).length ||
+      normalizeTags(override.componenteObras || []).length
+  );
+}
+
+function hasStructuredHistoryContent(structuredContent = {}) {
+  return Boolean(
+    toStringSafe(structuredContent.docente) ||
+      toStringSafe(structuredContent.tareas) ||
+      normalizeTags(structuredContent.componenteCorporal || []).length ||
+      normalizeTags(structuredContent.componenteTecnico || []).length ||
+      normalizeTags(structuredContent.componenteTeorico || []).length ||
+      normalizeTags(structuredContent.componenteObras || []).length
+  );
 }
 
 function getHistoryTeacherName(item = {}) {
@@ -3568,6 +3796,56 @@ async function assignProcessToBitacora(student, bitacoraId, processKey = "") {
   }
 }
 
+async function handleDeleteBitacoraFromProfile(student, bitacoraId) {
+  const safeBitacoraId = toStringSafe(bitacoraId);
+  if (!safeBitacoraId) return;
+
+  const source = getBitacorasFromState(student).find(
+    (item) => toStringSafe(item.id || item.bitacoraId) === safeBitacoraId
+  );
+  const title = source?.titulo || source?.title || "esta bitacora";
+  const dateLabel = formatDisplayDate(source?.fechaClase || source?.createdAt);
+  const confirmed = window.confirm(
+    [
+      "Estas seguro de eliminar esta bitacora?",
+      "",
+      title ? `Bitacora: ${title}` : "",
+      dateLabel ? `Fecha: ${dateLabel}` : "",
+      "",
+      "Esta accion no se puede deshacer.",
+    ]
+      .filter((line) => line !== "")
+      .join("\n")
+  );
+
+  if (!confirmed) return;
+
+  setBitacorasLoading(true);
+
+  try {
+    const deleted = await deleteBitacora(safeBitacoraId);
+    const relatedStudentIds = normalizeStudentIds(
+      deleted?.studentIds || source?.studentIds || [getStudentIdentity(student)]
+    );
+
+    relatedStudentIds.forEach((id) => {
+      removeBitacoraForStudent(id, safeBitacoraId);
+    });
+
+    const fallbackId = getStudentFallbackId(student);
+    if (fallbackId) {
+      removeBitacoraForStudent(fallbackId, safeBitacoraId);
+    }
+
+    renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+  } catch (error) {
+    console.error("Error eliminando bitacora:", error);
+    setAppError(error?.message || "No se pudo eliminar la bitacora.");
+  } finally {
+    setBitacorasLoading(false);
+  }
+}
+
 function getBitacorasFromState(studentOrRef) {
   const selectedProcess =
     studentOrRef && typeof studentOrRef === "object"
@@ -3755,6 +4033,71 @@ function repairVisibleText(value) {
     .replaceAll("t�cnico", "técnico")
     .replaceAll("Te�rico", "Teórico")
     .replaceAll("te�rico", "teórico");
+}
+
+function parseStructuredContent(content = "") {
+  const text = repairVisibleText(content);
+  if (!text.trim()) {
+    return {
+      docente: "",
+      tareas: "",
+      componenteCorporal: [],
+      componenteTecnico: [],
+      componenteTeorico: [],
+      componenteObras: [],
+    };
+  }
+
+  const markers = [
+    ["DOCENTE", "docente"],
+    ["TAREAS / OBSERVACIONES", "tareas"],
+    ["COMPONENTE CORPORAL", "componenteCorporal"],
+    ["COMPONENTE TECNICO", "componenteTecnico"],
+    ["COMPONENTE TEORICO", "componenteTeorico"],
+    ["COMPONENTE DE OBRAS", "componenteObras"],
+  ];
+
+  const result = {
+    docente: "",
+    tareas: text.trim(),
+    componenteCorporal: [],
+    componenteTecnico: [],
+    componenteTeorico: [],
+    componenteObras: [],
+  };
+  const upperText = text.toUpperCase();
+  const hasStructuredMarkers = markers.some(([label]) =>
+    upperText.includes(`${label}:`)
+  );
+
+  if (!hasStructuredMarkers) return result;
+
+  result.tareas = "";
+
+  markers.forEach(([label, key]) => {
+    const startToken = `${label}:`;
+    const start = upperText.indexOf(startToken);
+    if (start === -1) return;
+
+    const contentStart = start + startToken.length;
+    let end = text.length;
+
+    markers.forEach(([nextLabel]) => {
+      const nextToken = `${nextLabel}:`;
+      const nextStart = upperText.indexOf(nextToken, contentStart);
+      if (nextStart !== -1 && nextStart < end) {
+        end = nextStart;
+      }
+    });
+
+    const value = text.slice(contentStart, end).trim();
+    result[key] =
+      key === "docente" || key === "tareas"
+        ? value
+        : normalizeTags(value);
+  });
+
+  return result;
 }
 
 /**
