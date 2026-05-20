@@ -2903,6 +2903,10 @@
   gap: 0.72rem;
 }
 
+.history-search {
+  margin: 0.85rem 0 1rem;
+}
+
 .bitacora-card__sections-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
