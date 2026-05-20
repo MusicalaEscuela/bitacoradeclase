@@ -2903,6 +2903,16 @@
   gap: 0.72rem;
 }
 
+.bitacora-card__sections-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.72rem;
+}
+
+.bitacora-card__section--wide {
+  grid-column: 1 / -1;
+}
+
 .bitacora-card__section {
   display: grid;
   gap: 0.28rem;
@@ -2937,6 +2947,20 @@
   line-height: 1.58;
   color: var(--text-main);
   white-space: pre-wrap;
+}
+
+.bitacora-card__section-text {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.58;
+  color: var(--text-main);
+  white-space: pre-wrap;
+}
+
+.bitacora-card__section-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .bitacora-card__files,
@@ -2992,9 +3016,28 @@
    ========================= */
 .file-chip {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr) auto;
   gap: 0.7rem;
   align-items: center;
+}
+
+.file-chip__remove {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(34, 10, 99, 0.08);
+  color: var(--text-strong, #220a63);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.file-chip__remove:hover,
+.file-chip__remove:focus-visible {
+  background: rgba(34, 10, 99, 0.16);
+  outline: none;
 }
 
 .file-chip__thumb {
@@ -3086,5 +3129,174 @@
 
   .student-summary__facts {
     grid-template-columns: 1fr;
+  }
+}
+
+/* =========================
+   TEACHING HISTORY
+   ========================= */
+.teaching-history-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.teaching-history-card {
+  display: grid;
+  gap: 0.78rem;
+  padding: 1rem;
+  border: 1px solid rgba(95, 82, 177, 0.16);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8faff 100%);
+  box-shadow: 0 12px 28px rgba(32, 43, 74, 0.06);
+}
+
+.teaching-history-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.teaching-history-card__date {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 850;
+  color: var(--text-strong);
+}
+
+.teaching-history-card__title {
+  margin: 0.18rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-light);
+}
+
+.teaching-history-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.teaching-history-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.teaching-history-card__chips .badge {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.teaching-history-card__sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.teaching-history-card__subtitle {
+  margin: 0.15rem 0 -0.2rem;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5b4fc1;
+}
+
+.teaching-history-section {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.68rem 0.75rem;
+  border: 1px solid rgba(95, 82, 177, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.teaching-history-section:first-child {
+  grid-column: 1 / -1;
+}
+
+.teaching-history-section__label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #5b4fc1;
+}
+
+.teaching-history-section__value {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-main);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.teaching-history-section--highlight {
+  border-color: rgba(86, 113, 214, 0.24);
+  background: linear-gradient(135deg, rgba(231, 235, 255, 0.95), rgba(255, 255, 255, 0.96));
+}
+
+.teaching-history-section--highlight > .teaching-history-section__label {
+  font-size: 0.78rem;
+  color: #384bb5;
+}
+
+.teaching-history-process {
+  margin-top: 0.1rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(95, 82, 177, 0.13);
+}
+
+.teaching-history-process summary {
+  width: max-content;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #5b4fc1;
+}
+
+.teaching-history-process__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-top: 0.55rem;
+}
+
+.teaching-history-process__body .field__input {
+  max-width: 280px;
+}
+
+@media (max-width: 768px) {
+  .teaching-history-card {
+    padding: 0.82rem;
+    border-radius: 14px;
+  }
+
+  .teaching-history-card__header {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .teaching-history-card__meta {
+    justify-content: flex-start;
+  }
+
+  .teaching-history-card__sections {
+    grid-template-columns: 1fr;
+  }
+
+  .bitacora-card__sections-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .teaching-history-process__body,
+  .teaching-history-process__body .field__input {
+    width: 100%;
+    max-width: none;
   }
 }
