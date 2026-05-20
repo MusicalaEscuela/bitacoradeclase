@@ -64,6 +64,23 @@ export function normalizeText(value) {
     .trim();
 }
 
+export function tokenizeSearchText(value) {
+  return normalizeText(value)
+    .split(" ")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function matchesFlexibleSearch(searchableValues = [], query = "") {
+  const queryTokens = tokenizeSearchText(query);
+  if (!queryTokens.length) return false;
+
+  const searchableText = tokenizeSearchText(searchableValues.filter(Boolean).join(" ")).join(" ");
+  if (!searchableText) return false;
+
+  return queryTokens.every((token) => searchableText.includes(token));
+}
+
 /* ==========================================================================
    FECHAS
    ========================================================================== */
