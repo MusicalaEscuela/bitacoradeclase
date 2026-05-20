@@ -23,6 +23,7 @@ import {
   getStudentIdentity,
   getStudentName,
   getStudentProcessesSummary,
+  matchesFlexibleSearch,
   matchesStudentRef,
   normalizeText,
   resolveStudentRefFromPayload,
@@ -1083,12 +1084,9 @@ function filterStudents(students, query) {
         student.estado,
         student.interesesMusicales,
         ...processStrings,
-      ]
-        .filter(Boolean)
-        .map((value) => normalizeText(value))
-        .join(" ");
+      ];
 
-      return searchable.includes(normalizedQuery);
+      return matchesFlexibleSearch(searchable, normalizedQuery);
     })
     .slice(0, 12);
 }

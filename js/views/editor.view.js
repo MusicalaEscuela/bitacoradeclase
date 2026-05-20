@@ -1,4 +1,4 @@
-// js/views/editor.view.js
+﻿// js/views/editor.view.js
 
 import { CONFIG, canUseGroupBitacoras } from "../config.js";
 import { canViewStudent, resolveUserAccess } from "../authz.js";
@@ -14,6 +14,7 @@ import {
   setBitacorasLoading,
   setBitacorasForStudent,
   addBitacoraForStudent,
+  removeBitacoraForStudent,
   updateDraft,
   resetDraft,
   setUploadQueue,
@@ -25,6 +26,8 @@ import {
 import {
   getBitacorasByStudent,
   createBitacora,
+  updateBitacora,
+  deleteBitacora,
 } from "../api/bitacoras.api.js";
 
 import {
@@ -44,6 +47,7 @@ import {
   getStudentIdentity,
   getStudentName,
   getStudentProcessesSummary,
+  matchesFlexibleSearch,
   normalizeStudentProcesses,
   resolveStudentProcess,
   getTimestamp,
@@ -71,6 +75,7 @@ let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
 let draftInputDebounceTimer = null;
 let groupSearchDebounceTimer = null;
+let currentEditingBitacoraId = "";
 
 const DRAFT_INPUT_DEBOUNCE_MS = 140;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
@@ -267,7 +272,7 @@ function buildEditorMarkup({
     config?.app?.name ||
     config?.appName ||
     config?.title ||
-    "Bitácoras de Clase";
+    "Bitacoras de Clase";
 
   const isGroup = draft.mode === CONFIG.modes.group;
 
@@ -276,10 +281,10 @@ function buildEditorMarkup({
       <header class="view-header">
         <div class="view-header__content">
           <p class="view-eyebrow">${escapeHtml(title)}</p>
-          <h1 class="view-title">Editor de bitácora</h1>
+          <h1 class="view-title">Editor de bitacora</h1>
           <p class="view-description">
             Registren observaciones, avances, dificultades y acuerdos de clase sin
-            poner al docente a sufrir con una interfaz torpe. Qué detalle tan
+            poner al docente a sufrir con una interfaz torpe. Que detalle tan
             revolucionario.
           </p>
         </div>
@@ -290,7 +295,7 @@ function buildEditorMarkup({
             class="btn btn--ghost"
             id="editor-back-search-btn"
           >
-            Volver a búsqueda
+            Volver a busqueda
           </button>
           <button
             type="button"
@@ -307,7 +312,7 @@ function buildEditorMarkup({
           <header class="panel-header">
           <div>
               <p class="panel-header__eyebrow">Contexto</p>
-              <h2 class="panel-header__title">Resumen rápido</h2>
+              <h2 class="panel-header__title">Resumen rapido</h2>
             </div>
           </header>
 
@@ -321,17 +326,17 @@ function buildEditorMarkup({
             <header class="editor-form__header">
               <div>
                 <p class="panel-header__eyebrow">Registro</p>
-                <h2 class="panel-header__title">Nueva bitácora</h2>
+                <h2 class="panel-header__title">Nueva bitacora</h2>
               </div>
               <p class="section-text">
                 El borrador se conserva mientras escriben. Perder texto por un refresh
-                sigue siendo una tragedia demasiado común para 2026.
+                sigue siendo una tragedia demasiado comun para 2026.
               </p>
               ${
                 !isAuthenticated
                   ? `
                     <div class="message-box message-box--warning">
-                      Inicia sesión con Google para consultar el historial y guardar bitacoras en Firebase.
+                      Inicia sesion con Google para consultar el historial y guardar bitacoras en Firebase.
                     </div>
                   `
                   : ""
@@ -350,7 +355,7 @@ function buildEditorMarkup({
             <form id="bitacora-form" class="bitacora-form" novalidate>
               <div class="form-grid form-grid--modes">
                 <fieldset class="field field--radio-group">
-                  <legend class="field__label">Tipo de bitácora</legend>
+                  <legend class="field__label">Tipo de bitacora</legend>
 
                   <label class="choice-pill">
                     <input
@@ -391,13 +396,13 @@ function buildEditorMarkup({
                 </label>
 
                 <label class="field">
-                  <span class="field__label">Título</span>
+                  <span class="field__label">Titulo</span>
                   <input
                     id="bitacora-titulo"
                     name="titulo"
                     type="text"
                     class="field__input"
-                    placeholder="Ej: Clase de ritmo y coordinación"
+                    placeholder="Ej: Clase de ritmo y coordinacion"
                     maxlength="${CONFIG?.limits?.maxTitleLength || 140}"
                     value="${escapeHtml(draft.titulo || "")}"
                   />
@@ -415,7 +420,7 @@ function buildEditorMarkup({
                   </div>
                   <p class="section-text">
                     El estudiante actual ya viene seleccionado. Agreguen o quiten los
-                    demás sin duplicar bitacoras como si fueran panfletos.
+                    demas sin duplicar bitacoras como si fueran panfletos.
                   </p>
                 </div>
 
@@ -452,10 +457,10 @@ function buildEditorMarkup({
                   name="etiquetas"
                   type="text"
                   class="field__input"
-                  placeholder="Ej: ritmo, postura, concentración"
+                  placeholder="Ej: ritmo, postura, concentracion"
                   value="${escapeHtml(formatTagsForInput(draft.etiquetas || []))}"
                 />
-                <small class="field__hint">Sepárenlas con coma.</small>
+                <small class="field__hint">Separenlas con coma.</small>
               </label>
 
               <label class="field">
@@ -466,7 +471,7 @@ function buildEditorMarkup({
                   class="field__textarea"
                   rows="10"
                   maxlength="${CONFIG?.limits?.maxBitacoraLength || 8000}"
-                  placeholder="Escriban aquí lo trabajado en clase, observaciones, recomendaciones, acuerdos y evolución del estudiante o grupo."
+                  placeholder="Escriban aqui lo trabajado en clase, observaciones, recomendaciones, acuerdos y evolucion del estudiante o grupo."
                 >${escapeHtml(draft.contenido || "")}</textarea>
               </label>
 
@@ -482,8 +487,8 @@ function buildEditorMarkup({
                   capture="environment"
                 />
                 <small class="field__hint">
-                  Pueden adjuntar imágenes, video, audio o PDF. Si el flujo de uploads
-                  todavía no está completo, al menos queda registro local en el draft.
+                  Pueden adjuntar imagenes, video, audio o PDF. Si el flujo de uploads
+                  todavia no esta completo, al menos queda registro local en el draft.
                 </small>
               </label>
 
@@ -509,8 +514,10 @@ function buildEditorMarkup({
                     class="btn btn--primary"
                     id="bitacora-save-btn"
                     ${!isAuthenticated || !canEditBitacoras ? "disabled" : ""}
+                    ${!isAuthenticated || !canEditBitacoras ? 'data-disabled-by-access="true"' : ""}
+                    aria-busy="false"
                   >
-                    Guardar bitácora
+                    Guardar bitacora
                   </button>
                 </div>
               </div>
@@ -521,7 +528,7 @@ function buildEditorMarkup({
             <header class="editor-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Bitácoras registradas</h2>
+                <h2 class="panel-header__title">Bitacoras registradas</h2>
               </div>
 
               <button
@@ -569,6 +576,7 @@ function bindEditorEvents(student) {
   const groupResultsContainer = viewRoot.querySelector("#group-students-results");
   const selectedStudentsContainer = viewRoot.querySelector("#group-selected-students");
   const overridesContainer = viewRoot.querySelector("#student-overrides-block");
+  const historyContainer = viewRoot.querySelector("#bitacoras-history");
 
   [
     fechaInput,
@@ -631,11 +639,43 @@ function bindEditorEvents(student) {
   }
 
   if (overridesContainer) {
+    overridesContainer.addEventListener("click", (event) => {
+      const toggleButton = event.target.closest("button[data-override-enabled]");
+      const toggleRow = event.target.closest("[data-override-toggle-row]");
+      const toggleTarget = toggleButton || toggleRow;
+
+      if (toggleTarget && overridesContainer.contains(toggleTarget)) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const studentId =
+          toggleTarget.getAttribute("data-override-enabled") ||
+          toggleTarget.getAttribute("data-override-toggle-row");
+        const currentDraft = getDraftForContext(student);
+        const currentOverride = getStudentOverrideForDraft(currentDraft, studentId);
+
+        toggleStudentOverride(student, studentId, !currentOverride.enabled);
+        return;
+      }
+
+      const removeButton = event.target.closest("[data-override-remove]");
+      if (removeButton) {
+        removeStudentOverrideValue(
+          {
+            studentId: removeButton.getAttribute("data-override-student"),
+            key: removeButton.getAttribute("data-override-key"),
+            value: removeButton.getAttribute("data-override-value"),
+          },
+          student
+        );
+      }
+    });
+
     overridesContainer.addEventListener("change", (event) => {
-      const checkbox = event.target.closest("[data-override-enabled]");
+      const checkbox = event.target.closest('input[type="checkbox"][data-override-enabled]');
       if (checkbox) {
         const studentId = checkbox.getAttribute("data-override-enabled");
-        toggleStudentOverride(student, studentId, checkbox.checked);
+        toggleStudentOverride(student, studentId, Boolean(checkbox.checked));
         return;
       }
 
@@ -688,19 +728,6 @@ function bindEditorEvents(student) {
       }
     });
 
-    overridesContainer.addEventListener("click", (event) => {
-      const removeButton = event.target.closest("[data-override-remove]");
-      if (removeButton) {
-        removeStudentOverrideValue(
-          {
-            studentId: removeButton.getAttribute("data-override-student"),
-            key: removeButton.getAttribute("data-override-key"),
-            value: removeButton.getAttribute("data-override-value"),
-          },
-          student
-        );
-      }
-    });
   }
 
   if (archivosInput) {
@@ -763,6 +790,19 @@ function bindEditorEvents(student) {
     );
   }
 
+  const filesPreview = viewRoot.querySelector("#bitacora-files-preview");
+  if (filesPreview) {
+    filesPreview.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("[data-file-remove-index]");
+      if (!removeButton) return;
+
+      removeDraftFile(
+        Number(removeButton.getAttribute("data-file-remove-index")),
+        student
+      );
+    });
+  }
+
   if (resetBtn) {
     resetBtn.addEventListener("click", () => {
       resetDraftForContext({
@@ -786,6 +826,24 @@ function bindEditorEvents(student) {
   if (printBtn) {
     printBtn.addEventListener("click", () => {
       handlePrintHistory(student);
+    });
+  }
+
+  if (historyContainer) {
+    historyContainer.addEventListener("click", (event) => {
+      const editButton = event.target.closest("[data-bitacora-edit]");
+      if (editButton) {
+        loadBitacoraForEditing(student, editButton.getAttribute("data-bitacora-edit"));
+        return;
+      }
+
+      const deleteButton = event.target.closest("[data-bitacora-delete]");
+      if (deleteButton) {
+        handleDeleteBitacora(
+          student,
+          deleteButton.getAttribute("data-bitacora-delete")
+        );
+      }
     });
   }
 
@@ -848,6 +906,7 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   renderStudentOverridesBlock(student);
   renderFilesPreviewBlock(student);
   renderDraftMetaBlock(student);
+  updateSaveButtonState(Boolean(state?.app?.saving));
   syncModeInputs();
 }
 
@@ -941,6 +1000,29 @@ function handleFilesChange(event, student, kind = "support") {
     studentId: studentRef,
     studentKey: student.studentKey || studentRef,
     archivos: [...existingFiles, ...files.map((file) => mapFileToDraftItem(file, kind))],
+  });
+
+  renderFilesPreviewBlock(student);
+  renderDraftMetaBlock(student);
+}
+
+function removeDraftFile(index, student) {
+  if (!Number.isInteger(index) || index < 0) return;
+
+  const currentDraft = getDraftForContext(student);
+  const currentFiles = Array.isArray(currentDraft.archivos)
+    ? currentDraft.archivos
+    : [];
+  if (!currentFiles[index]) return;
+
+  const removedFile = currentFiles[index];
+  if (removedFile.previewUrl && typeof URL !== "undefined") {
+    URL.revokeObjectURL(removedFile.previewUrl);
+  }
+
+  updateDraft({
+    ...currentDraft,
+    archivos: currentFiles.filter((_, fileIndex) => fileIndex !== index),
   });
 
   renderFilesPreviewBlock(student);
@@ -1088,8 +1170,133 @@ function removeMultiValueSelection(key, value, student) {
   handleDraftInput(student);
 }
 
+function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
+  const safeBitacoraId = toStringSafe(bitacoraId);
+  if (!safeBitacoraId) return;
+
+  const source =
+    sourceOverride ||
+    getBitacorasFromState(student).find(
+      (item) => toStringSafe(item.id) === safeBitacoraId
+    );
+  if (!source) {
+    setAppError("No se encontro la bitacora para editar.");
+    return;
+  }
+
+  const normalized = normalizeBitacora(source);
+  const studentRef = getStudentIdentity(student);
+  const nextMode = getAllowedMode(normalized.mode || CONFIG.modes.individual);
+  const nextStudentIds =
+    nextMode === CONFIG.modes.group
+      ? normalizeStudentIds(normalized.studentIds)
+      : [studentRef];
+
+  updateDraft({
+    mode: nextMode,
+    studentId: studentRef,
+    studentKey: student.studentKey || studentRef,
+    studentIds: nextStudentIds,
+    studentRefs:
+      nextMode === CONFIG.modes.group
+        ? normalizeStudentRefs(normalized.studentRefs)
+        : [{ id: studentRef, name: getStudentName(student) }],
+    fechaClase: normalizeLocalDateInput(normalized.fechaClase) || getTodayDate(),
+    titulo: normalized.titulo || buildAutoTitle(student, normalized.fechaClase),
+    docentes: normalizeListValues(normalized.docentes || normalized.docente),
+    docente: firstNonEmpty(normalized.docente, ...(normalized.docentes || [])),
+    etiquetas: normalizeTags(normalized.etiquetas),
+    contenido: normalized.contenido || "",
+    archivos: normalizeFiles(normalized.archivos || []),
+    studentOverrides: normalizeStudentOverrides(
+      normalized.studentOverrides,
+      nextStudentIds
+    ),
+    processKey: normalized.processKey || normalized.process?.processKey || "",
+    editingBitacoraId: safeBitacoraId,
+  });
+
+  currentEditorMode = nextMode;
+  currentEditorProcessKey = normalized.processKey || normalized.process?.processKey || "";
+  currentEditingBitacoraId = safeBitacoraId;
+  clearAppError();
+  refillFormFromDraft(student);
+  renderGroupSelectionBlocks(student);
+  renderFilesPreviewBlock(student);
+  renderDraftMetaBlock(student);
+  syncModeInputs();
+  updateSaveButtonState(false);
+  viewRoot?.querySelector("#bitacora-form")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+async function handleDeleteBitacora(student, bitacoraId) {
+  const safeBitacoraId = toStringSafe(bitacoraId);
+  if (!safeBitacoraId) return;
+
+  const source = getBitacorasFromState(student).find(
+    (item) => toStringSafe(item.id || item.bitacoraId) === safeBitacoraId
+  );
+  const title = source?.titulo || source?.title || "esta bitacora";
+  const dateLabel = formatDisplayDate(source?.fechaClase || source?.createdAt);
+  const confirmed = window.confirm(
+    [
+      "Estas seguro de eliminar esta bitacora?",
+      "",
+      title ? `Bitacora: ${title}` : "",
+      dateLabel ? `Fecha: ${dateLabel}` : "",
+      "",
+      "Esta accion no se puede deshacer.",
+    ]
+      .filter((line) => line !== "")
+      .join("\n")
+  );
+
+  if (!confirmed) return;
+
+  setAppSaving(true);
+  updateSaveButtonState(true);
+
+  try {
+    const deleted = await deleteBitacora(safeBitacoraId);
+    const relatedStudentIds = normalizeStudentIds(
+      deleted?.studentIds || source?.studentIds || [getStudentIdentity(student)]
+    );
+
+    relatedStudentIds.forEach((id) => {
+      removeBitacoraForStudent(id, safeBitacoraId);
+    });
+
+    const fallbackId = getStudentFallbackId(student);
+    if (fallbackId) {
+      removeBitacoraForStudent(fallbackId, safeBitacoraId);
+    }
+
+    if (safeBitacoraId === currentEditingBitacoraId) {
+      resetDraftForContext({
+        mode: currentEditorMode || CONFIG.modes.individual,
+        student,
+      });
+      refillFormFromDraft(student);
+      renderFilesPreviewBlock(student);
+      renderDraftMetaBlock(student);
+      syncModeInputs();
+    }
+  } catch (error) {
+    console.error("Error eliminando bitacora:", error);
+    setAppError(error?.message || "No se pudo eliminar la bitacora.");
+  } finally {
+    setAppSaving(false);
+    updateSaveButtonState(false);
+  }
+}
+
 async function handleSubmit(student) {
   clearAppError();
+  if (getState()?.app?.saving) return;
+
   const access = resolveUserAccess(getState()?.auth?.user);
 
   if (!access.canEditBitacoras) {
@@ -1113,18 +1320,37 @@ async function handleSubmit(student) {
     return;
   }
 
+  setAppSaving(true);
+  updateSaveButtonState(true);
+
   try {
-    const duplicatePayload = buildBitacoraPayload(student, draft);
-    const duplicate = await findPotentialDuplicateBitacora(student, duplicatePayload);
-    if (duplicate && !confirmDuplicateBitacora(duplicate)) {
-      return;
+    let editingBitacoraId = toStringSafe(
+      draft.editingBitacoraId || currentEditingBitacoraId
+    );
+
+    if (!editingBitacoraId) {
+      const duplicatePayload = buildBitacoraPayload(student, draft);
+      const duplicate = await findPotentialDuplicateBitacora(student, duplicatePayload);
+      if (duplicate) {
+        if (!confirmDuplicateBitacora(duplicate)) {
+          return;
+        }
+
+        editingBitacoraId = toStringSafe(duplicate.id || duplicate.bitacoraId);
+        currentEditingBitacoraId = editingBitacoraId;
+      }
     }
 
-    setAppSaving(true);
     draft = await uploadDraftFilesToStorage(student, draft);
+    draft = {
+      ...draft,
+      editingBitacoraId,
+    };
     const payload = buildBitacoraPayload(student, draft);
-    const created = await createBitacora(payload);
-    const normalized = normalizeCreatedBitacora(created, payload);
+    const saved = editingBitacoraId
+      ? await updateBitacora(editingBitacoraId, payload)
+      : await createBitacora(payload);
+    const normalized = normalizeCreatedBitacora(saved, payload);
 
     const relatedStudentIds = Array.isArray(normalized.studentIds)
       ? normalized.studentIds
@@ -1152,15 +1378,33 @@ async function handleSubmit(student) {
     syncModeInputs();
     clearUploads();
   } catch (error) {
-    console.error("Error guardando bitácora:", error);
+    console.error("Error guardando bitacora:", error);
     setAppError(
       error?.message ||
         CONFIG?.text?.saveError ||
-        "No se pudo guardar la bitácora."
+        "No se pudo guardar la bitacora."
     );
   } finally {
     setAppSaving(false);
+    updateSaveButtonState(false);
   }
+}
+
+function updateSaveButtonState(isSaving) {
+  const button = viewRoot?.querySelector("#bitacora-save-btn");
+  if (!button) return;
+
+  const isEditing = Boolean(
+    toStringSafe(getCurrentDraft()?.editingBitacoraId || currentEditingBitacoraId)
+  );
+  button.disabled = Boolean(isSaving) || button.hasAttribute("data-disabled-by-access");
+  button.classList.toggle("is-loading", Boolean(isSaving));
+  button.setAttribute("aria-busy", isSaving ? "true" : "false");
+  button.textContent = isSaving
+    ? "Guardando..."
+    : isEditing
+    ? "Actualizar bitacora"
+    : "Guardar bitacora";
 }
 
 function sanitizePathPart(value = "") {
@@ -1338,11 +1582,11 @@ function confirmDuplicateBitacora(duplicate = {}) {
 
   return window.confirm(
     [
-      "Ya existe una bitácora muy parecida para este estudiante.",
+      "Ya existe una bitacora muy parecida para este estudiante.",
       "",
       ...details,
       "",
-      "¿Estás segura de que hay otra clase en la misma fecha?",
+      "Quieres editar esa bitacora existente en lugar de crear otra?",
     ].join("\n")
   );
 }
@@ -1583,7 +1827,7 @@ function buildHistoryPrintDocument(student, items = []) {
       <body>
         <main class="sheet">
           <header class="report-header">
-            <p class="report-kicker">Musicala · Historial pedagogico</p>
+            <p class="report-kicker">Musicala  -  Historial pedagogico</p>
             <h1 class="report-title">${escapeHtml(studentName)}</h1>
             <p class="report-subtitle">Documento consolidado de clases, observaciones y avances.</p>
             <section class="report-meta">
@@ -1611,7 +1855,7 @@ function buildHistoryPrintDocument(student, items = []) {
           </section>
 
           <footer class="report-footer">
-            Documento preparado desde Bitácoras de Clase para impresion o guardado en PDF.
+            Documento preparado desde Bitacoras de Clase para impresion o guardado en PDF.
           </footer>
         </main>
         <script>
@@ -1697,7 +1941,7 @@ function renderPrintableStudentsSection(item = {}) {
 
   return renderPrintableSection(
     "Estudiantes incluidos",
-    item.studentRefs.map((student) => student.name || student.id || "Estudiante").join(" · ")
+    item.studentRefs.map((student) => student.name || student.id || "Estudiante").join("  -  ")
   );
 }
 
@@ -1762,7 +2006,7 @@ function normalizeBitacora(item) {
     ...item,
     id: String(fallbackId),
     mode: normalizeMode(item.mode || item.modo || CONFIG.modes.individual),
-    titulo: item.titulo || item.title || "Bitácora sin título",
+    titulo: item.titulo || item.title || "Bitacora sin titulo",
     contenido: item.contenido || item.content || "",
     etiquetas: normalizeTags(item.etiquetas || item.tags || []),
     docentes: normalizeListValues(item.docentes || item.docente || item.process?.docente),
@@ -1886,7 +2130,7 @@ function buildBitacoraPayload(student, draft) {
 
 function validateDraft(draft, student) {
   if (!draft) {
-    return { valid: false, message: "No hay información para guardar." };
+    return { valid: false, message: "No hay informacion para guardar." };
   }
 
   if (!String(draft.fechaClase || "").trim()) {
@@ -1894,18 +2138,18 @@ function validateDraft(draft, student) {
   }
 
   if (!String(draft.titulo || "").trim()) {
-    return { valid: false, message: "El título es obligatorio." };
+    return { valid: false, message: "El titulo es obligatorio." };
   }
 
   if (!String(draft.contenido || "").trim()) {
-    return { valid: false, message: "La bitácora no puede quedar vacía." };
+    return { valid: false, message: "La bitacora no puede quedar vacia." };
   }
 
   const maxLength = CONFIG?.limits?.maxBitacoraLength || 8000;
   if (String(draft.contenido || "").length > maxLength) {
     return {
       valid: false,
-      message: `La bitácora supera el máximo de ${maxLength} caracteres.`,
+      message: `La bitacora supera el maximo de ${maxLength} caracteres.`,
     };
   }
 
@@ -1922,7 +2166,7 @@ function validateDraft(draft, student) {
         valid: false,
         message:
           CONFIG?.text?.emptyGroup ||
-          "La bitácora grupal requiere al menos dos estudiantes.",
+          "La bitacora grupal requiere al menos dos estudiantes.",
       };
     }
   }
@@ -1937,9 +2181,17 @@ function collectStudentOverridesFromForm(selectedStudents = []) {
     const studentId = toStringSafe(selectedStudent?.id);
     if (!studentId) return;
 
-    const enabled = Boolean(
-      viewRoot?.querySelector(`[data-override-enabled="${studentId}"]`)?.checked
+    const toggleControl = viewRoot?.querySelector(
+      `[data-override-enabled="${studentId}"]`
     );
+    const enabled =
+      toggleControl?.matches?.('input[type="checkbox"]')
+        ? Boolean(toggleControl.checked)
+        : toggleControl?.getAttribute("aria-pressed") === "true";
+
+    if (!enabled) {
+      return;
+    }
 
     const tareas = toStringSafe(
       viewRoot?.querySelector(`[data-override-textarea="${studentId}"]`)?.value
@@ -2173,6 +2425,7 @@ function resetDraftForContext({ mode = CONFIG.modes.individual, student } = {}) 
 
   resetDraft(nextDraft);
   clearUploads();
+  currentEditingBitacoraId = "";
   currentEditorMode = getAllowedMode(mode);
 }
 
@@ -2197,7 +2450,7 @@ function renderFilesPreview(files = []) {
     <div class="files-preview__list">
       ${files
         .map(
-          (file) => `
+          (file, index) => `
             <article class="file-chip">
               ${renderFileThumbnail(file, "file-chip__thumb")}
               <div class="file-chip__body">
@@ -2211,10 +2464,18 @@ function renderFilesPreview(files = []) {
                       formatFileSize(file.size || 0),
                     ]
                       .filter(Boolean)
-                      .join(" • ")
+                      .join("  -  ")
                   )}
                 </p>
               </div>
+              <button
+                type="button"
+                class="file-chip__remove"
+                data-file-remove-index="${index}"
+                aria-label="Quitar ${escapeHtml(file.name || file.nombre || "archivo")}"
+              >
+                x
+              </button>
             </article>
           `
         )
@@ -2307,7 +2568,7 @@ function renderBitacorasHistory(
       <div class="empty-state">
         <p class="empty-state__title">Historial protegido</p>
         <p class="empty-state__text">
-          Inicia sesión con Google para ver las bitacoras guardadas de este estudiante.
+          Inicia sesion con Google para ver las bitacoras guardadas de este estudiante.
         </p>
       </div>
     `;
@@ -2330,7 +2591,7 @@ function renderBitacorasHistory(
         <p class="empty-state__text">
           ${escapeHtml(
             config?.text?.emptyBitacoras ||
-              "Este estudiante aún no tiene bitacoras registradas."
+              "Este estudiante aun no tiene bitacoras registradas."
           )}
         </p>
       </div>
@@ -2368,7 +2629,7 @@ function renderBitacoraCard(item, index = 0, total = 0) {
       <header class="bitacora-card__header">
         <div>
           <h3 class="bitacora-card__title">
-            ${escapeHtml(item.titulo || "Sin título")}
+            ${escapeHtml(item.titulo || "Sin titulo")}
           </h3>
             <p class="bitacora-card__date">
               ${escapeHtml(formatDisplayDate(item.fechaClase || item.createdAt))}
@@ -2381,6 +2642,20 @@ function renderBitacoraCard(item, index = 0, total = 0) {
           </div>
 
         <div class="bitacora-card__meta">
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-bitacora-edit="${escapeHtml(item.id || "")}"
+          >
+            Editar
+          </button>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-bitacora-delete="${escapeHtml(item.id || "")}"
+          >
+            Eliminar
+          </button>
           <span class="badge badge--soft">Clase ${escapeHtml(sequence)}</span>
           <span class="badge">${escapeHtml(mode === CONFIG.modes.group ? "Grupal" : "Individual")}</span>
           <span class="badge">${escapeHtml(studentsLabel)}</span>
@@ -2502,9 +2777,10 @@ function renderGroupSelectionBlocks(student) {
   toggleGroupModeBlock(draft.mode === CONFIG.modes.group);
 }
 
-function renderStudentOverridesBlock(student) {
+function renderStudentOverridesBlock(student, { force = false } = {}) {
   const container = viewRoot?.querySelector("#student-overrides-block");
   if (!container) return;
+  if (!force && isStudentOverrideEditorActive(container)) return;
 
   const draft = getDraftForContext(student);
   const selectedStudents = getSelectedStudentsForDraft(
@@ -2521,9 +2797,24 @@ function renderStudentOverridesBlock(student) {
   container.classList.toggle("is-hidden", draft.mode !== CONFIG.modes.group);
 }
 
+function isStudentOverrideEditorActive(container) {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement;
+  return Boolean(
+    active &&
+      container?.contains(active) &&
+      active.matches?.("[data-override-textarea], [data-override-input]")
+  );
+}
+
 function toggleStudentOverride(primaryStudent, studentId, enabled) {
   const safeStudentId = toStringSafe(studentId);
   if (!safeStudentId) return;
+
+  if (draftInputDebounceTimer) {
+    clearTimeout(draftInputDebounceTimer);
+    draftInputDebounceTimer = null;
+  }
 
   const currentDraft = getDraftForContext(primaryStudent);
   const nextOverrides = {
@@ -2545,7 +2836,7 @@ function toggleStudentOverride(primaryStudent, studentId, enabled) {
     studentOverrides: nextOverrides,
   });
 
-  renderStudentOverridesBlock(primaryStudent);
+  renderStudentOverridesBlock(primaryStudent, { force: true });
   renderDraftMetaBlock(primaryStudent);
 }
 
@@ -2576,7 +2867,7 @@ function addStudentOverrideValue(descriptor, rawValue, student) {
   });
 
   if (input) input.value = "";
-  renderStudentOverridesBlock(student);
+  renderStudentOverridesBlock(student, { force: true });
   renderDraftMetaBlock(student);
 }
 
@@ -2604,7 +2895,7 @@ function removeStudentOverrideValue(descriptor, student) {
     studentOverrides: nextOverrides,
   });
 
-  renderStudentOverridesBlock(student);
+  renderStudentOverridesBlock(student, { force: true });
   renderDraftMetaBlock(student);
 }
 
@@ -2687,18 +2978,16 @@ function renderGroupStudentsResults(
         student.area,
         student.docente,
         student.teacher,
-      ]
-        .filter(Boolean)
-        .join(" ");
+      ];
 
-      return normalizeText(haystack).includes(queryText);
+      return matchesFlexibleSearch(haystack, queryText);
     })
     .slice(0, 8);
 
   if (!results.length) {
     return `
       <div class="empty-state empty-state--files">
-        <p class="empty-state__text">No hay más estudiantes para agregar.</p>
+        <p class="empty-state__text">No hay mas estudiantes para agregar.</p>
       </div>
     `;
   }
@@ -2718,7 +3007,7 @@ function renderGroupStudentsResults(
                       firstNonEmpty(student.programa, student.instrumento, student.area),
                     ]
                       .filter(Boolean)
-                      .join(" • ")
+                      .join("  -  ")
                   )}
                 </p>
               </div>
@@ -2825,7 +3114,7 @@ async function ensureCatalogsLoaded() {
   try {
     cachedCatalogs = await getCatalogs();
   } catch (error) {
-    console.warn("No se pudieron cargar los catálogos desde Firestore:", error);
+    console.warn("No se pudieron cargar los catalogos desde Firestore:", error);
     cachedCatalogs =
       cachedCatalogs && Object.keys(cachedCatalogs).length
         ? cachedCatalogs
@@ -3084,8 +3373,8 @@ function renderMissingStudent() {
         <p class="view-eyebrow">Editor</p>
         <h1 class="view-title">No hay estudiante seleccionado</h1>
         <p class="view-description">
-          Primero seleccionen un estudiante desde búsqueda. El sistema no puede
-          adivinar a quién le están escribiendo la bitácora, por más ganas que tenga.
+          Primero seleccionen un estudiante desde busqueda. El sistema no puede
+          adivinar a quien le estan escribiendo la bitacora, por mas ganas que tenga.
         </p>
         <div class="empty-state-card__actions">
           <button
@@ -3093,7 +3382,7 @@ function renderMissingStudent() {
             class="btn btn--primary"
             id="editor-missing-back-btn"
           >
-            Ir a búsqueda
+            Ir a busqueda
           </button>
         </div>
       </div>
@@ -3109,7 +3398,7 @@ function parseTagsFromInput(value) {
 }
 
 /**
- * Se deja local a propósito:
+ * Se deja local a proposito:
  * la rama string usa parse simple y no conviene cambiar esa microconducta
  * en esta pasada de refactor.
  */
@@ -3188,7 +3477,7 @@ function isVideoAttachment(file = {}) {
 function renderFileThumbnail(file = {}, className = "") {
   const url = getRenderableFileUrl(file);
   if (!url) {
-    return `<div class="${escapeHtml(className)} is-empty" aria-hidden="true">📎</div>`;
+    return `<div class="${escapeHtml(className)} is-empty" aria-hidden="true">ðŸ“Ž</div>`;
   }
 
   if (isImageAttachment(file)) {
@@ -3199,7 +3488,7 @@ function renderFileThumbnail(file = {}, className = "") {
     return `<video class="${escapeHtml(className)}" src="${escapeHtml(url)}" muted playsinline preload="metadata" aria-label="${escapeHtml(file?.name || "Video adjunto")}"></video>`;
   }
 
-  return `<div class="${escapeHtml(className)} is-empty" aria-hidden="true">📎</div>`;
+  return `<div class="${escapeHtml(className)} is-empty" aria-hidden="true">ðŸ“Ž</div>`;
 }
 
 /**
@@ -3338,7 +3627,7 @@ function buildMusicalaEditorMarkup({
     config?.app?.name ||
     config?.appName ||
     config?.title ||
-    "Bitácoras de Clase";
+    "Bitacoras de Clase";
   const isGroup = draft.mode === CONFIG.modes.group;
   const draftFields = getStructuredDraftFields(draft, student);
   const catalogs = cachedCatalogs || getEmptyCatalogs();
@@ -3395,7 +3684,7 @@ function buildMusicalaEditorMarkup({
                 !isAuthenticated
                   ? `
                     <div class="message-box message-box--warning">
-                      Inicia sesión con Google para consultar el historial y guardar bitacoras en Firebase.
+                      Inicia sesion con Google para consultar el historial y guardar bitacoras en Firebase.
                     </div>
                   `
                   : ""
@@ -3467,7 +3756,7 @@ function buildMusicalaEditorMarkup({
                   inputId: "bitacora-docentes-input",
                   listId: "bitacora-docentes-list",
                   placeholder: "Escribe o elige docentes para esta clase...",
-                  hint: "Puedes agregar más de un docente para clases compartidas.",
+                  hint: "Puedes agregar mas de un docente para clases compartidas.",
                   options: teacherOptions,
                   selectedValues: getDraftTeachers(draft, draftFields, student),
                 })}
@@ -3520,8 +3809,8 @@ function buildMusicalaEditorMarkup({
                   label: "Categorias",
                   inputId: "bitacora-etiquetas-input",
                   listId: "bitacora-categorias-list",
-                  placeholder: "Escribe o elige una categoría y agrégala...",
-                  hint: "Puedes seleccionar varias categorías para la misma clase.",
+                  placeholder: "Escribe o elige una categoria y agregala...",
+                  hint: "Puedes seleccionar varias categorias para la misma clase.",
                   options: categoriasOptions,
                   selectedValues: draft.etiquetas || [],
                 })}
@@ -3636,6 +3925,8 @@ function buildMusicalaEditorMarkup({
                     class="btn btn--primary"
                     id="bitacora-save-btn"
                     ${!isAuthenticated ? "disabled" : ""}
+                    ${!isAuthenticated ? 'data-disabled-by-access="true"' : ""}
+                    aria-busy="false"
                   >
                     Guardar bitacora
                   </button>
@@ -3648,7 +3939,7 @@ function buildMusicalaEditorMarkup({
             <header class="editor-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Bitácoras registradas (${escapeHtml(activeProcessLabel)})</h2>
+                <h2 class="panel-header__title">Bitacoras registradas (${escapeHtml(activeProcessLabel)})</h2>
               </div>
               <div class="editor-history__actions">
                 <button type="button" class="btn btn--ghost btn--sm" id="bitacora-print-btn">
@@ -3711,59 +4002,49 @@ function renderOverrideSummaryLine(label, values = []) {
 
 function renderBitacoraStructuredSections(content = {}) {
   const tasks = toStringSafe(content.tareas);
-  const docente = toStringSafe(content.docente);
-  const summaryLines = [
-    docente
-      ? `<p class="bitacora-card__summary-line"><strong>Docente:</strong> ${escapeHtml(docente)}</p>`
-      : "",
-    joinListValues(content.componenteCorporal)
-      ? `<p class="bitacora-card__summary-line"><strong>Corporal:</strong> ${escapeHtml(
-          joinListValues(content.componenteCorporal)
-        )}</p>`
-      : "",
-    joinListValues(content.componenteTecnico)
-      ? `<p class="bitacora-card__summary-line"><strong>Tecnico:</strong> ${escapeHtml(
-          joinListValues(content.componenteTecnico)
-        )}</p>`
-      : "",
-    joinListValues(content.componenteTeorico)
-      ? `<p class="bitacora-card__summary-line"><strong>Teorico:</strong> ${escapeHtml(
-          joinListValues(content.componenteTeorico)
-        )}</p>`
-      : "",
-    joinListValues(content.componenteObras)
-      ? `<p class="bitacora-card__summary-line"><strong>Obras:</strong> ${escapeHtml(
-          joinListValues(content.componenteObras)
-        )}</p>`
-      : "",
+  const displayTasks = containsStructuredMarkers(tasks) ? "" : tasks;
+  const sections = [
+    renderBitacoraValueSection("Tareas / observaciones", displayTasks),
+    renderBitacoraListSection("Componente corporal", content.componenteCorporal),
+    renderBitacoraListSection("Componente tecnico", content.componenteTecnico),
+    renderBitacoraListSection("Componente teorico", content.componenteTeorico),
+    renderBitacoraListSection("Componente de obras", content.componenteObras),
   ].filter(Boolean);
 
-  if (!tasks && !summaryLines.length) {
+  if (!sections.length) {
     return `<p class="bitacora-card__summary-line">Sin contenido registrado.</p>`;
   }
 
   return `
-    <div class="bitacora-card__compact">
-      ${
-        tasks
-          ? `
-            <section class="bitacora-card__lead">
-              <p class="bitacora-card__section-label">Tareas / observaciones</p>
-              <p class="bitacora-card__lead-text">${escapeHtml(tasks)}</p>
-            </section>
-          `
-          : ""
-      }
-      ${
-        summaryLines.length
-          ? `
-            <section class="bitacora-card__summary">
-              ${summaryLines.join("")}
-            </section>
-          `
-          : ""
-      }
+    <div class="bitacora-card__sections-grid">
+      ${sections.join("")}
     </div>
+  `;
+}
+
+function renderBitacoraValueSection(label, value) {
+  const text = toStringSafe(value);
+  if (!text) return "";
+
+  return `
+    <section class="bitacora-card__section bitacora-card__section--wide">
+      <p class="bitacora-card__section-label">${escapeHtml(label)}</p>
+      <p class="bitacora-card__section-text">${escapeHtml(text)}</p>
+    </section>
+  `;
+}
+
+function renderBitacoraListSection(label, values = []) {
+  const items = normalizeListValues(values);
+  if (!items.length) return "";
+
+  return `
+    <section class="bitacora-card__section">
+      <p class="bitacora-card__section-label">${escapeHtml(label)}</p>
+      <div class="bitacora-card__section-tags">
+        ${items.map((item) => `<span class="badge badge--soft">${escapeHtml(item)}</span>`).join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -3983,7 +4264,7 @@ function renderMultiValueChips(key, values = []) {
             data-multi-remove="${escapeHtml(value)}"
             aria-label="Quitar ${escapeHtml(value)}"
           >
-            ×
+            x
           </button>
         </span>
       `
@@ -4045,22 +4326,24 @@ function renderStudentOverrideCard(student, override, catalogOptions = {}) {
 
   return `
     <article class="student-override-card ${selectedOverride.enabled ? "is-active" : ""}">
-      <label class="student-override-card__toggle">
+      <div class="student-override-card__toggle" data-override-toggle-row="${escapeHtml(studentId)}">
         <div class="student-override-card__identity">
           <p class="student-override-card__name">${escapeHtml(student?.name || "Estudiante")}</p>
           <p class="student-override-card__meta">${escapeHtml(
             student?.document || studentId || "Sin documento"
           )}</p>
         </div>
-        <span class="student-override-card__switch">
-          <input
-            type="checkbox"
-            data-override-enabled="${escapeHtml(studentId)}"
-            ${selectedOverride.enabled ? "checked" : ""}
-          />
+        <button
+          type="button"
+          class="student-override-card__switch"
+          data-override-enabled="${escapeHtml(studentId)}"
+          aria-pressed="${selectedOverride.enabled ? "true" : "false"}"
+          aria-label="${selectedOverride.enabled ? "Desactivar ajuste individual" : "Activar ajuste individual"}"
+        >
+          <span class="student-override-card__switch-dot" aria-hidden="true"></span>
           <span>${selectedOverride.enabled ? "Con ajuste" : "Hereda general"}</span>
-        </span>
-      </label>
+        </button>
+      </div>
       <div class="student-override-card__body ${selectedOverride.enabled ? "" : "is-hidden"}">
         <label class="field field--compact">
           <span class="field__label">Observacion / tarea personalizada</span>
@@ -4072,7 +4355,7 @@ function renderStudentOverrideCard(student, override, catalogOptions = {}) {
           >${escapeHtml(selectedOverride.tareas)}</textarea>
         </label>
         <div class="editor-form-grid editor-form-grid--2">
-          ${renderStudentOverrideField(studentId, "etiquetas", "Categorias", "Agrega categorías solo para este estudiante...", selectedOverride.etiquetas, catalogOptions.etiquetas)}
+          ${renderStudentOverrideField(studentId, "etiquetas", "Categorias", "Agrega categorias solo para este estudiante...", selectedOverride.etiquetas, catalogOptions.etiquetas)}
           ${renderStudentOverrideField(studentId, "componenteCorporal", "Componente corporal", "Ejercicios diferenciales...", selectedOverride.componenteCorporal, catalogOptions.componenteCorporal)}
         </div>
         <div class="editor-form-grid editor-form-grid--2">
@@ -4136,7 +4419,7 @@ function renderStudentOverrideChips(studentId, key, values = []) {
             data-override-value="${escapeHtml(value)}"
             aria-label="Quitar ${escapeHtml(value)}"
           >
-            ×
+            x
           </button>
         </span>
       `
@@ -4224,6 +4507,8 @@ function parseStructuredContent(content = "") {
   if (!hasStructuredMarkers) {
     return result;
   }
+
+  result.tareas = "";
 
   markers.forEach(([label, key], index) => {
     const startToken = `${label}:`;
@@ -4338,8 +4623,12 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       }
 
       const source = isPlainObject(value) ? value : {};
+      if (!source.enabled) {
+        return;
+      }
+
       const normalized = {
-        enabled: Boolean(source.enabled),
+        enabled: true,
         tareas: toStringSafe(source.tareas),
         etiquetas: normalizeListValues(source.etiquetas),
         componenteCorporal: normalizeListValues(source.componenteCorporal),
@@ -4376,7 +4665,7 @@ function getStudentOverrideForDraft(draft, studentId) {
 }
 
 function joinListValues(values = []) {
-  return normalizeListValues(values).join(" • ");
+  return normalizeListValues(values).join("  -  ");
 }
 
 function cleanupView() {
@@ -4399,4 +4688,5 @@ function cleanupView() {
   currentEditorStudentKey = null;
   currentEditorMode = CONFIG?.modes?.individual || "individual";
   currentEditorProcessKey = "";
+  currentEditingBitacoraId = "";
 }
