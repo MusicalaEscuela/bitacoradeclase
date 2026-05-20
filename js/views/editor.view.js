@@ -76,6 +76,7 @@ let catalogsLoadAttempted = false;
 let draftInputDebounceTimer = null;
 let groupSearchDebounceTimer = null;
 let currentEditingBitacoraId = "";
+let currentHistorySearchQuery = "";
 
 const DRAFT_INPUT_DEBOUNCE_MS = 140;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
@@ -540,8 +541,9 @@ function buildEditorMarkup({
               </button>
             </header>
 
+            ${renderHistorySearchControl(currentHistorySearchQuery)}
             <div id="bitacoras-history">
-              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated)}
+              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery)}
             </div>
           </section>
         </main>
@@ -568,6 +570,7 @@ function bindEditorEvents(student) {
   const videosInput = viewRoot.querySelector("#bitacora-videos");
   const resetBtn = viewRoot.querySelector("#bitacora-reset-btn");
   const refreshBtn = viewRoot.querySelector("#bitacora-refresh-btn");
+  const historySearchInput = viewRoot.querySelector("#bitacoras-history-search");
   const printBtn = viewRoot.querySelector("#bitacora-print-btn");
   const backSearchBtn = viewRoot.querySelector("#editor-back-search-btn");
   const openProfileBtn = viewRoot.querySelector("#editor-open-profile-btn");
@@ -823,6 +826,13 @@ function bindEditorEvents(student) {
     });
   }
 
+  if (historySearchInput) {
+    historySearchInput.addEventListener("input", () => {
+      currentHistorySearchQuery = toStringSafe(historySearchInput.value);
+      renderHistoryBlock(student);
+    });
+  }
+
   if (printBtn) {
     printBtn.addEventListener("click", () => {
       handlePrintHistory(student);
@@ -893,13 +903,7 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
     studentContainer.innerHTML = renderStudentSummaryCompact(student);
   }
 
-  if (historyContainer) {
-    historyContainer.innerHTML = renderBitacorasHistory(
-      getBitacorasFromState(student),
-      Boolean(state?.bitacoras?.loading),
-      config
-    );
-  }
+  renderHistoryBlock(student, state, config);
 
   refillFormIfNeeded(student);
   renderGroupSelectionBlocks(student);
@@ -963,6 +967,19 @@ function scheduleGroupSearchRender(student) {
     renderGroupSelectionBlocks(student);
     groupSearchDebounceTimer = null;
   }, GROUP_SEARCH_DEBOUNCE_MS);
+}
+
+function renderHistoryBlock(student, state = getState(), config = CONFIG) {
+  const historyContainer = viewRoot?.querySelector("#bitacoras-history");
+  if (!historyContainer) return;
+
+  historyContainer.innerHTML = renderBitacorasHistory(
+    getBitacorasFromState(student),
+    Boolean(state?.bitacoras?.loading),
+    config,
+    true,
+    currentHistorySearchQuery
+  );
 }
 
 function handleModeChange(student, mode) {
@@ -2557,11 +2574,28 @@ function renderStudentSummary(student) {
   `;
 }
 
+function renderHistorySearchControl(value = "") {
+  return `
+    <label class="history-search field">
+      <span class="field__label">Buscar en bitacoras</span>
+      <input
+        id="bitacoras-history-search"
+        type="search"
+        class="field__input"
+        value="${escapeHtml(value)}"
+        placeholder="Busca tecnica, ritmo, obra, tarea, docente o fecha..."
+        autocomplete="off"
+      />
+    </label>
+  `;
+}
+
 function renderBitacorasHistory(
   items = [],
   isLoading = false,
   config,
-  isAuthenticated = true
+  isAuthenticated = true,
+  searchQuery = ""
 ) {
   if (!isAuthenticated) {
     return `
@@ -2599,14 +2633,85 @@ function renderBitacorasHistory(
   }
 
   const sortedItems = sortBitacorasByDate(items);
+  const filteredItems = filterBitacorasBySearch(sortedItems, searchQuery);
+
+  if (searchQuery && !filteredItems.length) {
+    return `
+      <div class="empty-state">
+        <p class="empty-state__title">Sin resultados</p>
+        <p class="empty-state__text">
+          No encontre bitacoras que coincidan con "${escapeHtml(searchQuery)}".
+        </p>
+      </div>
+    `;
+  }
 
   return `
     <div class="bitacoras-list">
-      ${sortedItems
-        .map((item, index) => renderBitacoraCard(item, index, sortedItems.length))
+      ${filteredItems
+        .map((item) => {
+          const originalIndex = sortedItems.findIndex(
+            (candidate) => toStringSafe(candidate.id) === toStringSafe(item.id)
+          );
+          return renderBitacoraCard(
+            item,
+            originalIndex >= 0 ? originalIndex : 0,
+            sortedItems.length
+          );
+        })
         .join("")}
     </div>
   `;
+}
+
+function filterBitacorasBySearch(items = [], query = "") {
+  const needle = normalizeText(query);
+  if (!needle) return items;
+
+  return items.filter((item) => normalizeText(buildBitacoraSearchText(item)).includes(needle));
+}
+
+function buildBitacoraSearchText(item = {}) {
+  const structured = parseStructuredContent(item.contenido || item.content || "");
+  const overrides = normalizeStudentOverrides(item.studentOverrides, item.studentIds || []);
+
+  return [
+    item.titulo,
+    item.title,
+    item.fechaClase,
+    formatDisplayDate(item.fechaClase || item.createdAt),
+    item.docente,
+    item.author?.name,
+    item.author?.displayName,
+    item.author?.email,
+    item.process?.processLabel,
+    item.process?.area,
+    item.process?.programa,
+    item.process?.docente,
+    item.processKey,
+    item.contenido,
+    item.content,
+    structured.docente,
+    structured.tareas,
+    ...(item.etiquetas || []),
+    ...(item.tags || []),
+    ...(structured.componenteCorporal || []),
+    ...(structured.componenteTecnico || []),
+    ...(structured.componenteTeorico || []),
+    ...(structured.componenteObras || []),
+    ...(item.studentRefs || []).flatMap((student) => [student.name, student.id]),
+    ...Object.values(overrides).flatMap((override) => [
+      override.tareas,
+      ...(override.etiquetas || []),
+      ...(override.componenteCorporal || []),
+      ...(override.componenteTecnico || []),
+      ...(override.componenteTeorico || []),
+      ...(override.componenteObras || []),
+    ]),
+  ]
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter(Boolean)
+    .join(" ");
 }
 
 function renderBitacoraCard(item, index = 0, total = 0) {
@@ -3950,8 +4055,9 @@ function buildMusicalaEditorMarkup({
                 </button>
               </div>
             </header>
+            ${renderHistorySearchControl(currentHistorySearchQuery)}
             <div id="bitacoras-history">
-              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated)}
+              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery)}
             </div>
           </section>
         </main>

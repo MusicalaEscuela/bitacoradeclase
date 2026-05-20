@@ -69,6 +69,7 @@ let currentNavigateTo = null;
 let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
+let currentProfileHistorySearchQuery = "";
 let historyExpansionState = new Map();
 let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
@@ -881,6 +882,7 @@ function buildProfileMarkup(student, state, config) {
                 <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-close>Cerrar</button>
               </div>
             </header>
+            ${renderProfileHistorySearchControl(currentProfileHistorySearchQuery)}
             <div id="profile-all-history-content">
               ${renderAllBitacorasPanel(student, bitacoras, config, isAuthenticated)}
             </div>
@@ -913,6 +915,7 @@ function bindProfileEvents(student) {
   const backBtn = viewRoot.querySelector("#profile-back-btn");
   const openEditorBtn = viewRoot.querySelector("#profile-open-editor-btn");
   const refreshBtn = viewRoot.querySelector("#profile-refresh-history-btn");
+  const historySearchInput = viewRoot.querySelector("#profile-history-search");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
   const allHistoryContainer = viewRoot.querySelector("#profile-all-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
@@ -958,6 +961,13 @@ function bindProfileEvents(student) {
   if (refreshBtn) {
     refreshBtn.addEventListener("click", async () => {
       await reloadHistory(student);
+    });
+  }
+
+  if (historySearchInput) {
+    historySearchInput.addEventListener("input", () => {
+      currentProfileHistorySearchQuery = toStringSafe(historySearchInput.value);
+      renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
     });
   }
 
@@ -1431,9 +1441,26 @@ function renderAllBitacorasPanel(student, bitacoras = [], config, isAuthenticate
   }
 
   const processOptions = normalizeStudentProcesses(student);
+  const sortedItems = sortBitacorasByDate(bitacoras);
+  const filteredItems = filterProfileBitacorasBySearch(
+    sortedItems,
+    currentProfileHistorySearchQuery
+  );
+
+  if (currentProfileHistorySearchQuery && !filteredItems.length) {
+    return `
+      <div class="empty-state">
+        <p class="empty-state__title">Sin resultados</p>
+        <p class="empty-state__text">
+          No encontre bitacoras que coincidan con "${escapeHtml(currentProfileHistorySearchQuery)}".
+        </p>
+      </div>
+    `;
+  }
+
   return `
     <div class="teaching-history-list">
-      ${sortBitacorasByDate(bitacoras)
+      ${filteredItems
         .map((item) => renderTeachingHistoryCard(item, student, processOptions))
         .join("")}
       <div class="profile-panel-actions">
@@ -1443,6 +1470,74 @@ function renderAllBitacorasPanel(student, bitacoras = [], config, isAuthenticate
       </div>
     </div>
   `;
+}
+
+function renderProfileHistorySearchControl(value = "") {
+  return `
+    <label class="history-search field">
+      <span class="field__label">Buscar en bitacoras</span>
+      <input
+        id="profile-history-search"
+        type="search"
+        class="field__input"
+        value="${escapeHtml(value)}"
+        placeholder="Busca tecnica, ritmo, obra, tarea, docente o fecha..."
+        autocomplete="off"
+      />
+    </label>
+  `;
+}
+
+function filterProfileBitacorasBySearch(items = [], query = "") {
+  const needle = normalizeText(query);
+  if (!needle) return items;
+
+  return items.filter((item) =>
+    normalizeText(buildProfileBitacoraSearchText(item)).includes(needle)
+  );
+}
+
+function buildProfileBitacoraSearchText(item = {}) {
+  const structured = parseStructuredContent(item.contenido || item.content || "");
+  const overrides = normalizeStudentOverrides(item.studentOverrides, item.studentIds || []);
+
+  return [
+    item.titulo,
+    item.title,
+    item.fechaClase,
+    formatDisplayDate(item.fechaClase || item.createdAt),
+    item.docente,
+    item.author?.name,
+    item.author?.displayName,
+    item.author?.email,
+    item.process?.processLabel,
+    item.process?.area,
+    item.process?.programa,
+    item.process?.docente,
+    item.processKey,
+    item.contenido,
+    item.content,
+    structured.docente,
+    structured.tareas,
+    ...(item.etiquetas || []),
+    ...(item.tags || []),
+    ...(structured.componenteCorporal || []),
+    ...(structured.componenteTecnico || []),
+    ...(structured.componenteTeorico || []),
+    ...(structured.componenteObras || []),
+    ...(item.studentRefs || []).flatMap((student) => [student.name, student.id]),
+    ...Object.values(overrides).flatMap((override) => [
+      override.tareas,
+      ...(override.etiquetas || []),
+      ...(override.componenteCorporal || []),
+      ...(override.componenteTecnico || []),
+      ...(override.componenteTeorico || []),
+      ...(override.componenteObras || []),
+    ]),
+  ]
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter(Boolean)
+    .join(" ");
 }
 
 function renderTeachingHistoryCard(item, student, processOptions = []) {
