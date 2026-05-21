@@ -10,6 +10,7 @@ import {
   getStudentRoute,
   setAppError,
   clearAppError,
+  addBitacoraForStudent,
   setBitacorasForStudent,
   removeBitacoraForStudent,
   setBitacorasLoading,
@@ -23,6 +24,7 @@ import {
 import {
   getBitacoraById,
   getBitacorasByStudent,
+  createBitacora,
   updateBitacora,
   deleteBitacora,
 } from "../api/bitacoras.api.js";
@@ -52,6 +54,7 @@ import {
   normalizeStudentProcesses,
   resolveStudentProcess,
   getTimestamp,
+  getTodayDate,
   normalizeLocalDateInput,
   normalizeBitacorasResponse as normalizeBitacorasResponseShared,
   normalizeMode,
@@ -62,6 +65,7 @@ import {
   findStudentInCollections,
   toStringSafe,
 } from "../utils/shared.js";
+import { applyAutomaticCategoriesFromWorks } from "../utils/bitacoras.js";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -810,6 +814,13 @@ function buildProfileMarkup(student, state, config) {
             <button type="button" class="btn btn--ghost" id="profile-back-btn">
               Volver a búsqueda
             </button>
+            ${
+              access.role === CONFIG.roles.admin
+                ? `<button type="button" class="btn btn--secondary" id="profile-import-text-bitacoras-btn">
+                    Agregar bitácoras en texto
+                  </button>`
+                : ""
+            }
             <button type="button" class="btn btn--primary" id="profile-open-editor-btn">
               Nueva bitácora
             </button>
@@ -866,6 +877,9 @@ function buildProfileMarkup(student, state, config) {
               </div>
               <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-close>Cerrar</button>
             </header>
+            <section class="profile-stats" id="profile-stats" aria-label="Estadísticas del estudiante">
+              ${renderSummary(student, bitacoras)}
+            </section>
             <dl class="profile-grid" id="profile-grid">
               ${renderProfileGrid(student)}
             </dl>
@@ -914,6 +928,7 @@ function bindProfileEvents(student) {
 
   const backBtn = viewRoot.querySelector("#profile-back-btn");
   const openEditorBtn = viewRoot.querySelector("#profile-open-editor-btn");
+  const importTextBtn = viewRoot.querySelector("#profile-import-text-bitacoras-btn");
   const refreshBtn = viewRoot.querySelector("#profile-refresh-history-btn");
   const historySearchInput = viewRoot.querySelector("#profile-history-search");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
@@ -933,6 +948,12 @@ function bindProfileEvents(student) {
   if (openEditorBtn) {
     openEditorBtn.addEventListener("click", () => {
       goToEditor(student, { processKey: currentProfileProcessKey || "" });
+    });
+  }
+
+  if (importTextBtn) {
+    importTextBtn.addEventListener("click", () => {
+      openTextBitacorasImportModal(student);
     });
   }
 
@@ -1120,6 +1141,7 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   const titleNode = viewRoot.querySelector(".profile-card__name");
   const docNode = viewRoot.querySelector(".profile-card__doc");
   const gridNode = viewRoot.querySelector("#profile-grid");
+  const statsNode = viewRoot.querySelector("#profile-stats");
   const badgesNode = viewRoot.querySelector("#profile-badges");
 
   const bitacoras = getBitacorasFromState(student);
@@ -1142,6 +1164,10 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
 
   if (summaryContainer) {
     summaryContainer.innerHTML = renderSummary(student, bitacoras);
+  }
+
+  if (statsNode) {
+    statsNode.innerHTML = renderSummary(student, bitacoras);
   }
 
   if (routePreviewContainer) {
@@ -1367,11 +1393,13 @@ function renderLastBitacoraPreview(student, bitacoras = [], config, isAuthentica
     return renderHistoryPreview(student, [], config, true);
   }
 
+  const processOptions = normalizeStudentProcesses(student);
+
   return `
     <div class="profile-latest-card">
-      ${renderHistoryCard(latest, normalizeStudentProcesses(student), {
-        compact: true,
-      })}
+      <div class="teaching-history-list">
+        ${renderTeachingHistoryCard(latest, student, processOptions)}
+      </div>
       <div class="profile-panel-actions">
         <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-target="bitacoras">
           Ver todas las bitácoras
@@ -1668,6 +1696,11 @@ function closeProfilePanels() {
 
 function renderSummary(student, bitacoras = []) {
   const lastBitacora = getLatestBitacora(bitacoras);
+  const firstBitacora = getFirstBitacora(bitacoras);
+  const uniqueClassDays = getUniqueBitacoraDates(bitacoras);
+  const studentTimeLabel = firstBitacora
+    ? formatStudentTimeSinceFirstBitacora(firstBitacora.fechaClase || firstBitacora.createdAt)
+    : "Sin registros";
   const totalGroup = bitacoras.filter(
     (item) => normalizeMode(item.mode) === CONFIG.modes.group
   ).length;
@@ -1690,6 +1723,33 @@ function renderSummary(student, bitacoras = []) {
       <article class="summary-item">
         <span class="summary-item__label">Grupales</span>
         <strong class="summary-item__value">${totalGroup}</strong>
+      </article>
+
+      <article class="summary-item">
+        <span class="summary-item__label">Tiempo en Musicala</span>
+        <strong class="summary-item__value">${escapeHtml(studentTimeLabel)}</strong>
+      </article>
+
+      <article class="summary-item">
+        <span class="summary-item__label">Días con bitácora</span>
+        <strong class="summary-item__value">
+          ${escapeHtml(
+            uniqueClassDays.length
+              ? `${uniqueClassDays.length} día${uniqueClassDays.length === 1 ? "" : "s"} registrados`
+              : "Sin registros"
+          )}
+        </strong>
+      </article>
+
+      <article class="summary-item">
+        <span class="summary-item__label">Primera bitácora</span>
+        <strong class="summary-item__value">
+          ${escapeHtml(
+            firstBitacora
+              ? formatDisplayDate(firstBitacora.fechaClase || firstBitacora.createdAt)
+              : "Sin registros"
+          )}
+        </strong>
       </article>
 
       <article class="summary-item">
@@ -1731,6 +1791,58 @@ function renderSummary(student, bitacoras = []) {
       </article>
     </div>
   `;
+}
+
+function getFirstBitacora(items = []) {
+  return [...items]
+    .filter((item) => getTimestamp(item?.fechaClase || item?.createdAt))
+    .sort(
+      (a, b) =>
+        getTimestamp(a.fechaClase || a.createdAt) -
+        getTimestamp(b.fechaClase || b.createdAt)
+    )[0] || null;
+}
+
+function getUniqueBitacoraDates(items = []) {
+  return [
+    ...new Set(
+      items
+        .map((item) => normalizeLocalDateInput(item?.fechaClase || item?.createdAt))
+        .filter(Boolean)
+    ),
+  ].sort();
+}
+
+function formatStudentTimeSinceFirstBitacora(value = "") {
+  const startDate = normalizeLocalDateInput(value);
+  const today = normalizeLocalDateInput(getTodayDate());
+  const days = getDaysBetweenLocalDates(startDate, today);
+
+  if (!Number.isFinite(days) || days < 0) return "Sin registros";
+  if (days === 0) return "Empezó hoy";
+
+  const years = Math.floor(days / 365);
+  const months = Math.floor((days % 365) / 30);
+  const remainingDays = days - years * 365 - months * 30;
+  const parts = [];
+
+  if (years) parts.push(`${years} año${years === 1 ? "" : "s"}`);
+  if (months) parts.push(`${months} mes${months === 1 ? "" : "es"}`);
+  if (!years && remainingDays) {
+    parts.push(`${remainingDays} día${remainingDays === 1 ? "" : "s"}`);
+  }
+
+  return `${parts.join(", ")} (${days} día${days === 1 ? "" : "s"})`;
+}
+
+function getDaysBetweenLocalDates(startValue = "", endValue = "") {
+  const startMatch = normalizeLocalDateInput(startValue).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const endMatch = normalizeLocalDateInput(endValue).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!startMatch || !endMatch) return NaN;
+
+  const startUtc = Date.UTC(Number(startMatch[1]), Number(startMatch[2]) - 1, Number(startMatch[3]));
+  const endUtc = Date.UTC(Number(endMatch[1]), Number(endMatch[2]) - 1, Number(endMatch[3]));
+  return Math.floor((endUtc - startUtc) / 86400000);
 }
 
 async function ensureLearningRouteLoaded(student, options = {}) {
@@ -3939,6 +4051,583 @@ async function handleDeleteBitacoraFromProfile(student, bitacoraId) {
   } finally {
     setBitacorasLoading(false);
   }
+}
+
+function isAdminUser(currentUser) {
+  return resolveUserAccess(currentUser).role === CONFIG.roles.admin;
+}
+
+function openTextBitacorasImportModal(student) {
+  if (!isAdminUser(getState()?.auth?.user)) {
+    setAppError("Solo un administrador puede importar bitácoras desde texto.");
+    return;
+  }
+
+  const existing = document.querySelector("[data-text-bitacoras-modal]");
+  if (existing) existing.remove();
+
+  const modalRoot = document.createElement("div");
+  modalRoot.className = "text-bitacoras-modal-root";
+  modalRoot.setAttribute("data-text-bitacoras-modal", "true");
+  modalRoot.innerHTML = renderTextBitacorasImportModal();
+  document.body.appendChild(modalRoot);
+
+  const close = () => modalRoot.remove();
+  const textarea = modalRoot.querySelector("#text-bitacoras-input");
+  const processSelect = modalRoot.querySelector("#text-bitacoras-process");
+  const preview = modalRoot.querySelector("#text-bitacoras-preview");
+  const status = modalRoot.querySelector("#text-bitacoras-status");
+  const progress = modalRoot.querySelector("[data-text-import-progress]");
+  const progressBar = modalRoot.querySelector("[data-text-import-progress-bar]");
+  const progressLabel = modalRoot.querySelector("[data-text-import-progress-label]");
+  const saveBtn = modalRoot.querySelector("[data-text-import-save]");
+  const analyzeBtn = modalRoot.querySelector("[data-text-import-analyze]");
+  const clearBtn = modalRoot.querySelector("[data-text-import-clear]");
+  const allowDuplicates = modalRoot.querySelector("#text-bitacoras-allow-duplicates");
+  let parsedItems = [];
+
+  const setStatus = (message = "", type = "info") => {
+    if (!status) return;
+    status.textContent = message;
+    status.dataset.type = type;
+  };
+  const setProgress = ({ current = 0, total = 0, created = 0, skipped = 0, visible = true } = {}) => {
+    const percent = total ? Math.round((current / total) * 100) : 0;
+    if (progress) progress.hidden = !visible;
+    if (progressBar) {
+      progressBar.style.width = `${percent}%`;
+      progressBar.setAttribute("aria-valuenow", String(percent));
+    }
+    if (progressLabel) {
+      progressLabel.textContent = total
+        ? `${current} de ${total} procesadas · ${created} creadas · ${skipped} omitidas`
+        : "";
+    }
+  };
+
+  const analyze = () => {
+    const context = getTextImportContext(student, processSelect?.value || "");
+    parsedItems = parseBitacorasFromPlainText(textarea?.value || "", context);
+    preview.innerHTML = renderTextImportPreview(parsedItems);
+    const ready = parsedItems.filter((item) => item.canSave).length;
+    const blocked = parsedItems.length - ready;
+    setStatus(
+      parsedItems.length
+        ? `${ready} listas para guardar. ${blocked} con advertencias o errores.`
+        : "No se detectaron bitácoras. Cada registro debe iniciar con Fecha:",
+      parsedItems.length && ready ? "success" : "warning"
+    );
+    saveBtn.disabled = !ready;
+    setProgress({ visible: false });
+  };
+
+  analyzeBtn?.addEventListener("click", analyze);
+  clearBtn?.addEventListener("click", () => {
+    textarea.value = "";
+    parsedItems = [];
+    preview.innerHTML = "";
+    saveBtn.disabled = true;
+    setStatus("");
+    setProgress({ visible: false });
+  });
+  modalRoot.querySelectorAll("[data-text-import-cancel]").forEach((button) => {
+    button.addEventListener("click", close);
+  });
+  modalRoot.addEventListener("click", (event) => {
+    if (event.target === modalRoot.querySelector(".text-bitacoras-modal-backdrop")) {
+      close();
+    }
+  });
+  saveBtn?.addEventListener("click", async () => {
+    const result = await saveImportedBitacoras(student, parsedItems, {
+      allowDuplicates: Boolean(allowDuplicates?.checked),
+      setStatus,
+      setProgress,
+      setBusy: (isBusy) => {
+        [saveBtn, analyzeBtn, clearBtn, allowDuplicates, textarea].forEach((node) => {
+          if (node) node.disabled = Boolean(isBusy);
+        });
+      },
+    });
+    preview.innerHTML = renderTextImportPreview(parsedItems);
+    setStatus(`${result.created} bitácoras creadas. ${result.skipped} omitidas por errores.`, "success");
+    setProgress({
+      current: result.created + result.skipped,
+      total: result.created + result.skipped,
+      created: result.created,
+      skipped: result.skipped,
+      visible: true,
+    });
+    saveBtn.disabled = true;
+  });
+
+  textarea?.focus();
+}
+
+function renderTextBitacorasImportModal() {
+  return `
+    <div class="text-bitacoras-modal-backdrop"></div>
+    <section class="text-bitacoras-modal" role="dialog" aria-modal="true" aria-labelledby="text-bitacoras-title">
+      <header class="text-bitacoras-modal__header">
+        <div>
+          <p class="panel-header__eyebrow">Importación administrativa</p>
+          <h2 class="panel-header__title" id="text-bitacoras-title">Agregar bitácoras desde texto</h2>
+          <p class="section-text">Pega aquí las bitácoras antiguas. Cada registro debe iniciar con Fecha:</p>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-text-import-cancel>Cancelar</button>
+      </header>
+
+      <label class="field text-bitacoras-modal__process">
+        <span class="field__label">Proceso para asociar estas bitácoras</span>
+        <select id="text-bitacoras-process" class="field__input">
+          ${renderTextImportProcessOptions()}
+        </select>
+        <small class="field__hint">Todas las bitácoras importadas quedarán asociadas a este proceso.</small>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Texto de bitácoras antiguas</span>
+        <textarea id="text-bitacoras-input" class="field__textarea text-bitacoras-modal__textarea" rows="14"></textarea>
+      </label>
+
+      <label class="choice-pill text-bitacoras-modal__check">
+        <input type="checkbox" id="text-bitacoras-allow-duplicates" />
+        <span>Crear aunque existan posibles duplicados</span>
+      </label>
+
+      <div class="text-bitacoras-modal__actions">
+        <button type="button" class="btn btn--ghost" data-text-import-analyze>Analizar texto</button>
+        <button type="button" class="btn btn--primary" data-text-import-save disabled>Guardar bitácoras</button>
+        <button type="button" class="btn btn--ghost" data-text-import-clear>Limpiar</button>
+        <button type="button" class="btn btn--secondary" data-text-import-cancel>Cancelar</button>
+      </div>
+
+      <p class="text-bitacoras-modal__status" id="text-bitacoras-status" role="status"></p>
+      <div class="text-bitacoras-progress" data-text-import-progress hidden>
+        <div
+          class="text-bitacoras-progress__bar"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <span data-text-import-progress-bar></span>
+        </div>
+        <p class="text-bitacoras-progress__label" data-text-import-progress-label></p>
+      </div>
+      <div class="text-bitacoras-preview" id="text-bitacoras-preview"></div>
+    </section>
+  `;
+}
+
+function renderTextImportProcessOptions() {
+  const student = getStudentFromState(getState(), currentProfileStudentKey);
+  const processOptions = normalizeStudentProcesses(student);
+  const activeProcess =
+    resolveStudentProcess(student, currentProfileProcessKey) ||
+    processOptions[0] ||
+    null;
+  const activeKey = toStringSafe(activeProcess?.processKey);
+
+  return [
+    `<option value="">Selecciona un proceso</option>`,
+    ...processOptions.map((process) => {
+      const processKey = toStringSafe(process?.processKey);
+      const processLabel = toStringSafe(
+        process?.label || process?.detalle || process?.arte || "Proceso"
+      );
+      return `<option value="${escapeHtml(processKey)}"${processKey === activeKey ? " selected" : ""}>${escapeHtml(processLabel)}</option>`;
+    }),
+  ].join("");
+}
+
+function getTextImportContext(student, selectedProcessKey = "") {
+  const safeProcessKey = toStringSafe(selectedProcessKey);
+  const activeProcess = safeProcessKey
+    ? resolveStudentProcess(student, safeProcessKey)
+    : null;
+
+  return {
+    student,
+    studentId: getStudentIdentity(student),
+    process: activeProcess,
+    existingBitacoras: getBitacorasFromState(student),
+  };
+}
+
+function parseBitacorasFromPlainText(rawText, context = {}) {
+  const blocks = splitTextBitacoraBlocks(rawText);
+  return blocks.map((block, index) => {
+    const parsed = parseTextBitacoraBlock(block);
+    const payload = buildImportedBitacoraPayload(parsed, context, index);
+    const validation = validateImportedBitacora(payload, context);
+    const duplicate = findImportedDuplicate(payload, context.existingBitacoras || []);
+    const warnings = [...validation.warnings];
+
+    if (duplicate) warnings.push("Posible duplicado");
+
+    return {
+      index,
+      raw: block,
+      payload,
+      warnings,
+      errors: validation.errors,
+      duplicate,
+      canSave: !validation.errors.length,
+      saved: false,
+    };
+  });
+}
+
+function splitTextBitacoraBlocks(rawText = "") {
+  const blocks = [];
+  let current = [];
+
+  String(rawText || "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .forEach((line) => {
+      if (/^\s*Fecha\s*:/i.test(line) && current.some((item) => item.trim())) {
+        blocks.push(current.join("\n"));
+        current = [line];
+        return;
+      }
+      current.push(line);
+    });
+
+  if (current.some((item) => item.trim())) blocks.push(current.join("\n"));
+  return blocks.filter((block) => /^\s*Fecha\s*:/im.test(block));
+}
+
+function parseTextBitacoraBlock(block = "") {
+  const result = {
+    fechaClase: "",
+    docente: "",
+    mode: CONFIG.modes.individual,
+    etiquetas: [],
+    tareas: "",
+    componenteCorporal: [],
+    componenteTecnico: [],
+    componenteTeorico: [],
+    componenteObras: [],
+  };
+  let activeKey = "";
+
+  String(block || "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      const match = trimmed.match(/^([^:]+):\s*(.*)$/);
+      const normalizedLabel = match ? normalizeImportLabel(match[1]) : "";
+
+      if (normalizedLabel) {
+        activeKey = normalizedLabel;
+        appendImportedValue(result, activeKey, match[2] || "");
+        return;
+      }
+
+      if (activeKey) appendImportedValue(result, activeKey, trimmed);
+    });
+
+  result.etiquetas = normalizeTags(result.etiquetas);
+  result.componenteCorporal = splitCommaValues(result.componenteCorporal);
+  result.componenteTecnico = splitCommaValues(result.componenteTecnico);
+  result.componenteTeorico = splitCommaValues(result.componenteTeorico);
+  result.componenteObras = splitCommaValues(result.componenteObras);
+  result.fechaClase = normalizeDateToISO(result.fechaClase);
+
+  return result;
+}
+
+function appendImportedValue(target, key, value) {
+  const safeValue = toStringSafe(value);
+  if (!safeValue) return;
+
+  if (key === "fechaClase") {
+    target.fechaClase = safeValue;
+    return;
+  }
+  if (key === "mode") {
+    target.mode = /grupal/i.test(safeValue) ? CONFIG.modes.group : CONFIG.modes.individual;
+    return;
+  }
+  if (key === "docente") {
+    target.docente = [target.docente, safeValue].filter(Boolean).join(" ");
+    return;
+  }
+  if (key === "tareas") {
+    target.tareas = [target.tareas, safeValue].filter(Boolean).join("\n");
+    return;
+  }
+
+  target[key] = [...(Array.isArray(target[key]) ? target[key] : []), ...splitCommaValues(safeValue)];
+}
+
+function normalizeDateToISO(value = "") {
+  const safeValue = toStringSafe(value);
+  let match = safeValue.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (match) {
+    return [match[1], match[2].padStart(2, "0"), match[3].padStart(2, "0")].join("-");
+  }
+
+  match = safeValue.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!match) return "";
+
+  return [match[3], match[2].padStart(2, "0"), match[1].padStart(2, "0")].join("-");
+}
+
+function normalizeImportLabel(label = "") {
+  const normalized = normalizeText(label).replace(/\s+/g, " ").trim();
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+
+  if (compact === "fecha") return "fechaClase";
+  if (compact === "tipo") return "mode";
+  if (compact === "docente") return "docente";
+  if (["categorias", "categoria", "tags", "etiquetas"].includes(compact)) return "etiquetas";
+  if (["tareasobservaciones", "tareas", "observaciones"].includes(compact)) return "tareas";
+  if (compact === "componentecorporal") return "componenteCorporal";
+  if (compact === "componentetecnico") return "componenteTecnico";
+  if (compact === "componenteteorico") return "componenteTeorico";
+  if (
+    [
+      "componentedeobra",
+      "componentedeobras",
+      "cancionesobras",
+      "cancion",
+      "canciones",
+      "obra",
+      "obras",
+    ].includes(compact)
+  ) {
+    return "componenteObras";
+  }
+
+  return "";
+}
+
+function splitCommaValues(value = "") {
+  const source = Array.isArray(value) ? value : [value];
+  return normalizeTags(
+    source.flatMap((item) =>
+      String(item || "")
+        .split(",")
+        .map((part) => part.trim())
+    )
+  );
+}
+
+function buildImportedBitacoraPayload(parsed, context = {}, index = 0) {
+  const student = context.student || {};
+  const studentId = context.studentId || getStudentIdentity(student);
+  const process = context.process || null;
+  const withCategories = applyAutomaticCategoriesFromWorks({
+    ...parsed,
+    content: buildImportedStructuredContent(parsed),
+  });
+  const docente = toStringSafe(parsed.docente || process?.docente || student?.docente || student?.teacher);
+
+  return {
+    mode: parsed.mode === CONFIG.modes.group ? CONFIG.modes.group : CONFIG.modes.individual,
+    studentId,
+    studentKey: student.studentKey || studentId,
+    studentIds: [studentId],
+    studentRefs: [{ id: studentId, name: getStudentName(student) }],
+    primaryStudentId: studentId,
+    title: `Bitácora ${formatDisplayDate(parsed.fechaClase) || index + 1}`,
+    content: buildImportedStructuredContent({
+      ...parsed,
+      docente,
+    }),
+    tags: withCategories.etiquetas || withCategories.tags || [],
+    etiquetas: withCategories.etiquetas || withCategories.tags || [],
+    fechaClase: parsed.fechaClase,
+    docentes: docente ? [docente] : [],
+    docente,
+    attachments: [],
+    archivos: [],
+    studentOverrides: {},
+    processKey: process?.processKey || "",
+    process: {
+      processKey: process?.processKey || "",
+      processLabel: firstNonEmpty(process?.label, process?.detalle, process?.arte),
+      area: firstNonEmpty(process?.arte, student.area, student.programa, student.instrumento),
+      modalidad: firstNonEmpty(student.modalidad),
+      docente,
+      sede: firstNonEmpty(student.sede),
+      programa: firstNonEmpty(process?.detalle, process?.label, student.programa, student.area),
+    },
+    source: "plain-text-import",
+    metadata: {
+      importedFromPlainText: true,
+      importedAt: new Date().toISOString(),
+    },
+  };
+}
+
+function buildImportedStructuredContent(fields = {}) {
+  return [
+    fields.docente ? `DOCENTE: ${toStringSafe(fields.docente)}` : "",
+    fields.tareas ? `TAREAS / OBSERVACIONES: ${toStringSafe(fields.tareas)}` : "",
+    splitCommaValues(fields.componenteCorporal).length
+      ? `COMPONENTE CORPORAL: ${splitCommaValues(fields.componenteCorporal).join(", ")}`
+      : "",
+    splitCommaValues(fields.componenteTecnico).length
+      ? `COMPONENTE TECNICO: ${splitCommaValues(fields.componenteTecnico).join(", ")}`
+      : "",
+    splitCommaValues(fields.componenteTeorico).length
+      ? `COMPONENTE TEORICO: ${splitCommaValues(fields.componenteTeorico).join(", ")}`
+      : "",
+    splitCommaValues(fields.componenteObras).length
+      ? `COMPONENTE DE OBRAS: ${splitCommaValues(fields.componenteObras).join(", ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function validateImportedBitacora(bitacora, context = {}) {
+  const errors = [];
+  const warnings = [];
+
+  if (!bitacora.fechaClase) errors.push("Falta fecha válida");
+  if (!context.studentId) errors.push("Falta estudiante actual");
+  if (!bitacora.processKey) errors.push("Selecciona un proceso para asociar estas bitácoras.");
+  if (!hasImportedContent(bitacora)) errors.push("No tiene contenido pedagógico para guardar");
+  if (bitacora.mode === CONFIG.modes.group) {
+    errors.push("Tipo: Grupal no se puede importar desde texto sin los demás estudiantes.");
+  }
+
+  return { errors, warnings };
+}
+
+function hasImportedContent(bitacora = {}) {
+  const structured = parseStructuredContent(bitacora.content || bitacora.contenido || "");
+  return Boolean(
+    normalizeTags(bitacora.tags || bitacora.etiquetas).length ||
+      toStringSafe(structured.tareas) ||
+      normalizeTags(structured.componenteCorporal).length ||
+      normalizeTags(structured.componenteTecnico).length ||
+      normalizeTags(structured.componenteTeorico).length ||
+      normalizeTags(structured.componenteObras).length
+  );
+}
+
+function findImportedDuplicate(payload, existingItems = []) {
+  const targetStudent = new Set(normalizeStudentIds(payload.studentIds || [payload.studentId]));
+  const targetDate = normalizeLocalDateInput(payload.fechaClase);
+  const targetProcess = toStringSafe(payload.processKey || payload.process?.processKey);
+  const targetTeacher = normalizeText(payload.docente || payload.process?.docente);
+
+  return (existingItems || []).find((item) => {
+    const itemStudents = normalizeStudentIds(item.studentIds || [item.studentId]);
+    if (!itemStudents.some((id) => targetStudent.has(id))) return false;
+    if (normalizeLocalDateInput(item.fechaClase) !== targetDate) return false;
+    if (toStringSafe(item.processKey || item.process?.processKey) !== targetProcess) return false;
+    const itemTeacher = normalizeText(item.docente || item.process?.docente || item.teacher);
+    return !targetTeacher || !itemTeacher || itemTeacher === targetTeacher;
+  });
+}
+
+function renderTextImportPreview(items = []) {
+  if (!items.length) return "";
+
+  return items
+    .map((item) => {
+      const payload = item.payload || {};
+      const structured = parseStructuredContent(payload.content || "");
+      const status = item.errors.length
+        ? "No se guardará por errores"
+        : item.warnings.length
+        ? "Tiene advertencias"
+        : "Lista para guardar";
+
+      return `
+        <article class="text-bitacoras-preview-card">
+          <header class="text-bitacoras-preview-card__header">
+            <div>
+              <p class="teaching-history-card__date">${escapeHtml(formatDisplayDate(payload.fechaClase))}</p>
+              <h3 class="teaching-history-card__title">${escapeHtml(payload.title || "Bitácora importada")}</h3>
+            </div>
+            <span class="badge ${item.errors.length ? "badge--danger" : item.warnings.length ? "badge--soft" : ""}">
+              ${escapeHtml(status)}
+            </span>
+          </header>
+          ${payload.docente ? `<p class="text-bitacoras-preview-card__line"><strong>Docente:</strong> ${escapeHtml(payload.docente)}</p>` : ""}
+          ${renderPreviewList("Categorías detectadas", payload.etiquetas)}
+          ${structured.tareas ? `<p class="text-bitacoras-preview-card__line"><strong>Tareas/Observaciones:</strong> ${escapeHtml(structured.tareas)}</p>` : ""}
+          ${renderPreviewList("Componentes detectados", [
+            ...structured.componenteCorporal,
+            ...structured.componenteTecnico,
+            ...structured.componenteTeorico,
+          ])}
+          ${renderPreviewList("Canciones/obras detectadas", structured.componenteObras)}
+          ${item.warnings.length ? `<p class="text-bitacoras-preview-card__warning">${escapeHtml(item.warnings.join(". "))}</p>` : ""}
+          ${item.errors.length ? `<p class="text-bitacoras-preview-card__error">${escapeHtml(item.errors.join(". "))}</p>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderPreviewList(label, values = []) {
+  const normalized = normalizeTags(values);
+  if (!normalized.length) return "";
+  return `
+    <div class="text-bitacoras-preview-card__chips">
+      <strong>${escapeHtml(label)}:</strong>
+      ${normalized.map((value) => `<span class="badge badge--soft">${escapeHtml(value)}</span>`).join("")}
+    </div>
+  `;
+}
+
+async function saveImportedBitacoras(student, items = [], options = {}) {
+  if (!isAdminUser(getState()?.auth?.user)) {
+    setAppError("Solo un administrador puede importar bitácoras desde texto.");
+    return { created: 0, skipped: items.length };
+  }
+
+  const allowDuplicates = Boolean(options.allowDuplicates);
+  const total = items.length;
+  let created = 0;
+  let skipped = 0;
+  let processed = 0;
+  options.setBusy?.(true);
+  options.setStatus?.("Guardando...", "info");
+  options.setProgress?.({ current: 0, total, created, skipped, visible: true });
+  setBitacorasLoading(true);
+
+  try {
+    for (const item of items) {
+      if (!item.canSave || (item.duplicate && !allowDuplicates)) {
+        skipped += 1;
+        processed += 1;
+        options.setProgress?.({ current: processed, total, created, skipped, visible: true });
+        continue;
+      }
+
+      const saved = await createBitacora(item.payload);
+      const normalized = normalizeBitacorasResponseShared([saved])[0] || saved;
+      normalizeStudentIds(normalized.studentIds || item.payload.studentIds).forEach((studentId) => {
+        addBitacoraForStudent(studentId, normalized);
+      });
+      const fallbackId = getStudentFallbackId(student);
+      if (fallbackId) addBitacoraForStudent(fallbackId, normalized);
+      item.saved = true;
+      created += 1;
+      processed += 1;
+      options.setProgress?.({ current: processed, total, created, skipped, visible: true });
+    }
+  } finally {
+    setBitacorasLoading(false);
+    options.setBusy?.(false);
+    await reloadHistory(student);
+    renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+  }
+
+  return { created, skipped };
 }
 
 function getBitacorasFromState(studentOrRef) {

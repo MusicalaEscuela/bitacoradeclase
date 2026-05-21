@@ -63,6 +63,7 @@ import {
   findStudentInCollections,
   toStringSafe,
 } from "../utils/shared.js";
+import { applyAutomaticCategoriesFromWorks } from "../utils/bitacoras.js";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -2100,7 +2101,7 @@ function buildBitacoraPayload(student, draft) {
           },
         ];
 
-  return {
+  return applyAutomaticCategoriesFromWorks({
     mode,
     studentId: studentRef,
     studentKey: student.studentKey || studentRef,
@@ -2142,7 +2143,7 @@ function buildBitacoraPayload(student, draft) {
     },
     author: buildAuthorFromState(),
     createdAt: new Date().toISOString(),
-  };
+  });
 }
 
 function validateDraft(draft, student) {
