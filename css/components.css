@@ -898,6 +898,22 @@
   font-weight: 700;
 }
 
+.profile-stats {
+  margin-top: 1rem;
+}
+
+.profile-stats .summary-list {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.profile-stats .summary-item {
+  min-height: 92px;
+}
+
+.profile-stats + .profile-grid {
+  margin-top: 1rem;
+}
+
 /* =========================
    HISTORY / BITÁCORAS
    ========================= */
@@ -1767,6 +1783,156 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.text-bitacoras-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.text-bitacoras-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.text-bitacoras-modal {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.9rem;
+  width: min(920px, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid var(--border, #e6e8e8);
+  border-radius: 18px;
+  background: var(--bg-panel, #ffffff);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.text-bitacoras-modal__header,
+.text-bitacoras-preview-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.text-bitacoras-modal__textarea {
+  min-height: 280px;
+  resize: vertical;
+}
+
+.text-bitacoras-modal__process {
+  max-width: 520px;
+}
+
+.text-bitacoras-modal__check {
+  width: max-content;
+  max-width: 100%;
+}
+
+.text-bitacoras-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.text-bitacoras-modal__status {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 750;
+  color: var(--text-muted, #667085);
+}
+
+.text-bitacoras-modal__status[data-type="success"] {
+  color: #166534;
+}
+
+.text-bitacoras-modal__status[data-type="warning"] {
+  color: #92400e;
+}
+
+.text-bitacoras-progress {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.text-bitacoras-progress[hidden] {
+  display: none;
+}
+
+.text-bitacoras-progress__bar {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.1);
+}
+
+.text-bitacoras-progress__bar span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width 180ms ease;
+}
+
+.text-bitacoras-progress__label {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: var(--text-muted, #667085);
+}
+
+.text-bitacoras-preview {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.text-bitacoras-preview-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border-soft, rgba(17, 37, 61, 0.08));
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.text-bitacoras-preview-card__line,
+.text-bitacoras-preview-card__warning,
+.text-bitacoras-preview-card__error {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.text-bitacoras-preview-card__warning {
+  color: #92400e;
+}
+
+.text-bitacoras-preview-card__error,
+.badge--danger {
+  color: #991b1b;
+}
+
+.badge--danger {
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
+.text-bitacoras-preview-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.86rem;
 }
 
 .student-modal__header-copy {
@@ -3276,6 +3442,26 @@
 }
 
 @media (max-width: 768px) {
+  .text-bitacoras-modal-root {
+    padding: 0.65rem;
+    place-items: stretch;
+  }
+
+  .text-bitacoras-modal {
+    max-height: calc(100vh - 1.3rem);
+    border-radius: 14px;
+  }
+
+  .text-bitacoras-modal__header,
+  .text-bitacoras-preview-card__header {
+    display: grid;
+  }
+
+  .text-bitacoras-modal__actions,
+  .text-bitacoras-modal__actions > * {
+    width: 100%;
+  }
+
   .teaching-history-card {
     padding: 0.82rem;
     border-radius: 14px;
