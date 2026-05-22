@@ -39,6 +39,7 @@ let currentNavigateTo = null;
 let currentCatalogs = getEmptyCatalogs();
 let currentMessage = null;
 let currentStudentAccessUsers = [];
+let currentStudentAccessSearchQuery = "";
 let currentStudentSyncReport = null;
 let currentBitacoraImportPlan = null;
 const expandedSettingsPanels = new Set();
@@ -150,6 +151,10 @@ function buildMarkup(state) {
   const studentAccessCount = Array.isArray(currentStudentAccessUsers)
     ? currentStudentAccessUsers.length
     : 0;
+  const filteredStudentAccessUsers = filterStudentAccessUsers(
+    currentStudentAccessUsers,
+    currentStudentAccessSearchQuery
+  );
   const updatedAt = toStringSafe(currentCatalogs.updatedAt);
 
   if (!canManageSettings) {
@@ -301,12 +306,27 @@ function buildMarkup(state) {
           ${buildCollapsibleList({
             listKey: "student-access-list",
             title: "Lista sincronizada",
-            count: studentAccessCount,
+            count: filteredStudentAccessUsers.length,
             singular: "registro",
             plural: "registros",
+            countLabel:
+              currentStudentAccessSearchQuery && filteredStudentAccessUsers.length !== studentAccessCount
+                ? `${filteredStudentAccessUsers.length} de ${studentAccessCount} registros`
+                : "",
             content: `
+              <label class="field settings-search-field" for="settings-student-access-search">
+                <span class="field__label">Buscar estudiante</span>
+                <input
+                  class="field__input settings-search-input"
+                  id="settings-student-access-search"
+                  type="search"
+                  placeholder="Nombre, correo, studentId o estado"
+                  value="${escapeHtml(currentStudentAccessSearchQuery)}"
+                  autocomplete="off"
+                />
+              </label>
               <div class="settings-list" id="settings-student-access-list">
-                ${renderStudentAccessList(currentStudentAccessUsers)}
+                ${renderStudentAccessList(filteredStudentAccessUsers, currentStudentAccessSearchQuery)}
               </div>
             `,
           })}
@@ -407,6 +427,7 @@ function buildCollapsibleList({
   listKey,
   title,
   count,
+  countLabel = "",
   singular = "elemento",
   plural = "elementos",
   content,
@@ -428,7 +449,7 @@ function buildCollapsibleList({
       >
         <span class="settings-collapsible__copy">
           <span class="settings-collapsible__title">${escapeHtml(title)}</span>
-          <span class="settings-collapsible__count">${escapeHtml(formatItemCount(count, singular, plural))}</span>
+          <span class="settings-collapsible__count">${escapeHtml(countLabel || formatItemCount(count, singular, plural))}</span>
         </span>
         <span class="settings-collapsible__meta">
           <span class="settings-collapsible__action" data-settings-list-action>
@@ -532,8 +553,45 @@ function renderTeachersList(teachers = []) {
     .join("");
 }
 
-function renderStudentAccessList(users = []) {
+function getStudentAccessSearchText(user = {}) {
+  return normalizeText(
+    [
+      user.displayName,
+      user.nombre,
+      user.name,
+      user.email,
+      user.correo,
+      user.studentId,
+      user.studentKey,
+      user.estudianteId,
+      user.active ? "activo" : "inactivo",
+    ]
+      .map((value) => toStringSafe(value))
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function filterStudentAccessUsers(users = [], query = "") {
+  if (!Array.isArray(users) || !users.length) return [];
+
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return users;
+
+  return users.filter((user) => getStudentAccessSearchText(user).includes(normalizedQuery));
+}
+
+function renderStudentAccessList(users = [], query = "") {
   if (!Array.isArray(users) || !users.length) {
+    if (query) {
+      return `
+        <div class="empty-state empty-state--soft">
+          <h3 class="empty-state__title">Sin resultados</h3>
+          <p class="empty-state__text">No hay estudiantes que coincidan con esa bÃºsqueda.</p>
+        </div>
+      `;
+    }
+
     return `
       <div class="empty-state empty-state--soft">
         <h3 class="empty-state__title">Sin correos sincronizados</h3>
@@ -653,6 +711,14 @@ function bindEvents(state) {
   const teacherImport = viewRoot.querySelector("#settings-import-teachers");
   const bitacoraImportInput = viewRoot.querySelector("#settings-import-bitacoras");
   const bitacoraImportBtn = viewRoot.querySelector("#settings-import-bitacoras-btn");
+  const studentAccessSearch = viewRoot.querySelector("#settings-student-access-search");
+
+  if (studentAccessSearch) {
+    studentAccessSearch.addEventListener("input", () => {
+      currentStudentAccessSearchQuery = studentAccessSearch.value || "";
+      refreshStudentAccessSearchResults(studentAccessSearch);
+    });
+  }
 
   if (refreshBtn) {
     refreshBtn.addEventListener("click", async () => {
@@ -990,6 +1056,37 @@ function toggleSettingsList(button) {
 
   if (body) {
     body.classList.toggle("is-hidden", !shouldExpand);
+  }
+}
+
+function refreshStudentAccessSearchResults(input) {
+  if (!viewRoot) return;
+
+  const filteredUsers = filterStudentAccessUsers(
+    currentStudentAccessUsers,
+    currentStudentAccessSearchQuery
+  );
+  const list = viewRoot.querySelector("#settings-student-access-list");
+  const root = input?.closest?.("[data-settings-list-root]");
+  const count = root?.querySelector?.(".settings-collapsible__count");
+
+  if (list) {
+    list.innerHTML = renderStudentAccessList(
+      filteredUsers,
+      currentStudentAccessSearchQuery
+    );
+  }
+
+  if (count) {
+    const total = Array.isArray(currentStudentAccessUsers)
+      ? currentStudentAccessUsers.length
+      : 0;
+    const hasQuery = Boolean(normalizeText(currentStudentAccessSearchQuery));
+
+    count.textContent =
+      hasQuery && filteredUsers.length !== total
+        ? `${filteredUsers.length} de ${total} registros`
+        : formatItemCount(filteredUsers.length, "registro", "registros");
   }
 }
 
@@ -1706,10 +1803,6 @@ async function withLoading(task) {
     setAppLoading(false);
   }
 }
-
-
-
-
 
 
 
