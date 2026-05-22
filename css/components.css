@@ -1354,6 +1354,15 @@
   padding-block: 0.75rem;
 }
 
+.settings-search-field {
+  margin: 0 0 1rem;
+  max-width: 560px;
+}
+
+.settings-search-input {
+  min-height: 3rem;
+}
+
 .settings-item-card__content h3 {
   margin: 0 0 0.2rem;
   font-size: 1rem;
