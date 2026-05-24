@@ -31,6 +31,7 @@ import {
 import {
   getStudentProfile,
   updateStudentTeacher,
+  updateStudentRepertoire,
 } from "../api/students.api.js";
 import {
   getCatalogs,
@@ -66,6 +67,10 @@ import {
   toStringSafe,
 } from "../utils/shared.js";
 import { applyAutomaticCategoriesFromWorks } from "../utils/bitacoras.js";
+import {
+  parseBitacoraSheetText,
+  splitDelimitedRows,
+} from "../utils/bitacoras-import.js";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -857,6 +862,21 @@ function buildProfileMarkup(student, state, config) {
             </div>
           </article>
 
+          <article class="card profile-repertoire-card">
+            <header class="panel-header">
+              <div>
+                <p class="panel-header__eyebrow">Proyecto final</p>
+                <h2 class="panel-header__title">Repertorio del proceso</h2>
+                <p class="panel__description">
+                  Canciones elegidas por docente y estudiante para trabajar como proyecto.
+                </p>
+              </div>
+            </header>
+            <div id="profile-repertoire-content">
+              ${renderStudentRepertoireCard(student, access)}
+            </div>
+          </article>
+
           <article class="card profile-quick-actions">
             <header class="panel-header">
               <div>
@@ -935,6 +955,7 @@ function bindProfileEvents(student) {
   const allHistoryContainer = viewRoot.querySelector("#profile-all-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
   const routePreviewContainer = viewRoot.querySelector("#profile-route-preview-content");
+  const repertoireContainer = viewRoot.querySelector("#profile-repertoire-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const processSelect = viewRoot.querySelector("#profile-process-select");
   const gridContainer = viewRoot.querySelector("#profile-grid");
@@ -976,6 +997,34 @@ function bindProfileEvents(student) {
       const select = event.target.closest("[data-profile-teacher-select]");
       if (!select) return;
       await saveProfileTeacher(student);
+    });
+  }
+
+  if (repertoireContainer) {
+    repertoireContainer.addEventListener("click", async (event) => {
+      const addButton = event.target.closest("[data-repertoire-add]");
+      if (addButton) {
+        await addProfileRepertoireItem(student);
+        return;
+      }
+
+      const removeButton = event.target.closest("[data-repertoire-remove]");
+      if (removeButton) {
+        await removeProfileRepertoireItem(
+          student,
+          removeButton.getAttribute("data-repertoire-remove")
+        );
+      }
+    });
+
+    repertoireContainer.addEventListener("keydown", async (event) => {
+      const input = event.target.closest("[data-repertoire-input]");
+      if (!input) return;
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        await addProfileRepertoireItem(student);
+      }
     });
   }
 
@@ -1137,6 +1186,7 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   const allHistoryContainer = viewRoot.querySelector("#profile-all-history-content");
   const routeContainer = viewRoot.querySelector("#profile-route-content");
   const routePreviewContainer = viewRoot.querySelector("#profile-route-preview-content");
+  const repertoireContainer = viewRoot.querySelector("#profile-repertoire-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const titleNode = viewRoot.querySelector(".profile-card__name");
   const docNode = viewRoot.querySelector(".profile-card__doc");
@@ -1176,6 +1226,13 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
 
   if (routeContainer) {
     routeContainer.innerHTML = renderLearningRoute(student);
+  }
+
+  if (repertoireContainer) {
+    repertoireContainer.innerHTML = renderStudentRepertoireCard(
+      student,
+      resolveUserAccess(state?.auth?.user)
+    );
   }
 
   if (historyTitle) {
@@ -1461,6 +1518,120 @@ function renderQuickActions(access = {}) {
       }
     </div>
   `;
+}
+
+function getStudentRepertoire(student = {}) {
+  return normalizeTags(
+    student.repertorioEscogido ||
+      student.repertoire ||
+      student.repertorio ||
+      student.proyectoFinal ||
+      []
+  );
+}
+
+function renderStudentRepertoireCard(student = {}, access = {}) {
+  const canEdit = Boolean(access.canEditBitacoras || access.canManageSettings);
+  const items = getStudentRepertoire(student);
+  const options = normalizeTags(cachedCatalogs?.componenteObras || []);
+
+  return `
+    <div class="profile-repertoire">
+      <div class="profile-repertoire__chips" data-repertoire-list>
+        ${
+          items.length
+            ? items
+                .map(
+                  (item) => `
+                    <span class="profile-repertoire-chip" data-repertoire-item="${escapeHtml(item)}">
+                      <span>${escapeHtml(item)}</span>
+                      ${
+                        canEdit
+                          ? `<button type="button" class="profile-repertoire-chip__remove" data-repertoire-remove="${escapeHtml(item)}" aria-label="Quitar ${escapeHtml(item)}">x</button>`
+                          : ""
+                      }
+                    </span>
+                  `
+                )
+                .join("")
+            : `<p class="field__hint">Aún no hay canciones elegidas para este proceso.</p>`
+        }
+      </div>
+      ${
+        canEdit
+          ? `
+            <div class="profile-repertoire__entry">
+              <input
+                type="text"
+                class="field__input"
+                data-repertoire-input
+                list="profile-repertoire-options"
+                placeholder="Escribe o elige una canción..."
+                autocomplete="off"
+              />
+              <button type="button" class="btn btn--secondary btn--sm" data-repertoire-add>
+                Agregar
+              </button>
+              ${renderRepertoireDatalist(options)}
+            </div>
+          `
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderRepertoireDatalist(options = []) {
+  if (!options.length) return "";
+  return `
+    <datalist id="profile-repertoire-options">
+      ${options.map((option) => `<option value="${escapeHtml(option)}"></option>`).join("")}
+    </datalist>
+  `;
+}
+
+async function saveProfileRepertoire(student, values = []) {
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+
+  clearAppError();
+
+  try {
+    const updated = await updateStudentRepertoire(studentId, values);
+    updateStudentProfile(updated);
+    setSelectedStudent({
+      ...student,
+      ...updated,
+    });
+    renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+  } catch (error) {
+    console.error("No se pudo guardar repertorio:", error);
+    setAppError(error?.message || "No se pudo guardar el repertorio del estudiante.");
+  }
+}
+
+async function addProfileRepertoireItem(student) {
+  const currentStudent =
+    getStudentFromState(getState(), getStudentIdentity(student)) || student;
+  const input = viewRoot?.querySelector("[data-repertoire-input]");
+  const value = toStringSafe(input?.value);
+  if (!value) return;
+
+  const nextValues = normalizeTags([...getStudentRepertoire(currentStudent), value]);
+  if (input) input.value = "";
+  await saveProfileRepertoire(currentStudent, nextValues);
+}
+
+async function removeProfileRepertoireItem(student, value) {
+  const currentStudent =
+    getStudentFromState(getState(), getStudentIdentity(student)) || student;
+  const safeValue = toStringSafe(value);
+  if (!safeValue) return;
+
+  const nextValues = getStudentRepertoire(currentStudent).filter(
+    (item) => normalizeText(item) !== normalizeText(safeValue)
+  );
+  await saveProfileRepertoire(currentStudent, nextValues);
 }
 
 function renderAllBitacorasPanel(student, bitacoras = [], config, isAuthenticated = true) {
@@ -4074,6 +4245,7 @@ function openTextBitacorasImportModal(student) {
 
   const close = () => modalRoot.remove();
   const textarea = modalRoot.querySelector("#text-bitacoras-input");
+  const fileInput = modalRoot.querySelector("#text-bitacoras-file");
   const processSelect = modalRoot.querySelector("#text-bitacoras-process");
   const preview = modalRoot.querySelector("#text-bitacoras-preview");
   const status = modalRoot.querySelector("#text-bitacoras-status");
@@ -4107,14 +4279,14 @@ function openTextBitacorasImportModal(student) {
 
   const analyze = () => {
     const context = getTextImportContext(student, processSelect?.value || "");
-    parsedItems = parseBitacorasFromPlainText(textarea?.value || "", context);
+    parsedItems = parseBitacorasFromImportText(textarea?.value || "", context);
     preview.innerHTML = renderTextImportPreview(parsedItems);
     const ready = parsedItems.filter((item) => item.canSave).length;
     const blocked = parsedItems.length - ready;
     setStatus(
       parsedItems.length
         ? `${ready} listas para guardar. ${blocked} con advertencias o errores.`
-        : "No se detectaron bitácoras. Cada registro debe iniciar con Fecha:",
+        : "No se detectaron bitácoras. Pega bloques con Fecha: o filas de Sheets/CSV.",
       parsedItems.length && ready ? "success" : "warning"
     );
     saveBtn.disabled = !ready;
@@ -4122,8 +4294,18 @@ function openTextBitacorasImportModal(student) {
   };
 
   analyzeBtn?.addEventListener("click", analyze);
+  fileInput?.addEventListener("change", async () => {
+    const files = Array.from(fileInput.files || []);
+    const text = await readTextImportFiles(files);
+    if (text && textarea) {
+      textarea.value = [textarea.value, text].filter(Boolean).join("\n\n");
+      setStatus(`${files.length} archivo(s) cargado(s). Revisa y analiza el contenido.`, "info");
+    }
+    fileInput.value = "";
+  });
   clearBtn?.addEventListener("click", () => {
     textarea.value = "";
+    if (fileInput) fileInput.value = "";
     parsedItems = [];
     preview.innerHTML = "";
     saveBtn.disabled = true;
@@ -4172,7 +4354,7 @@ function renderTextBitacorasImportModal() {
         <div>
           <p class="panel-header__eyebrow">Importación administrativa</p>
           <h2 class="panel-header__title" id="text-bitacoras-title">Agregar bitácoras desde texto</h2>
-          <p class="section-text">Pega aquí las bitácoras antiguas. Cada registro debe iniciar con Fecha:</p>
+          <p class="section-text">Pega texto de documento o filas copiadas/exportadas desde Sheets.</p>
         </div>
         <button type="button" class="btn btn--ghost btn--sm" data-text-import-cancel>Cancelar</button>
       </header>
@@ -4186,8 +4368,25 @@ function renderTextBitacorasImportModal() {
       </label>
 
       <label class="field">
-        <span class="field__label">Texto de bitácoras antiguas</span>
-        <textarea id="text-bitacoras-input" class="field__textarea text-bitacoras-modal__textarea" rows="14"></textarea>
+        <span class="field__label">Texto de bitácoras antiguas o datos de Sheets</span>
+        <textarea
+          id="text-bitacoras-input"
+          class="field__textarea text-bitacoras-modal__textarea"
+          rows="14"
+          placeholder="Documento: Fecha: ...&#10;&#10;Sheets: Fecha&#9;Docente&#9;Estudiante&#9;Tareas..."
+        ></textarea>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Subir archivo de texto o Sheets</span>
+        <input
+          id="text-bitacoras-file"
+          class="field__input"
+          type="file"
+          accept=".txt,.csv,.tsv,text/plain,text/csv,text/tab-separated-values"
+          multiple
+        />
+        <small class="field__hint">Acepta .txt, .csv o .tsv. Para Google Docs o Word, copia el texto aquí o exporta como .txt.</small>
       </label>
 
       <label class="choice-pill text-bitacoras-modal__check">
@@ -4255,16 +4454,142 @@ function getTextImportContext(student, selectedProcessKey = "") {
   };
 }
 
+async function readTextImportFiles(files = []) {
+  const readableFiles = (Array.isArray(files) ? files : []).filter(Boolean);
+  const chunks = [];
+
+  for (const file of readableFiles) {
+    const name = toStringSafe(file?.name).toLowerCase();
+    const type = toStringSafe(file?.type).toLowerCase();
+    const canReadAsText =
+      /\.(txt|csv|tsv)$/.test(name) ||
+      type.includes("text/") ||
+      type.includes("csv") ||
+      type.includes("tab-separated");
+
+    if (!canReadAsText) continue;
+    chunks.push(await file.text());
+  }
+
+  return chunks.join("\n\n");
+}
+
+function parseBitacorasFromImportText(rawText, context = {}) {
+  const text = String(rawText || "");
+  const sheetItems = parseBitacorasFromSheetText(text, context);
+  if (sheetItems.length) return sheetItems;
+  return parseBitacorasFromPlainText(text, context);
+}
+
+function parseBitacorasFromSheetText(rawText, context = {}) {
+  const text = String(rawText || "");
+  const rows = splitDelimitedRows(text);
+  if (!shouldParseAsSheetText(text, rows)) return [];
+
+  const parsedRows = parseBitacoraSheetText(text).items.filter((row) =>
+    Boolean(row.fechaClase || row.docente || row.content || row.tags?.length)
+  );
+  const seenImportFingerprints = new Set();
+
+  return parsedRows.map((row, index) => {
+    const parsed = mapSheetRowToTextImport(row);
+    const payload = buildImportedBitacoraPayload(parsed, context, index);
+    const validation = validateImportedBitacora(payload, context);
+    const duplicate = findImportedDuplicate(payload, context.existingBitacoras || []);
+    const repeatedInImport = markImportDuplicate(payload, seenImportFingerprints);
+    const warnings = [...validation.warnings];
+
+    if (row.estudianteNombres?.length) {
+      const currentName = normalizeText(getStudentName(context.student));
+      const includesCurrent = row.estudianteNombres.some(
+        (name) => normalizeText(name) === currentName
+      );
+      if (!includesCurrent) {
+        warnings.push(
+          `La fila menciona estudiante(s): ${row.estudianteNombres.join(", ")}`
+        );
+      }
+    }
+    if (duplicate) warnings.push("Posible duplicado");
+    if (repeatedInImport) warnings.push("Duplicado dentro del texto pegado");
+
+    return {
+      index,
+      raw: JSON.stringify(row),
+      payload,
+      warnings,
+      errors: validation.errors,
+      duplicate: duplicate || repeatedInImport,
+      canSave: !validation.errors.length && !repeatedInImport,
+      saved: false,
+    };
+  });
+}
+
+function shouldParseAsSheetText(text = "", rows = []) {
+  if (!Array.isArray(rows) || rows.length < 2) return false;
+  if (String(text || "").includes("\t")) return true;
+
+  const firstRow = rows[0] || [];
+  if (firstRow.length < 2) return false;
+
+  const normalizedHeaders = firstRow.map((cell) =>
+    normalizeImportLabel(cell) || normalizeHeaderName(cell)
+  );
+  const knownHeaders = new Set([
+    "fechaClase",
+    "docente",
+    "tareas",
+    "etiquetas",
+    "componenteCorporal",
+    "componenteTecnico",
+    "componenteTeorico",
+    "componenteObras",
+    "estudiante",
+    "alumno",
+    "student",
+    "nombreestudiante",
+    "content",
+    "contenido",
+    "apuntes",
+  ]);
+
+  return normalizedHeaders.filter((header) => knownHeaders.has(header)).length >= 2;
+}
+
+function mapSheetRowToTextImport(row = {}) {
+  return {
+    fechaClase: row.fechaClase || "",
+    docente: row.docente || "",
+    mode: CONFIG.modes.individual,
+    etiquetas: normalizeTags([
+      ...(Array.isArray(row.tags) ? row.tags : [row.tags]),
+      ...(Array.isArray(row.componenteComplementario)
+        ? row.componenteComplementario
+        : [row.componenteComplementario]),
+    ]),
+    tareas: row.content || "",
+    componenteCorporal: row.componenteCorporal || [],
+    componenteTecnico: row.componenteTecnico || [],
+    componenteTeorico: row.componenteTeorico || [],
+    componenteObras: row.componenteObras || [],
+  };
+}
+
 function parseBitacorasFromPlainText(rawText, context = {}) {
   const blocks = splitTextBitacoraBlocks(rawText);
+  const seenImportFingerprints = new Set();
+
   return blocks.map((block, index) => {
     const parsed = parseTextBitacoraBlock(block);
     const payload = buildImportedBitacoraPayload(parsed, context, index);
     const validation = validateImportedBitacora(payload, context);
     const duplicate = findImportedDuplicate(payload, context.existingBitacoras || []);
+    const repeatedInImport = markImportDuplicate(payload, seenImportFingerprints);
     const warnings = [...validation.warnings];
 
     if (duplicate) warnings.push("Posible duplicado");
+    if (repeatedInImport) warnings.push("Duplicado dentro del texto pegado");
 
     return {
       index,
@@ -4272,10 +4597,39 @@ function parseBitacorasFromPlainText(rawText, context = {}) {
       payload,
       warnings,
       errors: validation.errors,
-      duplicate,
-      canSave: !validation.errors.length,
+      duplicate: duplicate || repeatedInImport,
+      canSave: !validation.errors.length && !repeatedInImport,
       saved: false,
     };
+  });
+}
+
+function markImportDuplicate(payload = {}, seen = new Set()) {
+  const fingerprint = buildImportFingerprint(payload);
+  if (!fingerprint) return false;
+  if (seen.has(fingerprint)) return true;
+  seen.add(fingerprint);
+  return false;
+}
+
+function buildImportFingerprint(payload = {}) {
+  const studentIds = normalizeTags(payload.studentIds || [payload.studentId]);
+  const structured = parseStructuredContent(payload.content || payload.contenido || "");
+  const components = normalizeTags([
+    ...(payload.tags || payload.etiquetas || []),
+    ...structured.componenteCorporal,
+    ...structured.componenteTecnico,
+    ...structured.componenteTeorico,
+    ...structured.componenteObras,
+  ]).sort();
+
+  return JSON.stringify({
+    fechaClase: normalizeLocalDateInput(payload.fechaClase || payload.fecha || ""),
+    studentIds: studentIds.sort(),
+    processKey: toStringSafe(payload.processKey || payload.process?.processKey),
+    docente: normalizeText(payload.docente || payload.process?.docente),
+    tareas: normalizeText(structured.tareas || payload.content || payload.contenido),
+    components,
   });
 }
 
@@ -4635,6 +4989,14 @@ function getBitacorasFromState(studentOrRef) {
     studentOrRef && typeof studentOrRef === "object"
       ? resolveStudentProcess(studentOrRef, currentProfileProcessKey)
       : null;
+  const studentRef =
+    studentOrRef && typeof studentOrRef === "object"
+      ? getStudentIdentity(studentOrRef)
+      : toStringSafe(studentOrRef);
+  const fallbackId =
+    studentOrRef && typeof studentOrRef === "object"
+      ? getStudentFallbackId(studentOrRef)
+      : "";
 
   const applyProcessFilter = (items = []) => {
     const safeProcessKey = toStringSafe(currentProfileProcessKey);
@@ -4643,6 +5005,10 @@ function getBitacorasFromState(studentOrRef) {
     );
 
     const filtered = items.filter((item) => {
+      if (isGroupBitacoraForStudent(item, studentRef, fallbackId)) {
+        return true;
+      }
+
       const itemProcessKey = toStringSafe(
         item?.process?.processKey || item?.processKey
       );
@@ -4674,15 +5040,6 @@ function getBitacorasFromState(studentOrRef) {
 
     return filtered;
   };
-  const studentRef =
-    studentOrRef && typeof studentOrRef === "object"
-      ? getStudentIdentity(studentOrRef)
-      : toStringSafe(studentOrRef);
-
-  const fallbackId =
-    studentOrRef && typeof studentOrRef === "object"
-      ? getStudentFallbackId(studentOrRef)
-      : "";
 
   const selectedItems = getSelectedStudentBitacoras();
   if (Array.isArray(selectedItems) && selectedItems.length) {
@@ -4710,6 +5067,22 @@ function getBitacorasFromState(studentOrRef) {
   }
 
   return [];
+}
+
+function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") {
+  const studentIds = normalizeStudentIds(item.studentIds || [item.studentId]);
+  const studentRefs = normalizeStudentRefs(item.studentRefs || []);
+  const safeStudentRef = toStringSafe(studentRef);
+  const safeFallbackId = toStringSafe(fallbackId);
+  const belongsToStudent =
+    (safeStudentRef && studentIds.includes(safeStudentRef)) ||
+    (safeFallbackId && studentIds.includes(safeFallbackId));
+  const isGroup =
+    item.mode === CONFIG.modes.group ||
+    studentIds.length > 1 ||
+    studentRefs.length > 1;
+
+  return Boolean(isGroup && belongsToStudent);
 }
 
 function normalizeBitacorasResponse(response) {

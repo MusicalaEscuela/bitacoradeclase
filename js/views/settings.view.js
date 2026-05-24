@@ -31,6 +31,12 @@ import {
   normalizeText,
   toStringSafe,
 } from "../utils/shared.js";
+import {
+  buildStudentNameIndex as buildStudentNameIndexShared,
+  createBitacoraPayloadFromRow as createBitacoraPayloadFromRowShared,
+  mapBitacoraRow as mapBitacoraRowShared,
+  splitDelimitedRows as splitDelimitedRowsShared,
+} from "../utils/bitacoras-import.js";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -1227,7 +1233,7 @@ function parseSimpleLines(text) {
 
 async function parseTeacherFile(file) {
   const text = await file.text();
-  const rows = splitDelimitedRows(text);
+  const rows = splitDelimitedRowsShared(text);
   if (!rows.length) return [];
 
   const headers = rows[0].map((cell) => buildCatalogId(cell));
@@ -1537,6 +1543,7 @@ function buildFingerprintFromPayload(payload = {}) {
   const firstOverride = Object.values(overrides)[0] || {};
   const studentId = toStringSafe(payload?.primaryStudentId || payload?.studentId || payload?.studentIds?.[0]);
   const studentIds = normalizeListForFingerprint(payload?.studentIds || [studentId]);
+  const fechaClase = normalizeLocalDateInput(payload?.fechaClase || payload?.fecha || "");
   const docente = toStringSafe(payload?.process?.docente);
   const content = toStringSafe(payload?.content);
   const tags = normalizeListForFingerprint(payload?.tags);
@@ -1549,6 +1556,7 @@ function buildFingerprintFromPayload(payload = {}) {
   ]);
 
   return JSON.stringify({
+    fechaClase,
     studentId: normalizeFingerprintText(studentId),
     studentIds,
     docente: normalizeFingerprintText(docente),
@@ -1563,6 +1571,7 @@ function buildFingerprintFromExisting(item = {}) {
   const firstOverride = Object.values(overrides)[0] || {};
   const studentId = toStringSafe(item?.primaryStudentId || item?.studentId || item?.studentIds?.[0]);
   const studentIds = normalizeListForFingerprint(item?.studentIds || [studentId]);
+  const fechaClase = normalizeLocalDateInput(item?.fechaClase || item?.fecha || "");
   const docente = toStringSafe(item?.process?.docente);
   const content = toStringSafe(item?.content || item?.contenido);
   const tags = normalizeListForFingerprint(item?.tags || item?.etiquetas);
@@ -1575,6 +1584,7 @@ function buildFingerprintFromExisting(item = {}) {
   ]);
 
   return JSON.stringify({
+    fechaClase,
     studentId: normalizeFingerprintText(studentId),
     studentIds,
     docente: normalizeFingerprintText(docente),
@@ -1617,12 +1627,12 @@ async function buildBitacoraImportPlan(file, options = {}) {
   const students = Array.isArray(options.students)
     ? options.students
     : await getStudents({ includeInactive: true, estado: "todos" });
-  const studentByName = buildStudentNameIndex(students);
+  const studentByName = buildStudentNameIndexShared(students);
   const unresolvedStudents = [];
   const items = [];
 
   bodyRows.forEach((row) => {
-    const parsed = mapBitacoraRow(row, hasHeader ? headerIndex : {});
+    const parsed = mapBitacoraRowShared(row, hasHeader ? headerIndex : {});
     const content = toStringSafe(parsed.content);
     const studentNames = Array.isArray(parsed.estudianteNombres)
       ? parsed.estudianteNombres
@@ -1661,7 +1671,7 @@ async function buildBitacoraImportPlan(file, options = {}) {
       return;
     }
 
-    const payload = createBitacoraPayloadFromRow(parsed, dedupedMatchedStudents);
+    const payload = createBitacoraPayloadFromRowShared(parsed, dedupedMatchedStudents);
     if (payload) {
       items.push(payload);
     }
@@ -1803,10 +1813,6 @@ async function withLoading(task) {
     setAppLoading(false);
   }
 }
-
-
-
-
 
 
 
