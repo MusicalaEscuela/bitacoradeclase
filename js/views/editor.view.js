@@ -754,14 +754,15 @@ function bindEditorEvents(student) {
     if (!input) return;
 
     input.addEventListener("input", () => {
-      const options = getDatalistOptions(input.getAttribute("list"));
+      renderPickerOptionsForInput(key, input);
+      const options = getMultiFieldOptions(key, input);
       if (matchesCatalogOption(input.value, options)) {
         addMultiValueSelection(key, input.value, student);
       }
     });
 
     input.addEventListener("change", () => {
-      const options = getDatalistOptions(input.getAttribute("list"));
+      const options = getMultiFieldOptions(key, input);
       if (matchesCatalogOption(input.value, options)) {
         addMultiValueSelection(key, input.value, student);
       }
@@ -775,6 +776,15 @@ function bindEditorEvents(student) {
     });
   });
 
+  viewRoot.querySelectorAll("[data-multi-add]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-multi-add");
+      const input = viewRoot.querySelector(`[data-multi-input="${key}"]`);
+      if (!key || !input) return;
+      addMultiValueSelection(key, input.value, student);
+    });
+  });
+
   viewRoot.querySelectorAll("[data-multi-values]").forEach((container) => {
     container.addEventListener("click", (event) => {
       const button = event.target.closest("[data-multi-remove]");
@@ -785,6 +795,44 @@ function bindEditorEvents(student) {
       if (!key || !value) return;
 
       removeMultiValueSelection(key, value, student);
+    });
+  });
+
+  viewRoot.querySelectorAll("[data-picker-options]").forEach((container) => {
+    container.addEventListener("click", (event) => {
+      const toggleButton = event.target.closest("[data-picker-toggle-option]");
+      if (toggleButton) {
+        const key = toggleButton.getAttribute("data-picker-toggle-option");
+        const value = toggleButton.getAttribute("data-picker-value");
+        if (!key || !value) return;
+        togglePickerPendingValue(key, value);
+        return;
+      }
+
+      const addButton = event.target.closest("[data-picker-add-option]");
+      if (addButton) {
+        const key = addButton.getAttribute("data-picker-add-option");
+        const value = addButton.getAttribute("data-picker-value");
+        if (!key || !value || addButton.disabled) return;
+
+        const input = viewRoot.querySelector(`[data-multi-input="${key}"]`);
+        const currentQuery = input?.value || "";
+        addMultiValueSelection(key, value, student);
+
+        if (input) {
+          input.value = currentQuery;
+          renderPickerOptionsForInput(key, input);
+          togglePickerPanel(key, true);
+        }
+      }
+    });
+  });
+
+  viewRoot.querySelectorAll("[data-picker-add-pending]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-picker-add-pending");
+      if (!key) return;
+      addPendingPickerValues(key, student);
     });
   });
 
@@ -1043,6 +1091,26 @@ function removeDraftFile(index, student) {
     archivos: currentFiles.filter((_, fileIndex) => fileIndex !== index),
   });
 
+  viewRoot.addEventListener("click", (event) => {
+    const toggle = event.target.closest("[data-picker-toggle]");
+    if (toggle) {
+      const key = toggle.getAttribute("data-picker-toggle");
+      togglePickerPanel(key, true);
+      return;
+    }
+
+    const selectVisible = event.target.closest("[data-picker-select-visible]");
+    if (selectVisible) {
+      setVisiblePickerChecks(selectVisible.getAttribute("data-picker-select-visible"), true);
+      return;
+    }
+
+    const addSelected = event.target.closest("[data-picker-add-selected]");
+    if (addSelected) {
+      addCheckedPickerSelections(addSelected.getAttribute("data-picker-add-selected"), student);
+    }
+  });
+
   renderFilesPreviewBlock(student);
   renderDraftMetaBlock(student);
 }
@@ -1121,14 +1189,7 @@ function addMultiValueSelection(key, rawValue, student) {
 function applySuggestedCategoriesFromSelection(key, values = [], student) {
   if (key === "etiquetas" || key === "docentes") return;
 
-  const categoryByKey = {
-    componenteCorporal: "Componente corporal",
-    componenteTecnico: "Componente tecnico",
-    componenteTeorico: "Componente teorico",
-    componenteObras: "Componente de obras",
-  };
-  const directCategory = categoryByKey[key];
-  const inferred = inferCategoriesFromActivities(values, directCategory);
+  const inferred = inferCategoriesFromActivities(values, key);
   if (!inferred.length) return;
 
   const nextCategories = normalizeListValues([
@@ -1139,13 +1200,14 @@ function applySuggestedCategoriesFromSelection(key, values = [], student) {
   rememberPickerValues("etiquetas", inferred);
 }
 
-function inferCategoriesFromActivities(values = [], fallbackCategory = "") {
+function inferCategoriesFromActivities(values = [], sourceKey = "") {
   const catalogs = cachedCatalogs || getEmptyCatalogs();
   const categories = getCatalogOptions(catalogs.categorias);
   const matches = [];
 
   normalizeListValues(values).forEach((value) => {
     const normalizedValue = normalizeText(value);
+    const lowerValue = normalizedValue.toLowerCase();
     const matchedCategory = categories.find((category) => {
       const normalizedCategory = normalizeText(category);
       return (
@@ -1154,13 +1216,37 @@ function inferCategoriesFromActivities(values = [], fallbackCategory = "") {
       );
     });
     if (matchedCategory) matches.push(matchedCategory);
+
+    if (/\bescala(s)?\b/.test(lowerValue)) {
+      matches.push(resolveCategoryLabel(categories, ["Escalas", "Escala"]));
+    }
+
+    if (/\britm/.test(lowerValue)) {
+      matches.push(resolveCategoryLabel(categories, ["Ritmo"]));
+    }
+
+    if (/\bmethod\b|\bmetodo\b|\bm[eé]todo\b/.test(lowerValue)) {
+      matches.push(resolveCategoryLabel(categories, ["Método", "Metodo"]));
+    }
+
+    if (sourceKey === "componenteObras") {
+      matches.push(resolveCategoryLabel(categories, ["Canciones/Obras", "Canciones", "Obras"]));
+    }
   });
 
-  if (!matches.length && fallbackCategory) {
-    matches.push(fallbackCategory);
-  }
-
   return normalizeListValues(matches);
+}
+
+function resolveCategoryLabel(categories = [], candidates = []) {
+  const normalizedCandidates = normalizeListValues(candidates);
+  const found = categories.find((category) => {
+    const normalizedCategory = normalizeText(category);
+    return normalizedCandidates.some(
+      (candidate) => normalizedCategory === normalizeText(candidate)
+    );
+  });
+
+  return found || normalizedCandidates[0] || "";
 }
 
 function getDatalistOptions(listId) {
@@ -1180,6 +1266,126 @@ function matchesCatalogOption(rawValue, options = []) {
   if (!candidate) return false;
 
   return options.some((option) => normalizeText(option) === candidate);
+}
+
+function getMultiFieldOptions(key, input) {
+  const rawOptions = input?.dataset?.multiOptions || "";
+  if (rawOptions) {
+    try {
+      const parsed = JSON.parse(rawOptions);
+      if (Array.isArray(parsed)) return parsed.map(toStringSafe).filter(Boolean);
+    } catch (error) {
+      console.warn("No se pudieron leer opciones del campo:", key, error);
+    }
+  }
+
+  return getDatalistOptions(input?.getAttribute("list"));
+}
+
+function renderPickerOptionsForInput(key, input) {
+  const optionsContainer = viewRoot?.querySelector(`[data-picker-options="${key}"]`);
+  if (!optionsContainer || !input) return;
+
+  const query = normalizeText(input.value);
+  const options = getMultiFieldOptions(key, input);
+  const filtered = options
+    .filter((option) => !query || normalizeText(option).includes(query))
+    .slice(0, 80);
+
+  optionsContainer.innerHTML = renderMultiPickerOptions(
+    key,
+    filtered,
+    getMultiValueSelection(key),
+    getPendingPickerValues(key)
+  );
+  togglePickerPanel(key, true);
+}
+
+function togglePickerPanel(key, forceOpen = null) {
+  const panel = viewRoot?.querySelector(`[data-picker-panel="${key}"]`);
+  if (!panel) return;
+
+  const shouldOpen =
+    forceOpen === null ? !panel.classList.contains("is-open") : Boolean(forceOpen);
+  panel.classList.toggle("is-open", shouldOpen);
+}
+
+function setVisiblePickerChecks(key, checked) {
+  viewRoot
+    ?.querySelectorAll(`[data-picker-option="${key}"]`)
+    .forEach((input) => {
+      if (!input.closest(".multi-picker-option")?.classList.contains("is-hidden")) {
+        input.checked = Boolean(checked);
+      }
+    });
+}
+
+function addCheckedPickerSelections(key, student) {
+  const values = [
+    ...(viewRoot?.querySelectorAll(`[data-picker-option="${key}"]:checked`) || []),
+  ].map((input) => input.value);
+
+  addMultiValueSelection(key, values, student);
+  viewRoot
+    ?.querySelectorAll(`[data-picker-option="${key}"]:checked`)
+    .forEach((input) => {
+      input.checked = false;
+    });
+}
+
+function getPendingPickerValues(key) {
+  return [
+    ...(viewRoot?.querySelectorAll(`[data-picker-pending="${key}"].is-pending`) || []),
+  ]
+    .map((item) => toStringSafe(item.getAttribute("data-picker-value")))
+    .filter(Boolean);
+}
+
+function togglePickerPendingValue(key, value) {
+  const option = [
+    ...(viewRoot?.querySelectorAll(`[data-picker-pending="${CSS.escape(key)}"]`) || []),
+  ].find((item) => toStringSafe(item.getAttribute("data-picker-value")) === value);
+  if (!option) return;
+
+  const isPending = option.classList.toggle("is-pending");
+  option.setAttribute("aria-pressed", isPending ? "true" : "false");
+  option
+    .querySelector("[data-picker-action-label]")
+    ?.replaceChildren(document.createTextNode(isPending ? "Seleccionada" : "Elegir"));
+
+  updatePendingPickerButton(key);
+}
+
+function updatePendingPickerButton(key) {
+  const count = getPendingPickerValues(key).length;
+  const button = viewRoot?.querySelector(`[data-picker-add-pending="${key}"]`);
+  if (!button) return;
+  button.disabled = count < 1;
+  button.textContent = count ? `Agregar ${count}` : "Agregar seleccionadas";
+}
+
+function addPendingPickerValues(key, student) {
+  const values = getPendingPickerValues(key);
+  if (!values.length) return;
+
+  const input = viewRoot?.querySelector(`[data-multi-input="${key}"]`);
+  addMultiValueSelection(key, values, student);
+  viewRoot
+    ?.querySelectorAll(`[data-picker-pending="${key}"]`)
+    .forEach((option) => {
+      option.classList.remove("is-pending");
+      option.setAttribute("aria-pressed", "false");
+      option
+        .querySelector("[data-picker-action-label]")
+        ?.replaceChildren(document.createTextNode("Elegir"));
+    });
+  updatePendingPickerButton(key);
+
+  if (input) {
+    input.value = "";
+    renderPickerOptionsForInput(key, input);
+    togglePickerPanel(key, false);
+  }
 }
 
 function removeMultiValueSelection(key, value, student) {
@@ -2069,13 +2275,16 @@ function buildBitacoraPayload(student, draft) {
   const studentRef = getStudentIdentity(student);
   const allStudents = getAllStudentsFromState(getState());
   const selectedStudents = getSelectedStudentsForDraft(draft, student, allStudents);
-  const mode = getAllowedMode(draft.mode);
+  const hasGroupSelection = selectedStudents.length > 1;
+  const mode =
+    getAllowedMode(draft.mode) === CONFIG.modes.group || hasGroupSelection
+      ? CONFIG.modes.group
+      : CONFIG.modes.individual;
   const structured = getStructuredDraftFields(draft, student);
   const selectedTeachers = normalizeListValues([
     ...(Array.isArray(draft.docentes) ? draft.docentes : []),
     structured.docentes,
     structured.docente,
-    firstNonEmpty(student.docente, student.teacher),
   ]);
   const selectedTeacher = selectedTeachers[0] || "";
   const activeProcess =
@@ -2241,16 +2450,35 @@ function updateDraftFromForm(student) {
   const studentRef = getStudentIdentity(student);
   const existingDraft = getDraftForContext(student);
 
-  const nextMode = getAllowedMode(
+  const requestedMode = getAllowedMode(
     viewRoot?.querySelector('input[name="modoBitacora"]:checked')?.value ||
       existingDraft.mode ||
       CONFIG.modes.individual
   );
 
+  const selectedStudentsForRequestedMode = getSelectedStudentsForDraft(
+    {
+      ...existingDraft,
+      mode: requestedMode,
+    },
+    student,
+    getAllStudentsFromState(getState())
+  );
+  const preservedGroupIds = normalizeStudentIds(existingDraft.studentIds || []);
+  const nextMode =
+    requestedMode === CONFIG.modes.group ||
+    selectedStudentsForRequestedMode.length > 1 ||
+    preservedGroupIds.length > 1
+      ? CONFIG.modes.group
+      : CONFIG.modes.individual;
   const selectedStudents = getSelectedStudentsForDraft(
     {
       ...existingDraft,
       mode: nextMode,
+      studentIds:
+        nextMode === CONFIG.modes.group && preservedGroupIds.length > 1
+          ? preservedGroupIds
+          : existingDraft.studentIds,
     },
     student,
     getAllStudentsFromState(getState())
@@ -2317,6 +2545,7 @@ function updateDraftFromForm(student) {
 
   updateDraft(nextDraft);
   currentEditorMode = nextDraft.mode;
+  syncModeInputs();
   return nextDraft;
 }
 
@@ -2394,6 +2623,12 @@ function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual)
       name: baseStudentName,
     },
   ];
+  const suggestedTeacher = firstNonEmpty(
+    activeProcess?.docente,
+    activeProcess?.teacher,
+    student?.docente,
+    student?.teacher
+  );
 
   return {
     mode: normalizedMode,
@@ -2404,8 +2639,8 @@ function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual)
     processKey: activeProcess?.processKey || "",
     fechaClase: getTodayDate(),
     titulo: "",
-    docentes: [],
-    docente: "",
+    docentes: normalizeListValues(suggestedTeacher),
+    docente: suggestedTeacher,
     etiquetas: [],
     contenido: "",
     archivos: [],
@@ -3167,6 +3402,7 @@ function addStudentToGroupDraft(primaryStudent, studentId) {
   });
 
   currentEditorMode = CONFIG.modes.group;
+  syncModeInputs();
 }
 
 function removeStudentFromGroupDraft(primaryStudent, studentId) {
@@ -3197,6 +3433,7 @@ function removeStudentFromGroupDraft(primaryStudent, studentId) {
   });
 
   currentEditorMode = CONFIG.modes.group;
+  syncModeInputs();
 }
 
 function toggleGroupModeBlock(show) {
@@ -3315,6 +3552,12 @@ function getBitacorasFromState(studentOrRef) {
     studentOrRef && typeof studentOrRef === "object"
       ? resolveStudentProcess(studentOrRef, currentEditorProcessKey)
       : null;
+  const studentRef = isPlainObject(studentOrRef)
+    ? getStudentIdentity(studentOrRef)
+    : toStringSafe(studentOrRef);
+  const fallbackId = isPlainObject(studentOrRef)
+    ? getStudentFallbackId(studentOrRef)
+    : "";
 
   const applyProcessFilter = (items = []) => {
     const safeProcessKey = toStringSafe(currentEditorProcessKey);
@@ -3323,6 +3566,10 @@ function getBitacorasFromState(studentOrRef) {
     );
 
     return items.filter((item) => {
+      if (isGroupBitacoraForStudent(item, studentRef, fallbackId)) {
+        return true;
+      }
+
       const itemProcessKey = toStringSafe(
         item?.process?.processKey || item?.processKey
       );
@@ -3347,13 +3594,6 @@ function getBitacorasFromState(studentOrRef) {
       return itemDetails.includes(selectedDetail);
     });
   };
-  const studentRef = isPlainObject(studentOrRef)
-    ? getStudentIdentity(studentOrRef)
-    : toStringSafe(studentOrRef);
-
-  const fallbackId = isPlainObject(studentOrRef)
-    ? getStudentFallbackId(studentOrRef)
-    : "";
 
   const selectedItems = getSelectedStudentBitacoras();
   if (Array.isArray(selectedItems) && selectedItems.length) {
@@ -3381,6 +3621,22 @@ function getBitacorasFromState(studentOrRef) {
   }
 
   return [];
+}
+
+function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") {
+  const studentIds = normalizeStudentIds(item.studentIds || [item.studentId]);
+  const studentRefs = normalizeStudentRefs(item.studentRefs || []);
+  const safeStudentRef = toStringSafe(studentRef);
+  const safeFallbackId = toStringSafe(fallbackId);
+  const belongsToStudent =
+    (safeStudentRef && studentIds.includes(safeStudentRef)) ||
+    (safeFallbackId && studentIds.includes(safeFallbackId));
+  const isGroup =
+    item.mode === CONFIG.modes.group ||
+    studentIds.length > 1 ||
+    studentRefs.length > 1;
+
+  return Boolean(isGroup && belongsToStudent);
 }
 
 function getStudentFromState(state, preferredStudentRef = null) {
@@ -4116,6 +4372,7 @@ function renderBitacoraStructuredSections(content = {}) {
     renderBitacoraListSection("Componente tecnico", content.componenteTecnico),
     renderBitacoraListSection("Componente teorico", content.componenteTeorico),
     renderBitacoraListSection("Componente de obras", content.componenteObras),
+    renderBitacoraListSection("Docentes", normalizeListValues(content.docentes || content.docente)),
   ].filter(Boolean);
 
   if (!sections.length) {
@@ -4300,8 +4557,6 @@ function getDraftTeachers(draft = {}, structured = {}, student = {}) {
     ...(Array.isArray(draft.docentes) ? draft.docentes : []),
     draft.docente,
     structured.docente,
-    student?.docente,
-    student?.teacher,
   ]);
 }
 
@@ -4331,6 +4586,9 @@ function renderMultiValueField({
   selectedValues = [],
   }) {
     const prioritizedOptions = prioritizePickerOptions(key, options);
+    const visibleOptions = prioritizedOptions.slice(0, 80);
+    const isDirectEntry = key === "docentes";
+    const usesNativeDatalist = isDirectEntry;
     return `
       <section class="field field--multi-value">
         <span class="field__label">${escapeHtml(label)}</span>
@@ -4340,17 +4598,73 @@ function renderMultiValueField({
           type="text"
           class="field__input"
             data-multi-input="${escapeHtml(key)}"
-            list="${escapeHtml(listId)}"
+            data-multi-options="${escapeHtml(JSON.stringify(prioritizedOptions))}"
+            ${usesNativeDatalist ? `list="${escapeHtml(listId)}"` : ""}
             placeholder="${escapeHtml(placeholder)}"
+            autocomplete="off"
           />
+          ${
+            isDirectEntry
+              ? `<button type="button" class="btn btn--secondary btn--sm" data-multi-add="${escapeHtml(key)}">Agregar</button>`
+              : `<button type="button" class="btn btn--ghost btn--sm" data-picker-toggle="${escapeHtml(key)}">Opciones</button>`
+          }
         </div>
         <small class="field__hint">${escapeHtml(hint)}</small>
+        ${
+          isDirectEntry
+            ? ""
+            : `
+              <div class="multi-picker-panel" data-picker-panel="${escapeHtml(key)}">
+                <div class="multi-picker-panel__actions">
+                  <button type="button" class="btn btn--primary btn--sm" data-picker-add-pending="${escapeHtml(key)}" disabled>
+                    Agregar seleccionadas
+                  </button>
+                </div>
+                <div class="multi-picker-options multi-picker-options--buttons" data-picker-options="${escapeHtml(key)}">
+                  ${renderMultiPickerOptions(key, visibleOptions, selectedValues)}
+                </div>
+              </div>
+            `
+        }
         <div class="multi-value-list" data-multi-values="${escapeHtml(key)}">
           ${renderMultiValueChips(key, selectedValues)}
       </div>
-      ${renderDatalist(listId, prioritizedOptions)}
+      ${usesNativeDatalist ? renderDatalist(listId, prioritizedOptions) : ""}
     </section>
   `;
+}
+
+function renderMultiPickerOptions(key, options = [], selectedValues = [], pendingValues = []) {
+  const selected = new Set(normalizeListValues(selectedValues).map((value) => normalizeText(value)));
+  const pending = new Set(normalizeListValues(pendingValues).map((value) => normalizeText(value)));
+  const items = normalizeListValues(options);
+
+  if (!items.length) {
+    return `<p class="multi-picker-empty">No hay opciones en el catalogo. Puedes escribir un valor y agregarlo con Enter.</p>`;
+  }
+
+  return items
+    .map((option) => {
+      const isSelected = selected.has(normalizeText(option));
+      const isPending = pending.has(normalizeText(option));
+      return `
+        <button
+          type="button"
+          class="multi-picker-option ${isSelected ? "is-selected" : ""} ${isPending ? "is-pending" : ""}"
+          data-picker-pending="${escapeHtml(key)}"
+          data-picker-option="${escapeHtml(key)}"
+          data-picker-toggle-option="${escapeHtml(key)}"
+          data-picker-value="${escapeHtml(option)}"
+          aria-pressed="${isPending ? "true" : "false"}"
+          title="${escapeHtml(option)}"
+          ${isSelected ? "disabled" : ""}
+        >
+          <span>${escapeHtml(option)}</span>
+          <small data-picker-action-label>${isSelected ? "Agregada" : isPending ? "Seleccionada" : "Elegir"}</small>
+        </button>
+      `;
+    })
+    .join("");
 }
 
 function renderMultiValueChips(key, values = []) {
@@ -4362,7 +4676,7 @@ function renderMultiValueChips(key, values = []) {
   return items
     .map(
       (value) => `
-        <span class="multi-value-chip" data-multi-item="${escapeHtml(value)}">
+        <span class="multi-value-chip" data-multi-item="${escapeHtml(value)}" title="${escapeHtml(value)}">
           <span>${escapeHtml(value)}</span>
           <button
             type="button"
@@ -4559,6 +4873,7 @@ const STRUCTURED_SECTION_LABELS = new Set([
   "COMPONENTE TECNICO",
   "COMPONENTE TEORICO",
   "COMPONENTE DE OBRAS",
+  "REPERTORIO ESCOGIDO",
 ]);
 
 function isStructuredPlaceholderValue(value) {
