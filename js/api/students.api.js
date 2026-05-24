@@ -117,6 +117,47 @@ export async function updateStudentTeacher(studentId, teacherName = "") {
   };
 }
 
+export async function updateStudentRepertoire(studentId, repertoire = []) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) {
+    throw createApiError("Se requiere estudiante para actualizar repertorio.", {
+      code: "MISSING_STUDENT_ID",
+    });
+  }
+
+  const repertorioEscogido = [
+    ...new Set(
+      (Array.isArray(repertoire) ? repertoire : [repertoire])
+        .map((item) => normalizeScalar(item))
+        .filter(Boolean)
+    ),
+  ];
+  const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
+  const snapshot = await getDoc(ref);
+
+  if (!snapshot.exists()) {
+    throw createApiError("No se encontrÃ³ el estudiante en Firebase para actualizar repertorio.", {
+      code: "STUDENT_NOT_FOUND",
+      studentId: safeStudentId,
+    });
+  }
+
+  await updateDoc(ref, {
+    repertorioEscogido,
+    repertoire: repertorioEscogido,
+    updatedAt: serverTimestamp(),
+    updatedBy: "profile_repertoire",
+  });
+
+  return {
+    id: safeStudentId,
+    studentId: safeStudentId,
+    studentKey: safeStudentId,
+    repertorioEscogido,
+    repertoire: repertorioEscogido,
+  };
+}
+
 function buildUrl(baseUrl, queryParams = {}) {
   if (!baseUrl) {
     throw createApiError("La URL base del endpoint no es valida.", {
@@ -789,4 +830,5 @@ export default {
   normalizeStudentStatus,
   isStudentAllowedToLogIn,
   updateStudentTeacher,
+  updateStudentRepertoire,
 };
