@@ -371,6 +371,62 @@
   flex-direction: column;
 }
 
+.profile-repertoire {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.profile-repertoire__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  min-height: 2.65rem;
+  align-items: center;
+}
+
+.profile-repertoire-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  padding: 0.58rem 0.78rem;
+  border: 1px solid rgba(93, 52, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(93, 52, 255, 0.08);
+  color: var(--color-ink-strong);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.profile-repertoire-chip span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-repertoire-chip__remove {
+  flex: 0 0 auto;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.profile-repertoire__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.profile-repertoire__entry .field__input {
+  min-height: 46px;
+}
+
 /* =========================
    FORM FIELDS
    ========================= */

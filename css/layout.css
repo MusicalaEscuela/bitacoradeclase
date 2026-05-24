@@ -887,13 +887,18 @@ body {
 
 .profile-last-bitacora,
 .profile-route-preview,
+.profile-repertoire-card,
 .profile-quick-actions,
 .profile-panel {
   min-width: 0;
 }
 
 .profile-last-bitacora {
-  grid-row: span 2;
+  grid-row: span 3;
+}
+
+.profile-repertoire-card {
+  grid-column: 2;
 }
 
 .profile-panel[hidden] {
@@ -985,6 +990,10 @@ body {
 
   .profile-last-bitacora {
     grid-row: auto;
+  }
+
+  .profile-repertoire-card {
+    grid-column: auto;
   }
 
   .editor-student {
