@@ -67,16 +67,29 @@ export function normalizeStudentStatus(studentOrStatus) {
 }
 
 export function isStudentAllowedToLogIn(studentOrStatus) {
-  const safeStatus = normalizeStudentStatus(studentOrStatus);
+  // Normalizamos también los distintos tipos de guion (- – —) a uno solo,
+  // porque los rangos a veces vienen con guion corto y otras con guion largo.
+  const safeStatus = normalizeStudentStatus(studentOrStatus)
+    .replace(/[‐-―−]/g, "-");
 
   if (!safeStatus) return false;
 
-  return (
+  // Estados "activos": siempre pueden entrar al HUB Estudiantes.
+  if (
     safeStatus === "activo" ||
     safeStatus.startsWith("activo no registro") ||
-    safeStatus.startsWith("activo en pausa") ||
-    safeStatus.startsWith("inactivo en pausa")
-  );
+    safeStatus.startsWith("activo en pausa")
+  ) {
+    return true;
+  }
+
+  // Inactivo en pausa: SOLO la pausa corta (1-3 meses).
+  // La pausa de 3-6 meses (o más larga) NO recibe acceso.
+  if (safeStatus.startsWith("inactivo en pausa")) {
+    return /1\s*-\s*3/.test(safeStatus) || /1\s+a\s+3/.test(safeStatus);
+  }
+
+  return false;
 }
 
 export async function updateStudentTeacher(studentId, teacherName = "") {
