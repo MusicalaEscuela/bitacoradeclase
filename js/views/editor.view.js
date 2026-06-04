@@ -72,6 +72,11 @@ let currentSubscribe = null;
 let currentEditorStudentKey = null;
 let currentEditorMode = CONFIG?.modes?.individual || "individual";
 let currentEditorProcessKey = "";
+// Marca si el usuario ya intervino manualmente el campo Docentes (agrego/quito).
+// Mientras sea false y el campo este vacio, se inyecta el docente sugerido del proceso.
+let docentesTouched = false;
+// A partir de cuantos chips se muestra el buscador de items ya agregados.
+const MULTI_CHIP_SEARCH_THRESHOLD = 6;
 let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
 let draftInputDebounceTimer = null;
@@ -544,7 +549,7 @@ function buildEditorMarkup({
 
             ${renderHistorySearchControl(currentHistorySearchQuery)}
             <div id="bitacoras-history">
-              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery)}
+              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery, { hasActiveProcess: Boolean(toStringSafe(currentEditorProcessKey)), totalForStudent: getRawBitacorasFromState(student).length })}
             </div>
           </section>
         </main>
@@ -662,6 +667,37 @@ function bindEditorEvents(student) {
         return;
       }
 
+      const pickerToggle = event.target.closest("[data-override-picker-toggle]");
+      if (pickerToggle) {
+        event.preventDefault();
+        toggleOverridePickerPanel(pickerToggle.getAttribute("data-override-picker-toggle"));
+        return;
+      }
+
+      const pickerAdd = event.target.closest("[data-override-picker-add]");
+      if (pickerAdd && !pickerAdd.disabled) {
+        event.preventDefault();
+        const inputKey = pickerAdd.getAttribute("data-override-picker-add");
+        const value = pickerAdd.getAttribute("data-override-picker-value");
+        addStudentOverrideValue(inputKey, value, student);
+        // Tras el re-render, reabrir el panel para seguir eligiendo.
+        toggleOverridePickerPanel(inputKey, true);
+        return;
+      }
+
+      const editButton = event.target.closest("[data-override-edit]");
+      if (editButton) {
+        startEditOverrideChip(
+          {
+            studentId: editButton.getAttribute("data-override-student"),
+            key: editButton.getAttribute("data-override-key"),
+            value: editButton.getAttribute("data-override-value"),
+          },
+          student
+        );
+        return;
+      }
+
       const removeButton = event.target.closest("[data-override-remove]");
       if (removeButton) {
         removeStudentOverrideValue(
@@ -709,16 +745,24 @@ function bindEditorEvents(student) {
         return;
       }
 
+      const chipSearch = event.target.closest("[data-override-chip-search]");
+      if (chipSearch) {
+        filterOverrideChips(
+          chipSearch.getAttribute("data-override-chip-search"),
+          chipSearch.value
+        );
+        return;
+      }
+
       const input = event.target.closest("[data-override-input]");
       if (!input) return;
 
-      const options = getDatalistOptions(input.getAttribute("list"));
+      const inputKey = input.getAttribute("data-override-input");
+      renderOverridePickerOptionsForInput(inputKey, input);
+
+      const options = getOverrideFieldOptions(inputKey, input);
       if (matchesCatalogOption(input.value, options)) {
-        addStudentOverrideValue(
-          input.getAttribute("data-override-input"),
-          input.value,
-          student
-        );
+        addStudentOverrideValue(inputKey, input.value, student);
       }
     });
 
@@ -787,6 +831,15 @@ function bindEditorEvents(student) {
 
   viewRoot.querySelectorAll("[data-multi-values]").forEach((container) => {
     container.addEventListener("click", (event) => {
+      const editButton = event.target.closest("[data-multi-edit]");
+      if (editButton) {
+        const key = editButton.getAttribute("data-multi-key");
+        const value = editButton.getAttribute("data-multi-edit");
+        if (!key || value === null) return;
+        startEditMultiValueChip(key, value, student);
+        return;
+      }
+
       const button = event.target.closest("[data-multi-remove]");
       if (!button) return;
 
@@ -795,6 +848,14 @@ function bindEditorEvents(student) {
       if (!key || !value) return;
 
       removeMultiValueSelection(key, value, student);
+    });
+  });
+
+  viewRoot.querySelectorAll("[data-chip-search]").forEach((searchInput) => {
+    searchInput.addEventListener("input", () => {
+      const key = searchInput.getAttribute("data-chip-search");
+      if (!key) return;
+      filterMultiValueChips(key, searchInput.value);
     });
   });
 
@@ -1022,12 +1083,26 @@ function renderHistoryBlock(student, state = getState(), config = CONFIG) {
   const historyContainer = viewRoot?.querySelector("#bitacoras-history");
   if (!historyContainer) return;
 
+  const hasActiveProcess = Boolean(toStringSafe(currentEditorProcessKey));
+  const totalForStudent = getRawBitacorasFromState(student).length;
+
+  // Mantener el titulo del historial sincronizado con el proceso activo.
+  const historyTitle = viewRoot?.querySelector("#bitacoras-history-title");
+  if (historyTitle) {
+    const activeProcess = resolveStudentProcess(student, currentEditorProcessKey);
+    const activeProcessLabel = toStringSafe(
+      activeProcess?.label || activeProcess?.detalle || activeProcess?.arte || "Proceso"
+    );
+    historyTitle.textContent = `Bitacoras registradas (${activeProcessLabel})`;
+  }
+
   historyContainer.innerHTML = renderBitacorasHistory(
     getBitacorasFromState(student),
     Boolean(state?.bitacoras?.loading),
     config,
     true,
-    currentHistorySearchQuery
+    currentHistorySearchQuery,
+    { hasActiveProcess, totalForStudent }
   );
 }
 
@@ -1167,12 +1242,52 @@ function renderMultiValueSelection(key, values = []) {
   if (!container) return;
 
   container.innerHTML = renderMultiValueChips(key, values);
+
+  // Mostrar el buscador de chips solo cuando hay varios, y re-aplicar el filtro.
+  const safeValues = normalizeListValues(values);
+  const searchWrap = viewRoot?.querySelector(`[data-chip-search-wrap="${key}"]`);
+  if (searchWrap) {
+    searchWrap.classList.toggle(
+      "is-hidden",
+      safeValues.length <= MULTI_CHIP_SEARCH_THRESHOLD
+    );
+  }
+  const searchInput = viewRoot?.querySelector(`[data-chip-search="${key}"]`);
+  if (searchInput && searchInput.value) {
+    filterMultiValueChips(key, searchInput.value);
+  }
+}
+
+// Filtra (oculta) los chips ya agregados que no coincidan con la busqueda.
+function filterMultiValueChips(key, query) {
+  const needle = normalizeText(query);
+  viewRoot
+    ?.querySelectorAll(`[data-multi-values="${key}"] [data-multi-item]`)
+    .forEach((chip) => {
+      const value = normalizeText(chip.getAttribute("data-multi-item"));
+      chip.classList.toggle("is-hidden", Boolean(needle) && !value.includes(needle));
+    });
+}
+
+// Editar un chip: lo quita y coloca su valor en el input para reescribirlo.
+function startEditMultiValueChip(key, value, student) {
+  const input = viewRoot?.querySelector(`[data-multi-input="${key}"]`);
+  removeMultiValueSelection(key, value, student);
+  if (!input) return;
+  input.value = value;
+  input.focus();
+  // Para campos con picker, refrescar opciones segun el valor cargado.
+  if (key !== "docentes") {
+    renderPickerOptionsForInput(key, input);
+  }
 }
 
 function addMultiValueSelection(key, rawValue, student) {
   const input = viewRoot?.querySelector(`[data-multi-input="${key}"]`);
   const valuesToAdd = normalizeListValues(rawValue);
   if (!valuesToAdd.length) return;
+
+  if (key === "docentes") docentesTouched = true;
 
   const nextValues = normalizeListValues([
     ...getMultiValueSelection(key),
@@ -1389,6 +1504,7 @@ function addPendingPickerValues(key, student) {
 }
 
 function removeMultiValueSelection(key, value, student) {
+  if (key === "docentes") docentesTouched = true;
   const nextValues = getMultiValueSelection(key).filter((item) => item !== value);
   renderMultiValueSelection(key, nextValues);
   handleDraftInput(student);
@@ -1443,6 +1559,8 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
   currentEditorMode = nextMode;
   currentEditorProcessKey = normalized.processKey || normalized.process?.processKey || "";
   currentEditingBitacoraId = safeBitacoraId;
+  // Edicion de bitacora guardada: respetar sus docentes, no inyectar sugerido.
+  docentesTouched = true;
   clearAppError();
   refillFormFromDraft(student);
   renderGroupSelectionBlocks(student);
@@ -2199,7 +2317,7 @@ function renderPrintableOverridesSection(item = {}) {
     .filter(Boolean);
 
   if (!blocks.length) return "";
-  return renderPrintableSection("Ajustes individuales", blocks.join("\n"));
+  return renderPrintableSection("Personalizacion por estudiante", blocks.join("\n"));
 }
 
 async function safeLoadBitacoras(studentRef) {
@@ -2549,6 +2667,19 @@ function updateDraftFromForm(student) {
   return nextDraft;
 }
 
+/**
+ * Devuelve la lista de docentes del draft, inyectando el docente sugerido del
+ * proceso (defaultDraft) solo si el campo esta vacio y el usuario no lo ha
+ * intervenido manualmente todavia (docentesTouched). Asi el sugerido aparece al
+ * crear/reiniciar la bitacora pero no reaparece si el usuario lo quito.
+ */
+function resolveDraftTeachersWithSuggestion(draft = {}, defaultDraft = {}) {
+  const current = normalizeListValues(draft.docentes || draft.docente);
+  if (current.length) return current;
+  if (docentesTouched) return [];
+  return normalizeListValues(defaultDraft.docentes || defaultDraft.docente);
+}
+
 function getDraftForContext(student) {
   const draft = getCurrentDraft() || {};
   const studentRef = isPlainObject(student)
@@ -2601,8 +2732,11 @@ function getDraftForContext(student) {
           ],
     fechaClase: normalizeLocalDateInput(draft.fechaClase) || getTodayDate(),
     titulo: draft.titulo || "",
-    docentes: normalizeListValues(draft.docentes || draft.docente),
-    docente: firstNonEmpty(draft.docente, ...(Array.isArray(draft.docentes) ? draft.docentes : [])),
+    docentes: resolveDraftTeachersWithSuggestion(draft, defaultDraft),
+    docente: firstNonEmpty(
+      ...resolveDraftTeachersWithSuggestion(draft, defaultDraft),
+      draft.docente
+    ),
     etiquetas: Array.isArray(draft.etiquetas) ? draft.etiquetas : [],
     contenido: draft.contenido || "",
     archivos: normalizeFiles(draft.archivos || []),
@@ -2623,11 +2757,20 @@ function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual)
       name: baseStudentName,
     },
   ];
+  // En grupal, si no hay docente en el proceso/estudiante base, usar el del usuario en sesion.
+  const sessionUser = getState()?.auth?.user || null;
+  const sessionTeacher =
+    normalizedMode === CONFIG.modes.group
+      ? firstNonEmpty(sessionUser?.name, sessionUser?.displayName)
+      : "";
   const suggestedTeacher = firstNonEmpty(
     activeProcess?.docente,
     activeProcess?.teacher,
     student?.docente,
-    student?.teacher
+    student?.teacher,
+    student?.profesor,
+    student?.docenteNombre,
+    sessionTeacher
   );
 
   return {
@@ -2680,6 +2823,8 @@ function resetDraftForContext({ mode = CONFIG.modes.individual, student } = {}) 
   clearUploads();
   currentEditingBitacoraId = "";
   currentEditorMode = getAllowedMode(mode);
+  // Reinicio del formulario / cambio de proceso: vuelve a permitir el docente sugerido.
+  docentesTouched = false;
 }
 
 function renderFilesPreviewBlock(student) {
@@ -2831,8 +2976,11 @@ function renderBitacorasHistory(
   isLoading = false,
   config,
   isAuthenticated = true,
-  searchQuery = ""
+  searchQuery = "",
+  meta = {}
 ) {
+  const hasActiveProcess = Boolean(meta?.hasActiveProcess);
+  const totalForStudent = Number(meta?.totalForStudent || 0);
   if (!isAuthenticated) {
     return `
       <div class="empty-state">
@@ -2855,6 +3003,29 @@ function renderBitacorasHistory(
   }
 
   if (!Array.isArray(items) || !items.length) {
+    // Mensajes vacios mas claros segun el contexto del proceso activo.
+    if (hasActiveProcess && totalForStudent > 0) {
+      return `
+        <div class="empty-state">
+          <p class="empty-state__title">Sin bitacoras en este proceso</p>
+          <p class="empty-state__text">
+            Hay bitacoras del estudiante, pero ninguna corresponde al proceso seleccionado.
+          </p>
+        </div>
+      `;
+    }
+
+    if (hasActiveProcess) {
+      return `
+        <div class="empty-state">
+          <p class="empty-state__title">Sin bitacoras en este proceso</p>
+          <p class="empty-state__text">
+            No hay bitacoras registradas para este proceso.
+          </p>
+        </div>
+      `;
+    }
+
     return `
       <div class="empty-state">
         <p class="empty-state__title">Sin historial</p>
@@ -3028,7 +3199,7 @@ function renderBitacoraCard(item, index = 0, total = 0) {
         Object.keys(studentOverrides).length
           ? `
             <div class="bitacora-card__overrides">
-              <p class="bitacora-card__files-title">Ajustes individuales</p>
+              <p class="bitacora-card__files-title">Personalizacion por estudiante</p>
               <div class="bitacora-card__override-list">
                 ${renderBitacoraOverrideCards(item, studentOverrides)}
               </div>
@@ -3179,6 +3350,72 @@ function toggleStudentOverride(primaryStudent, studentId, enabled) {
 
   renderStudentOverridesBlock(primaryStudent, { force: true });
   renderDraftMetaBlock(primaryStudent);
+}
+
+function getOverrideFieldOptions(inputKey, input) {
+  const rawOptions = input?.dataset?.overrideOptions || "";
+  if (rawOptions) {
+    try {
+      const parsed = JSON.parse(rawOptions);
+      if (Array.isArray(parsed)) return parsed.map(toStringSafe).filter(Boolean);
+    } catch (error) {
+      console.warn("No se pudieron leer opciones del ajuste:", inputKey, error);
+    }
+  }
+  return getDatalistOptions(input?.getAttribute("list"));
+}
+
+function toggleOverridePickerPanel(inputKey, forceOpen = null) {
+  const panel = viewRoot?.querySelector(`[data-override-picker-panel="${CSS.escape(inputKey)}"]`);
+  if (!panel) return;
+  const shouldOpen =
+    forceOpen === null ? !panel.classList.contains("is-open") : Boolean(forceOpen);
+  panel.classList.toggle("is-open", shouldOpen);
+}
+
+function renderOverridePickerOptionsForInput(inputKey, input) {
+  const optionsContainer = viewRoot?.querySelector(
+    `[data-override-picker-options="${CSS.escape(inputKey)}"]`
+  );
+  if (!optionsContainer || !input) return;
+
+  const query = normalizeText(input.value);
+  const options = getOverrideFieldOptions(inputKey, input);
+  const filtered = options
+    .filter((option) => !query || normalizeText(option).includes(query))
+    .slice(0, 80);
+
+  optionsContainer.innerHTML = renderOverridePickerOptions(
+    inputKey,
+    filtered,
+    getOverrideMultiValueSelection(...String(inputKey).split(":"))
+  );
+  toggleOverridePickerPanel(inputKey, true);
+}
+
+function filterOverrideChips(inputKey, query) {
+  const needle = normalizeText(query);
+  viewRoot
+    ?.querySelectorAll(`[data-override-values="${CSS.escape(inputKey)}"] [data-override-item]`)
+    .forEach((chip) => {
+      const value = normalizeText(chip.getAttribute("data-override-item"));
+      chip.classList.toggle("is-hidden", Boolean(needle) && !value.includes(needle));
+    });
+}
+
+function startEditOverrideChip(descriptor, student) {
+  const studentId = toStringSafe(descriptor?.studentId);
+  const key = toStringSafe(descriptor?.key);
+  const value = toStringSafe(descriptor?.value);
+  if (!studentId || !key || !value) return;
+
+  // Quitar el chip (re-renderiza el bloque) y cargar el valor en el input fresco.
+  removeStudentOverrideValue({ studentId, key, value }, student);
+  const inputKey = `${studentId}:${key}`;
+  const input = viewRoot?.querySelector(`[data-override-input="${CSS.escape(inputKey)}"]`);
+  if (!input) return;
+  input.value = value;
+  input.focus();
 }
 
 function addStudentOverrideValue(descriptor, rawValue, student) {
@@ -3547,11 +3784,56 @@ function mapSelectionFromRef(ref) {
   };
 }
 
-function getBitacorasFromState(studentOrRef) {
-  const selectedProcess =
-    studentOrRef && typeof studentOrRef === "object"
-      ? resolveStudentProcess(studentOrRef, currentEditorProcessKey)
-      : null;
+/**
+ * Decide si una bitacora corresponde al proceso activo seleccionado.
+ * A diferencia de la version anterior, las bitacoras grupales NO se saltan
+ * el filtro: tambien deben coincidir con el proceso activo (por processKey o,
+ * en bitacoras antiguas sin processKey, por datos del proceso normalizados).
+ */
+function bitacoraMatchesActiveProcess(item, selectedProcess) {
+  const safeProcessKey = toStringSafe(currentEditorProcessKey);
+  const selectedDetail = normalizeText(
+    selectedProcess?.detalle || selectedProcess?.label || ""
+  );
+
+  // Sin proceso activo claro: no se filtra (se muestra todo el historial).
+  if (!safeProcessKey && !selectedDetail) return true;
+
+  const itemProcessKey = toStringSafe(
+    item?.process?.processKey || item?.processKey
+  );
+
+  // Si hay processKey en ambos lados, la comparacion es estricta.
+  if (safeProcessKey && itemProcessKey) {
+    return itemProcessKey === safeProcessKey;
+  }
+
+  // Bitacora antigua sin processKey: comparar por datos del proceso.
+  if (!selectedDetail) {
+    // Hay proceso activo con key, pero el item no tiene key ni con que comparar.
+    return false;
+  }
+
+  const itemDetails = [
+    item?.process?.processLabel,
+    item?.process?.label,
+    item?.process?.programa,
+    item?.process?.detalle,
+    item?.process?.area,
+  ]
+    .flatMap((value) => String(value || "").split(/,|;|\n/g))
+    .map((value) => normalizeText(value))
+    .filter(Boolean);
+
+  return itemDetails.includes(selectedDetail);
+}
+
+/**
+ * Obtiene las bitacoras del estudiante SIN aplicar el filtro de proceso activo.
+ * Se usa para saber cuantas bitacoras totales tiene el estudiante y poder
+ * mostrar mensajes vacios mas claros.
+ */
+function getRawBitacorasFromState(studentOrRef) {
   const studentRef = isPlainObject(studentOrRef)
     ? getStudentIdentity(studentOrRef)
     : toStringSafe(studentOrRef);
@@ -3559,47 +3841,9 @@ function getBitacorasFromState(studentOrRef) {
     ? getStudentFallbackId(studentOrRef)
     : "";
 
-  const applyProcessFilter = (items = []) => {
-    const safeProcessKey = toStringSafe(currentEditorProcessKey);
-    const selectedDetail = normalizeText(
-      selectedProcess?.detalle || selectedProcess?.label || ""
-    );
-
-    return items.filter((item) => {
-      if (isGroupBitacoraForStudent(item, studentRef, fallbackId)) {
-        return true;
-      }
-
-      const itemProcessKey = toStringSafe(
-        item?.process?.processKey || item?.processKey
-      );
-
-      if (safeProcessKey && itemProcessKey) {
-        return itemProcessKey === safeProcessKey;
-      }
-
-      if (!selectedDetail) return true;
-
-      const itemDetails = [
-        item?.process?.processLabel,
-        item?.process?.label,
-        item?.process?.programa,
-        item?.process?.detalle,
-        item?.process?.area,
-      ]
-        .flatMap((value) => String(value || "").split(/,|;|\n/g))
-        .map((value) => normalizeText(value))
-        .filter(Boolean);
-
-      return itemDetails.includes(selectedDetail);
-    });
-  };
-
   const selectedItems = getSelectedStudentBitacoras();
   if (Array.isArray(selectedItems) && selectedItems.length) {
-    return sortBitacorasByDate(
-      applyProcessFilter(selectedItems.map(normalizeBitacora).filter(Boolean))
-    );
+    return sortBitacorasByDate(selectedItems.map(normalizeBitacora).filter(Boolean));
   }
 
   const state = getState();
@@ -3614,13 +3858,23 @@ function getBitacorasFromState(studentOrRef) {
 
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) {
-      return sortBitacorasByDate(
-        applyProcessFilter(candidate.map(normalizeBitacora).filter(Boolean))
-      );
+      return sortBitacorasByDate(candidate.map(normalizeBitacora).filter(Boolean));
     }
   }
 
   return [];
+}
+
+function getBitacorasFromState(studentOrRef) {
+  const selectedProcess =
+    studentOrRef && typeof studentOrRef === "object"
+      ? resolveStudentProcess(studentOrRef, currentEditorProcessKey)
+      : null;
+
+  const rawItems = getRawBitacorasFromState(studentOrRef);
+  return rawItems.filter((item) =>
+    bitacoraMatchesActiveProcess(item, selectedProcess)
+  );
 }
 
 function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") {
@@ -4301,7 +4555,7 @@ function buildMusicalaEditorMarkup({
             <header class="editor-history__header">
               <div>
                 <p class="panel-header__eyebrow">Historial</p>
-                <h2 class="panel-header__title">Bitacoras registradas (${escapeHtml(activeProcessLabel)})</h2>
+                <h2 class="panel-header__title" id="bitacoras-history-title">Bitacoras registradas (${escapeHtml(activeProcessLabel)})</h2>
               </div>
               <div class="editor-history__actions">
                 <button type="button" class="btn btn--ghost btn--sm" id="bitacora-print-btn">
@@ -4314,7 +4568,7 @@ function buildMusicalaEditorMarkup({
             </header>
             ${renderHistorySearchControl(currentHistorySearchQuery)}
             <div id="bitacoras-history">
-              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery)}
+              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery, { hasActiveProcess: Boolean(toStringSafe(currentEditorProcessKey)), totalForStudent: getRawBitacorasFromState(student).length })}
             </div>
           </section>
         </main>
@@ -4626,6 +4880,15 @@ function renderMultiValueField({
               </div>
             `
         }
+        <div class="multi-value-search ${selectedValues.length > MULTI_CHIP_SEARCH_THRESHOLD ? "" : "is-hidden"}" data-chip-search-wrap="${escapeHtml(key)}">
+          <input
+            type="text"
+            class="field__input field__input--sm"
+            data-chip-search="${escapeHtml(key)}"
+            placeholder="Filtrar agregados..."
+            autocomplete="off"
+          />
+        </div>
         <div class="multi-value-list" data-multi-values="${escapeHtml(key)}">
           ${renderMultiValueChips(key, selectedValues)}
       </div>
@@ -4677,7 +4940,17 @@ function renderMultiValueChips(key, values = []) {
     .map(
       (value) => `
         <span class="multi-value-chip" data-multi-item="${escapeHtml(value)}" title="${escapeHtml(value)}">
-          <span>${escapeHtml(value)}</span>
+          <span class="multi-value-chip__text">${escapeHtml(value)}</span>
+          <button
+            type="button"
+            class="multi-value-chip__edit"
+            data-multi-key="${escapeHtml(key)}"
+            data-multi-edit="${escapeHtml(value)}"
+            aria-label="Editar ${escapeHtml(value)}"
+            title="Editar"
+          >
+            Editar
+          </button>
           <button
             type="button"
             class="multi-value-chip__remove"
@@ -4701,7 +4974,7 @@ function renderStudentOverridesEditor(
   if (!selectedStudents.length) {
     return `
       <div class="empty-state empty-state--files">
-        <p class="empty-state__text">Selecciona estudiantes para habilitar ajustes individuales.</p>
+        <p class="empty-state__text">Selecciona estudiantes para personalizar la bitacora por estudiante.</p>
       </div>
     `;
   }
@@ -4709,7 +4982,7 @@ function renderStudentOverridesEditor(
   if (selectedStudents.length < 2) {
     return `
       <div class="empty-state empty-state--files">
-        <p class="empty-state__text">Agrega al menos un estudiante mas al grupo para activar ajustes individuales.</p>
+        <p class="empty-state__text">Agrega al menos un estudiante mas al grupo para personalizar la bitacora por estudiante.</p>
       </div>
     `;
   }
@@ -4718,10 +4991,10 @@ function renderStudentOverridesEditor(
     <div class="student-overrides__header">
       <div>
         <p class="panel-header__eyebrow">Personalizaciones</p>
-        <h3 class="panel-header__title">Ajustes por estudiante</h3>
+        <h3 class="panel-header__title">Personalizar bitacora por estudiante</h3>
       </div>
       <p class="section-text">
-        La bitacora general se aplica a todos. Activa ajustes solo para quien necesite ejercicios, observaciones o tareas diferentes.
+        La bitacora general se aplica a todos. Personalizala solo para quien necesite ejercicios, observaciones o tareas diferentes.
       </p>
     </div>
     <div class="student-overrides__list">
@@ -4759,10 +5032,13 @@ function renderStudentOverrideCard(student, override, catalogOptions = {}) {
           class="student-override-card__switch"
           data-override-enabled="${escapeHtml(studentId)}"
           aria-pressed="${selectedOverride.enabled ? "true" : "false"}"
-          aria-label="${selectedOverride.enabled ? "Desactivar ajuste individual" : "Activar ajuste individual"}"
+          aria-label="${selectedOverride.enabled ? "Desactivar personalizacion de este estudiante" : "Activar personalizacion de este estudiante"}"
         >
-          <span class="student-override-card__switch-dot" aria-hidden="true"></span>
-          <span>${selectedOverride.enabled ? "Con ajuste" : "Hereda general"}</span>
+          <span class="student-override-card__switch-label">Personalizar bitacora</span>
+          <span class="student-override-card__switch-track" aria-hidden="true">
+            <span class="student-override-card__switch-dot"></span>
+          </span>
+          <span class="student-override-card__switch-state">${selectedOverride.enabled ? "Activada" : "Desactivada"}</span>
         </button>
       </div>
       <div class="student-override-card__body ${selectedOverride.enabled ? "" : "is-hidden"}">
@@ -4799,6 +5075,9 @@ function renderStudentOverrideField(
 ) {
   const inputKey = `${studentId}:${key}`;
   const listId = `override-${studentId}-${key}-list`;
+  const selectedValues = normalizeListValues(values);
+  const prioritizedOptions = prioritizePickerOptions(key, options);
+  const visibleOptions = prioritizedOptions.slice(0, 80);
 
     return `
       <section class="field field--multi-value field--override">
@@ -4808,16 +5087,63 @@ function renderStudentOverrideField(
           type="text"
           class="field__input"
             data-override-input="${escapeHtml(inputKey)}"
+            data-override-options="${escapeHtml(JSON.stringify(prioritizedOptions))}"
             list="${escapeHtml(listId)}"
             placeholder="${escapeHtml(placeholder)}"
+            autocomplete="off"
+          />
+          <button type="button" class="btn btn--ghost btn--sm" data-override-picker-toggle="${escapeHtml(inputKey)}">Opciones</button>
+        </div>
+        <div class="multi-picker-panel" data-override-picker-panel="${escapeHtml(inputKey)}">
+          <div class="multi-picker-options multi-picker-options--buttons" data-override-picker-options="${escapeHtml(inputKey)}">
+            ${renderOverridePickerOptions(inputKey, visibleOptions, selectedValues)}
+          </div>
+        </div>
+        <div class="multi-value-search ${selectedValues.length > MULTI_CHIP_SEARCH_THRESHOLD ? "" : "is-hidden"}" data-override-chip-search-wrap="${escapeHtml(inputKey)}">
+          <input
+            type="text"
+            class="field__input field__input--sm"
+            data-override-chip-search="${escapeHtml(inputKey)}"
+            placeholder="Filtrar agregados..."
+            autocomplete="off"
           />
         </div>
         <div class="multi-value-list" data-override-values="${escapeHtml(inputKey)}">
-          ${renderStudentOverrideChips(studentId, key, values)}
+          ${renderStudentOverrideChips(studentId, key, selectedValues)}
         </div>
       ${renderDatalist(listId, options)}
     </section>
   `;
+}
+
+function renderOverridePickerOptions(inputKey, options = [], selectedValues = []) {
+  const selected = new Set(
+    normalizeListValues(selectedValues).map((value) => normalizeText(value))
+  );
+  const items = normalizeListValues(options);
+
+  if (!items.length) {
+    return `<p class="multi-picker-empty">No hay opciones en el catalogo. Puedes escribir un valor y agregarlo con Enter.</p>`;
+  }
+
+  return items
+    .map((option) => {
+      const isSelected = selected.has(normalizeText(option));
+      return `
+        <button
+          type="button"
+          class="multi-picker-option ${isSelected ? "is-selected" : ""}"
+          data-override-picker-add="${escapeHtml(inputKey)}"
+          data-override-picker-value="${escapeHtml(option)}"
+          title="${escapeHtml(option)}"
+          ${isSelected ? "disabled" : ""}
+        >
+          <span>${escapeHtml(option)}</span>
+          <small>${isSelected ? "Agregada" : "Elegir"}</small>
+        </button>
+      `;
+    })
+    .join("");
 }
 
 function renderStudentOverrideChips(studentId, key, values = []) {
@@ -4829,8 +5155,20 @@ function renderStudentOverrideChips(studentId, key, values = []) {
   return items
     .map(
       (value) => `
-        <span class="multi-value-chip" data-override-item="${escapeHtml(value)}">
-          <span>${escapeHtml(value)}</span>
+        <span class="multi-value-chip" data-override-item="${escapeHtml(value)}" title="${escapeHtml(value)}">
+          <span class="multi-value-chip__text">${escapeHtml(value)}</span>
+          <button
+            type="button"
+            class="multi-value-chip__edit"
+            data-override-edit="true"
+            data-override-student="${escapeHtml(studentId)}"
+            data-override-key="${escapeHtml(key)}"
+            data-override-value="${escapeHtml(value)}"
+            aria-label="Editar ${escapeHtml(value)}"
+            title="Editar"
+          >
+            Editar
+          </button>
           <button
             type="button"
             class="multi-value-chip__remove"

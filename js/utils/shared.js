@@ -386,6 +386,7 @@ export function normalizeStudentProcesses(student = {}) {
         arte: fallbackArte,
         detalle: fallbackDetalle,
         label: fallbackLabel,
+        docente: firstNonEmpty(student?.docente, student?.teacher, student?.profesor),
       },
     ];
   }
@@ -408,6 +409,12 @@ export function normalizeStudentProcesses(student = {}) {
         arte,
         detalle,
         label,
+        docente: firstNonEmpty(
+          process.docente,
+          process.teacher,
+          process.profesor,
+          process.docenteNombre
+        ),
       };
     })
     .filter(Boolean);

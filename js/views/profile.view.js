@@ -32,6 +32,9 @@ import {
   getStudentProfile,
   updateStudentTeacher,
   updateStudentRepertoire,
+  updateStudentProfileFields,
+  getStudentPrivateNotes,
+  saveStudentPrivateNotes,
 } from "../api/students.api.js";
 import {
   getCatalogs,
@@ -82,6 +85,8 @@ let currentProfileHistorySearchQuery = "";
 let historyExpansionState = new Map();
 let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
+// Estado local de observaciones internas privadas (cargadas aparte por seguridad).
+let internalNotesState = { studentId: "", text: "", loaded: false, loading: false };
 
 const ROUTE_COMPONENTS = Object.freeze([
   { id: "corporal", label: "Componente corporal" },
@@ -903,6 +908,9 @@ function buildProfileMarkup(student, state, config) {
             <dl class="profile-grid" id="profile-grid">
               ${renderProfileGrid(student)}
             </dl>
+            <section class="internal-notes" id="profile-internal-notes" aria-label="Observaciones internas">
+              ${renderInternalNotesBlock(student)}
+            </section>
           </article>
 
           <article class="card profile-panel" data-profile-panel="bitacoras" hidden>
@@ -959,6 +967,17 @@ function bindProfileEvents(student) {
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const processSelect = viewRoot.querySelector("#profile-process-select");
   const gridContainer = viewRoot.querySelector("#profile-grid");
+  const internalNotesContainer = viewRoot.querySelector("#profile-internal-notes");
+
+  if (internalNotesContainer) {
+    internalNotesContainer.addEventListener("click", async (event) => {
+      if (event.target.closest("[data-internal-notes-save]")) {
+        await saveInternalNotes(student);
+      }
+    });
+    // Carga diferida de las observaciones internas privadas.
+    loadInternalNotes(student);
+  }
 
   if (backBtn) {
     backBtn.addEventListener("click", () => {
@@ -988,9 +1007,22 @@ function bindProfileEvents(student) {
 
   if (gridContainer) {
     gridContainer.addEventListener("click", async (event) => {
+      const saveFieldButton = event.target.closest("[data-profile-save-field]");
+      if (saveFieldButton) {
+        await saveProfileField(student, saveFieldButton.getAttribute("data-profile-save-field"));
+        return;
+      }
+
       const saveButton = event.target.closest("[data-profile-save-teacher]");
       if (!saveButton) return;
       await saveProfileTeacher(student);
+    });
+
+    gridContainer.addEventListener("keydown", async (event) => {
+      const input = event.target.closest("[data-profile-field-input]");
+      if (!input || event.key !== "Enter") return;
+      event.preventDefault();
+      await saveProfileField(student, input.getAttribute("data-profile-field-input"));
     });
 
     gridContainer.addEventListener("change", async (event) => {
@@ -1283,13 +1315,194 @@ function renderProfileGrid(student) {
     ${renderProfileItem("Edad", getReadableValue(student.edad || student.age))}
     ${renderProfileItem("Procesos", getReadableValue(getStudentProcessesSummary(student), "Sin procesos registrados"))}
     ${renderProfileItem("Área / instrumento", getReadableValue(student.area || student.instrumento || student.programa))}
-    ${renderProfileItem("Modalidad", getReadableValue(student.modalidad))}
+    ${renderModalidadProfileItem(student)}
     ${renderTeacherProfileItem(student)}
     ${renderProfileItem("Acudiente", getReadableValue(student.acudiente || student.responsable))}
     ${shouldShowAddress ? renderProfileItem("Dirección", getReadableValue(student.direccion || student.address)) : ""}
-    ${renderProfileItem("Intereses", getReadableValue(student.interesesMusicales || student.intereses))}
-    ${renderProfileItem("Observaciones", getReadableValue(student.observaciones || student.notes, "Sin observaciones"))}
+    ${renderInteresesProfileItem(student)}
   `;
+}
+
+const KNOWN_MODALITIES = ["Presencial", "Virtual", "Hogar", "Domicilio", "Híbrida"];
+
+function canEditProfileFields() {
+  const access = resolveUserAccess(getState()?.auth?.user);
+  return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
+}
+
+function renderModalidadProfileItem(student = {}) {
+  const current = getReadableValue(student.modalidad, "");
+  if (!canEditProfileFields()) {
+    return renderProfileItem("Modalidad", getReadableValue(student.modalidad, "Sin modalidad"));
+  }
+
+  const datalistId = "profile-modalidad-options";
+  return `
+    <div class="profile-grid__item profile-grid__item--editable">
+      <dt class="profile-grid__label">Modalidad</dt>
+      <dd class="profile-grid__value">
+        <div class="profile-inline-edit">
+          <input
+            type="text"
+            class="profile-inline-edit__input"
+            data-profile-field-input="modalidad"
+            list="${datalistId}"
+            value="${escapeHtml(toStringSafe(student.modalidad))}"
+            placeholder="Sin modalidad"
+          />
+          <datalist id="${datalistId}">
+            ${KNOWN_MODALITIES.map((m) => `<option value="${escapeHtml(m)}"></option>`).join("")}
+          </datalist>
+          <button type="button" class="btn btn--ghost btn--sm" data-profile-save-field="modalidad">Guardar</button>
+        </div>
+        <div class="profile-inline-message" data-profile-field-message="modalidad" role="status" aria-live="polite"></div>
+      </dd>
+    </div>
+  `;
+}
+
+function renderInteresesProfileItem(student = {}) {
+  if (!canEditProfileFields()) {
+    return renderProfileItem(
+      "Intereses",
+      getReadableValue(student.interesesMusicales || student.intereses, "Sin intereses registrados")
+    );
+  }
+
+  return `
+    <div class="profile-grid__item profile-grid__item--editable">
+      <dt class="profile-grid__label">Intereses musicales</dt>
+      <dd class="profile-grid__value">
+        <div class="profile-inline-edit">
+          <input
+            type="text"
+            class="profile-inline-edit__input"
+            data-profile-field-input="interesesMusicales"
+            value="${escapeHtml(toStringSafe(student.interesesMusicales || student.intereses))}"
+            placeholder="Géneros, artistas, metas musicales..."
+          />
+          <button type="button" class="btn btn--ghost btn--sm" data-profile-save-field="interesesMusicales">Guardar</button>
+        </div>
+        <div class="profile-inline-message" data-profile-field-message="interesesMusicales" role="status" aria-live="polite"></div>
+      </dd>
+    </div>
+  `;
+}
+
+function renderInternalNotesBlock(student = {}) {
+  if (!canEditProfileFields()) return "";
+
+  const studentId = getStudentIdentity(student);
+  const isCurrent = internalNotesState.loaded && internalNotesState.studentId === studentId;
+  const text = isCurrent ? internalNotesState.text : "";
+  const legacy = toStringSafe(student.observaciones || student.notes);
+  const showLegacy = Boolean(legacy) && normalizeText(legacy) !== normalizeText(text);
+
+  return `
+    <header class="internal-notes__header">
+      <div>
+        <p class="panel-header__eyebrow">Privado</p>
+        <h3 class="internal-notes__title">Observaciones internas</h3>
+      </div>
+      <span class="internal-notes__badge">Solo visible para docentes y administración</span>
+    </header>
+    ${
+      internalNotesState.loading && !isCurrent
+        ? `<p class="internal-notes__loading">Cargando observaciones...</p>`
+        : `
+          <textarea
+            class="field__textarea internal-notes__textarea"
+            data-internal-notes-input
+            rows="5"
+            placeholder="Notas internas del equipo (no visibles para estudiantes ni acudientes)..."
+          >${escapeHtml(text)}</textarea>
+          <div class="internal-notes__actions">
+            <button type="button" class="btn btn--secondary btn--sm" data-internal-notes-save>Guardar observaciones</button>
+            <span class="profile-inline-message" data-internal-notes-message role="status" aria-live="polite"></span>
+          </div>
+        `
+    }
+    ${
+      showLegacy
+        ? `<div class="internal-notes__legacy">
+            <p class="internal-notes__legacy-label">Observación anterior (solo lectura)</p>
+            <p class="internal-notes__legacy-text">${escapeHtml(legacy)}</p>
+          </div>`
+        : ""
+    }
+  `;
+}
+
+function renderInternalNotesContainer(student) {
+  const container = viewRoot?.querySelector("#profile-internal-notes");
+  if (!container) return;
+  container.innerHTML = renderInternalNotesBlock(student);
+}
+
+async function loadInternalNotes(student) {
+  if (!canEditProfileFields()) return;
+  const studentId = getStudentIdentity(student);
+  if (!studentId) return;
+  if (internalNotesState.loaded && internalNotesState.studentId === studentId) return;
+  if (internalNotesState.loading && internalNotesState.studentId === studentId) return;
+
+  internalNotesState = { studentId, text: "", loaded: false, loading: true };
+  renderInternalNotesContainer(student);
+
+  try {
+    const notes = await getStudentPrivateNotes(studentId);
+    internalNotesState = {
+      studentId,
+      text: toStringSafe(notes.observacionesInternas),
+      loaded: true,
+      loading: false,
+    };
+  } catch (error) {
+    console.error("No se pudieron cargar las observaciones internas:", error);
+    internalNotesState = { studentId, text: "", loaded: true, loading: false };
+  }
+
+  renderInternalNotesContainer(student);
+}
+
+async function saveInternalNotes(student) {
+  if (!canEditProfileFields()) {
+    setAppError("No tienes permisos para editar observaciones internas.");
+    return;
+  }
+
+  const studentId = getStudentIdentity(student);
+  const input = viewRoot?.querySelector("[data-internal-notes-input]");
+  const button = viewRoot?.querySelector("[data-internal-notes-save]");
+  const message = viewRoot?.querySelector("[data-internal-notes-message]");
+  if (!studentId) {
+    setAppError("No hay estudiante seleccionado.");
+    return;
+  }
+
+  const text = toStringSafe(input?.value);
+
+  try {
+    clearAppError();
+    if (button) button.disabled = true;
+    clearProfileTeacherMessage(message);
+
+    const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_internal_notes";
+    await saveStudentPrivateNotes(studentId, text, { updatedBy });
+    internalNotesState = { studentId, text, loaded: true, loading: false };
+
+    showProfileTeacherMessage(
+      viewRoot?.querySelector("[data-internal-notes-message]") || message,
+      "Observaciones internas guardadas.",
+      "success"
+    );
+  } catch (error) {
+    console.error("No se pudieron guardar las observaciones internas:", error);
+    showProfileTeacherMessage(message, error?.message || "No se pudo guardar.", "error");
+    setAppError(error?.message || "No se pudieron guardar las observaciones internas.");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function isHomeModality(value = "") {
@@ -1419,6 +1632,51 @@ async function saveProfileTeacher(student) {
       "error"
     );
     setAppError(error?.message || "No se pudo guardar el docente.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function saveProfileField(student, field) {
+  if (!canEditProfileFields()) {
+    setAppError("No tienes permisos para editar este campo.");
+    return;
+  }
+
+  const safeField = toStringSafe(field);
+  const input = viewRoot?.querySelector(`[data-profile-field-input="${safeField}"]`);
+  const button = viewRoot?.querySelector(`[data-profile-save-field="${safeField}"]`);
+  const message = viewRoot?.querySelector(`[data-profile-field-message="${safeField}"]`);
+  const studentId = getStudentIdentity(student);
+  const value = toStringSafe(input?.value);
+
+  if (!studentId) {
+    setAppError("No hay estudiante seleccionado.");
+    return;
+  }
+
+  try {
+    clearAppError();
+    if (button) button.disabled = true;
+    clearProfileTeacherMessage(message);
+
+    const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_fields";
+    const updated = await updateStudentProfileFields(
+      studentId,
+      { [safeField]: value },
+      { updatedBy }
+    );
+
+    updateStudentProfile({ ...student, ...updated });
+    showProfileTeacherMessage(
+      viewRoot?.querySelector(`[data-profile-field-message="${safeField}"]`) || message,
+      "Cambios guardados.",
+      "success"
+    );
+  } catch (error) {
+    console.error("No se pudo guardar el campo del perfil:", error);
+    showProfileTeacherMessage(message, error?.message || "No se pudo guardar.", "error");
+    setAppError(error?.message || "No se pudo guardar el campo.");
   } finally {
     if (button) button.disabled = false;
   }
