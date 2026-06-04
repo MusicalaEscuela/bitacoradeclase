@@ -1,0 +1,219 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function authEmail() {
+      return isSignedIn() && request.auth.token.email is string
+        ? request.auth.token.email
+        : "";
+    }
+
+    function isBootstrapAdmin() {
+      return isSignedIn() &&
+        authEmail() in [
+          "alekcaballeromusic@gmail.com",
+          "catalina.medina.leal@gmail.com",
+          "imusicala@gmail.com",
+          "musicalaasesor@gmail.com"
+        ];
+    }
+
+    function hasAccessProfile() {
+      return authEmail() != "" &&
+        exists(/databases/$(database)/documents/users/$(authEmail()));
+    }
+
+    function accessProfile() {
+      return get(/databases/$(database)/documents/users/$(authEmail()));
+    }
+
+    function accessRole() {
+      return hasAccessProfile() && accessProfile().data.role is string
+        ? accessProfile().data.role
+        : "";
+    }
+
+    function accessIsActive() {
+      return hasAccessProfile()
+        ? accessProfile().data.active != false
+        : false;
+    }
+
+    function linkedStudentId() {
+      return hasAccessProfile() && accessProfile().data.studentId is string
+        ? accessProfile().data.studentId
+        : (
+            hasAccessProfile() && accessProfile().data.studentKey is string
+            ? accessProfile().data.studentKey
+            : (
+                hasAccessProfile() && accessProfile().data.estudianteId is string
+                ? accessProfile().data.estudianteId
+                : ""
+              )
+          );
+    }
+
+    function linkedStudentIds() {
+      return !hasAccessProfile()
+        ? []
+        : (
+            accessProfile().data.studentIds is list
+            ? accessProfile().data.studentIds
+            : (
+                accessProfile().data.students is list
+                ? accessProfile().data.students
+                : (
+                    linkedStudentId() != ""
+                    ? [linkedStudentId()]
+                    : []
+                  )
+              )
+          );
+    }
+
+    function hasCatalogs() {
+      return exists(/databases/$(database)/documents/app_config/catalogos);
+    }
+
+    function teacherEmailList() {
+      return hasCatalogs() &&
+        get(/databases/$(database)/documents/app_config/catalogos).data.teacherAccessEmails is list
+        ? get(/databases/$(database)/documents/app_config/catalogos).data.teacherAccessEmails
+        : [];
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() || (accessRole() == "admin" && accessIsActive());
+    }
+
+    function isTeacher() {
+      return ((accessRole() == "teacher" || accessRole() == "docente") && accessIsActive()) ||
+        (authEmail() != "" && authEmail() in teacherEmailList());
+    }
+
+    function isActiveStudent() {
+      return (
+          accessRole() == "student" ||
+          accessRole() == "estudiante" ||
+          accessRole() == "acudiente" ||
+          accessRole() == "guardian" ||
+          accessRole() == "parent"
+        ) &&
+        accessIsActive() &&
+        linkedStudentIds().size() > 0;
+    }
+
+    function studentOwnsBitacora() {
+      return isActiveStudent() &&
+        resource.data.studentIds is list &&
+        resource.data.studentIds.hasAny(linkedStudentIds());
+    }
+
+    function studentOwnsStudentDoc() {
+      return isActiveStudent() &&
+        (
+          resource.id in linkedStudentIds() ||
+          (resource.data.studentId is string && resource.data.studentId in linkedStudentIds()) ||
+          (resource.data.studentKey is string && resource.data.studentKey in linkedStudentIds()) ||
+          (resource.data.estudianteId is string && resource.data.estudianteId in linkedStudentIds())
+        );
+    }
+
+    function studentOwnsRoute(routeId) {
+      return isActiveStudent() &&
+        (
+          routeId in linkedStudentIds() ||
+          (resource.data.studentId is string && resource.data.studentId in linkedStudentIds()) ||
+          (resource.data.studentKey is string && resource.data.studentKey in linkedStudentIds()) ||
+          (resource.data.estudianteId is string && resource.data.estudianteId in linkedStudentIds())
+        );
+    }
+
+    match /users/{emailKey} {
+      allow read: if isAdmin() || (isSignedIn() && authEmail() == emailKey);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /app_config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /bitacoras/{bitacoraId} {
+      allow read: if isAdmin() || isTeacher() || studentOwnsBitacora();
+      allow create, update, delete: if isAdmin() || isTeacher();
+    }
+
+    match /student_routes/{studentId} {
+      allow read: if isAdmin() || isTeacher() || studentOwnsRoute(studentId);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /route_templates/{templateId} {
+      allow read: if isAdmin() || isTeacher() || isActiveStudent();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /student_route_progress/{routeId} {
+      allow read: if isAdmin() || isTeacher() || studentOwnsRoute(routeId);
+      allow create, update: if isAdmin() || isTeacher();
+      allow delete: if isAdmin();
+    }
+
+    match /students/{studentId} {
+      allow read: if isAdmin() || isTeacher() || studentOwnsStudentDoc();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Observaciones internas privadas: SOLO equipo (admin/docente).
+    // Nunca legibles por estudiantes/acudientes para evitar filtraciones.
+    match /student_private_notes/{studentId} {
+      allow read: if isAdmin() || isTeacher();
+      allow create, update, delete: if isAdmin() || isTeacher();
+    }
+
+    match /student_comments/{commentId} {
+      allow read: if isAdmin() || isTeacher() || isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isTeacher();
+    }
+
+    match /student_evidence/{evidenceId} {
+      allow read: if isAdmin() || isTeacher() || isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isTeacher();
+    }
+
+    // Diario de práctica — el estudiante gestiona sus propios registros
+    match /practice_logs/{logId} {
+      allow read: if isAdmin() || isTeacher() ||
+        (isActiveStudent() && resource.data.studentId in linkedStudentIds());
+      allow create: if isActiveStudent() &&
+        request.resource.data.studentId in linkedStudentIds();
+      allow update: if isAdmin() || isTeacher() ||
+        (isActiveStudent() && resource.data.studentId in linkedStudentIds());
+      allow delete: if isAdmin() ||
+        (isActiveStudent() && resource.data.studentId in linkedStudentIds());
+    }
+
+    // Mensajes estudiante ↔ docente
+    match /student_messages/{studentId} {
+      allow read: if isAdmin() || isTeacher() ||
+        (isActiveStudent() && studentId in linkedStudentIds());
+      allow write: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read: if isAdmin() || isTeacher() ||
+          (isActiveStudent() && studentId in linkedStudentIds());
+        allow create: if
+          (isAdmin() || isTeacher() ||
+            (isActiveStudent() && studentId in linkedStudentIds())) &&
+          request.resource.data.studentId == studentId;
+        allow update, delete: if isAdmin() || isTeacher();
+      }
+    }
+  }
+}

@@ -171,6 +171,113 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
   };
 }
 
+/**
+ * Actualiza campos seguros del perfil del estudiante en el doc `students`.
+ * Solo se permiten campos de una lista blanca; cualquier otro se ignora.
+ * NOTA: las observaciones internas NO van aqui (ver student_private_notes).
+ */
+const PROFILE_EDITABLE_FIELDS = new Set(["interesesMusicales", "modalidad"]);
+
+export async function updateStudentProfileFields(studentId, fields = {}, options = {}) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) {
+    throw createApiError("Se requiere estudiante para actualizar el perfil.", {
+      code: "MISSING_STUDENT_ID",
+    });
+  }
+
+  const payload = {};
+  Object.entries(fields || {}).forEach(([key, value]) => {
+    if (PROFILE_EDITABLE_FIELDS.has(key)) {
+      payload[key] = normalizeScalar(value);
+    }
+  });
+
+  if (!Object.keys(payload).length) {
+    throw createApiError("No hay campos validos para actualizar.", {
+      code: "NO_VALID_FIELDS",
+    });
+  }
+
+  // Compatibilidad bilingue para modalidad.
+  if (Object.prototype.hasOwnProperty.call(payload, "modalidad")) {
+    payload.modality = payload.modalidad;
+  }
+
+  const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
+  const snapshot = await getDoc(ref);
+  if (!snapshot.exists()) {
+    throw createApiError("No se encontro el estudiante en Firebase.", {
+      code: "STUDENT_NOT_FOUND",
+      studentId: safeStudentId,
+    });
+  }
+
+  await updateDoc(ref, {
+    ...payload,
+    updatedAt: serverTimestamp(),
+    updatedBy: normalizeScalar(options.updatedBy) || "profile_fields",
+  });
+
+  return { id: safeStudentId, studentId: safeStudentId, studentKey: safeStudentId, ...payload };
+}
+
+const PRIVATE_NOTES_COLLECTION = "student_private_notes";
+
+/**
+ * Lee las observaciones internas privadas del estudiante desde una coleccion
+ * separada (no legible por estudiantes/acudientes segun reglas de Firestore).
+ */
+export async function getStudentPrivateNotes(studentId) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) return { studentId: "", observacionesInternas: "" };
+
+  const ref = doc(db, PRIVATE_NOTES_COLLECTION, safeStudentId);
+  const snapshot = await getDoc(ref);
+  if (!snapshot.exists()) {
+    return { studentId: safeStudentId, observacionesInternas: "" };
+  }
+
+  const data = normalizeTimestamps(snapshot.data() || {});
+  return {
+    studentId: safeStudentId,
+    observacionesInternas: toStringSafe(
+      data.observacionesInternas || data.internalNotes || ""
+    ),
+    updatedAt: data.updatedAt || null,
+    updatedBy: toStringSafe(data.updatedBy || ""),
+  };
+}
+
+/**
+ * Guarda (o crea) las observaciones internas privadas del estudiante.
+ */
+export async function saveStudentPrivateNotes(studentId, observacionesInternas = "", options = {}) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) {
+    throw createApiError("Se requiere estudiante para guardar observaciones internas.", {
+      code: "MISSING_STUDENT_ID",
+    });
+  }
+
+  const text = normalizeScalar(observacionesInternas);
+  const ref = doc(db, PRIVATE_NOTES_COLLECTION, safeStudentId);
+
+  await setDoc(
+    ref,
+    {
+      studentId: safeStudentId,
+      observacionesInternas: text,
+      internalNotes: text,
+      updatedAt: serverTimestamp(),
+      updatedBy: normalizeScalar(options.updatedBy) || "profile_internal_notes",
+    },
+    { merge: true }
+  );
+
+  return { studentId: safeStudentId, observacionesInternas: text };
+}
+
 function buildUrl(baseUrl, queryParams = {}) {
   if (!baseUrl) {
     throw createApiError("La URL base del endpoint no es valida.", {
