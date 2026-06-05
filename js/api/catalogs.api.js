@@ -21,6 +21,16 @@ import { syncTeacherAccessUsers } from "./users.api.js";
 
 const APP_CONFIG_COLLECTION = getAppConfigCollectionName();
 const CATALOGS_DOCUMENT_ID = getCatalogsDocumentId();
+const ART_AREA_ALIASES = Object.freeze({
+  musica: "musica",
+  música: "musica",
+  danza: "danza",
+  artesplasticas: "artesPlasticas",
+  "artes plasticas": "artesPlasticas",
+  "artes plásticas": "artesPlasticas",
+  artesPlasticas: "artesPlasticas",
+  teatro: "teatro",
+});
 
 function createCatalogsError(message, extra = {}) {
   const error = new Error(message);
@@ -42,11 +52,26 @@ function normalizeCatalogGroups(groups = {}) {
   if (!isPlainObject(groups)) return {};
 
   return Object.entries(groups).reduce((next, [key, values]) => {
-    const safeKey = toStringSafe(key);
+    const safeKey = normalizeArtAreaKey(key);
     if (!safeKey) return next;
-    next[safeKey] = normalizeCatalogStringList(values);
+    next[safeKey] = normalizeCatalogStringList([
+      ...(Array.isArray(next[safeKey]) ? next[safeKey] : []),
+      ...toArraySafe(values),
+    ]);
     return next;
   }, {});
+}
+
+function normalizeArtAreaKey(value) {
+  const safeValue = toStringSafe(value);
+  if (!safeValue) return "";
+  const compact = safeValue
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .toLowerCase();
+  return ART_AREA_ALIASES[safeValue] || ART_AREA_ALIASES[compact] || safeValue;
 }
 
 function normalizeTeacher(item = {}, index = 0) {
@@ -147,8 +172,7 @@ export async function saveCatalogs(input = {}) {
     {
       ...normalized,
       updatedAt: serverTimestamp(),
-    },
-    { merge: true }
+    }
   );
 
   await syncTeacherAccessUsers(normalized.docentes);
