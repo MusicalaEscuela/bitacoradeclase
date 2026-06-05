@@ -20,6 +20,7 @@ import {
   escapeHtml,
   getReadableValue,
   getStudentDocument,
+  getStudentCondition,
   getStudentIdentity,
   getStudentName,
   getStudentProcessesSummary,
@@ -747,6 +748,7 @@ function renderStudentModal(state) {
         <dl class="student-modal__grid">
           ${renderDetailItem("Estado", getReadableValue(student.estado))}
           ${renderDetailItem("Edad", getReadableValue(student.edad || student.age))}
+          ${renderDetailItem("Condición", getReadableValue(getStudentCondition(student), "Sin condición registrada"))}
           ${renderDetailItem("Procesos", processSummary)}
           ${renderDetailItem(
             "Intereses",

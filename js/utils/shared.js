@@ -268,6 +268,23 @@ export function getStudentDocument(student) {
   );
 }
 
+export function getStudentCondition(student = {}) {
+  return firstNonEmpty(
+    student?.condicion,
+    student?.condición,
+    student?.condicionEstudiante,
+    student?.condicionEspecial,
+    student?.condicionMedica,
+    student?.condicionMedicaPsicologica,
+    student?.diagnostico,
+    student?.diagnóstico,
+    student?.necesidadEspecial,
+    student?.necesidadesEspeciales,
+    student?.observacionCondicion,
+    student?.observacionesCondicion
+  );
+}
+
 export function matchesStudentRef(student, studentRef) {
   const safeRef = toStringSafe(studentRef);
   if (!student || !safeRef) return false;

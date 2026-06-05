@@ -51,6 +51,7 @@ import {
   formatDisplayDate,
   getReadableValue,
   getStudentDocument,
+  getStudentCondition,
   getStudentFallbackId,
   getStudentIdentity,
   getStudentName,
@@ -1313,6 +1314,7 @@ function renderProfileGrid(student) {
   return `
     ${renderProfileItem("Estado", getReadableValue(student.estado))}
     ${renderProfileItem("Edad", getReadableValue(student.edad || student.age))}
+    ${renderProfileItem("Condición", getReadableValue(getStudentCondition(student), "Sin condición registrada"))}
     ${renderProfileItem("Procesos", getReadableValue(getStudentProcessesSummary(student), "Sin procesos registrados"))}
     ${renderProfileItem("Área / instrumento", getReadableValue(student.area || student.instrumento || student.programa))}
     ${renderModalidadProfileItem(student)}
@@ -5662,4 +5664,3 @@ function renderProcessSelectOptions(processes = [], activeKey = "") {
 function getRequestedProcessFromPayload(payload) {
   return toStringSafe(payload?.processKey || payload?.processRef || payload?.process);
 }
-
