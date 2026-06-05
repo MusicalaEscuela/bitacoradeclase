@@ -149,7 +149,7 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
   const snapshot = await getDoc(ref);
 
   if (!snapshot.exists()) {
-    throw createApiError("No se encontrÃ³ el estudiante en Firebase para actualizar repertorio.", {
+    throw createApiError("No se encontró el estudiante en Firebase para actualizar repertorio.", {
       code: "STUDENT_NOT_FOUND",
       studentId: safeStudentId,
     });

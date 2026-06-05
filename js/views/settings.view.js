@@ -58,6 +58,13 @@ const STRING_CATALOGS = [
   { key: "componenteObras", label: "Componente de obras" },
 ];
 
+const ART_AREAS = [
+  { key: "musica", label: "Música" },
+  { key: "danza", label: "Danza" },
+  { key: "artesPlasticas", label: "Artes plásticas" },
+  { key: "teatro", label: "Teatro" },
+];
+
 export async function beforeEnter() {
   await Promise.all([refreshCatalogs(), refreshStudentAccessUsers()]);
 }
@@ -423,6 +430,19 @@ function buildMarkup(state) {
           })}
         </article>
 
+        <article class="card settings-panel settings-panel--wide">
+          <header class="panel-header">
+            <div class="panel-header__content">
+              <p class="panel-header__eyebrow">Por arte</p>
+              <h2 class="panel-header__title">Asignar items por arte</h2>
+              <p class="field__hint">
+                Marca en que artes debe aparecer cada item. Si un arte queda sin items, el editor conserva el catalogo general como respaldo.
+              </p>
+            </div>
+          </header>
+          ${STRING_CATALOGS.map((catalog) => buildArtCatalogSection(catalog)).join("")}
+        </article>
+
         ${STRING_CATALOGS.map((catalog) => buildStringCatalogCard(catalog)).join("")}
       </section>
     </section>
@@ -531,6 +551,78 @@ function buildStringCatalogCard({ key, label }) {
   `;
 }
 
+function buildArtCatalogSection({ key, label }) {
+  const items = Array.isArray(currentCatalogs[key]) ? currentCatalogs[key] : [];
+  const groupedKey = getArtCatalogKey(key);
+
+  return buildCollapsibleList({
+    listKey: `${groupedKey}-matrix`,
+    title: label,
+    count: getAssignedArtItemsCount(key),
+    singular: "asignacion",
+    plural: "asignaciones",
+    content: renderArtCatalogMatrix(key, items),
+  });
+}
+
+function renderArtCatalogMatrix(catalogKey, items = []) {
+  if (!Array.isArray(items) || !items.length) {
+    return `
+      <div class="empty-state empty-state--soft">
+        <p class="empty-state__text">Primero agrega elementos al catalogo general para poder asignarlos por arte.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="settings-art-matrix" role="table" aria-label="Asignacion por arte">
+      <div class="settings-art-matrix__header" role="row">
+        <span role="columnheader">Item</span>
+        ${ART_AREAS.map((area) => renderArtMatrixHeaderCell(catalogKey, area)).join("")}
+      </div>
+      ${items
+        .map(
+          (item) => `
+            <div class="settings-art-matrix__row" role="row">
+              <span class="settings-art-matrix__item" role="cell">${escapeHtml(item)}</span>
+              ${ART_AREAS.map((area) => renderArtAssignmentCheckbox(catalogKey, area, item)).join("")}
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderArtMatrixHeaderCell(catalogKey, area) {
+  return `
+    <span class="settings-art-matrix__area" role="columnheader">
+      <strong>${escapeHtml(area.label)}</strong>
+      <span>
+        <button type="button" data-art-bulk="check" data-art-catalog="${escapeHtml(catalogKey)}" data-art-key="${escapeHtml(area.key)}">Todo</button>
+        <button type="button" data-art-bulk="uncheck" data-art-catalog="${escapeHtml(catalogKey)}" data-art-key="${escapeHtml(area.key)}">Nada</button>
+      </span>
+    </span>
+  `;
+}
+
+function renderArtAssignmentCheckbox(catalogKey, area, item) {
+  const checked = isCatalogItemAssignedToArt(catalogKey, area.key, item);
+
+  return `
+    <label class="settings-art-check ${checked ? "is-checked" : ""}" role="cell">
+      <input
+        type="checkbox"
+        data-art-catalog="${escapeHtml(catalogKey)}"
+        data-art-key="${escapeHtml(area.key)}"
+        data-art-item="${escapeHtml(item)}"
+        ${checked ? "checked" : ""}
+      />
+      <span>${checked ? "Si" : "No"}</span>
+    </label>
+  `;
+}
+
 function renderTeachersList(teachers = []) {
   if (!Array.isArray(teachers) || !teachers.length) {
     return `
@@ -548,7 +640,7 @@ function renderTeachersList(teachers = []) {
           <div class="settings-item-card__content">
             <h3>${escapeHtml(teacher.alias || teacher.nombre)}</h3>
             <p>${escapeHtml(teacher.nombre)}</p>
-            <small>${escapeHtml(teacher.email || "Sin email")} ? Orden ${escapeHtml(String(teacher.orden || index + 1))}</small>
+            <small>${escapeHtml(teacher.email || "Sin email")} · Orden ${escapeHtml(String(teacher.orden || index + 1))}</small>
           </div>
           <button type="button" class="btn btn--ghost btn--sm" data-remove-teacher="${escapeHtml(teacher.id || teacher.nombre)}">
             Quitar
@@ -593,7 +685,7 @@ function renderStudentAccessList(users = [], query = "") {
       return `
         <div class="empty-state empty-state--soft">
           <h3 class="empty-state__title">Sin resultados</h3>
-          <p class="empty-state__text">No hay estudiantes que coincidan con esa bÃºsqueda.</p>
+          <p class="empty-state__text">No hay estudiantes que coincidan con esa búsqueda.</p>
         </div>
       `;
     }
@@ -613,7 +705,7 @@ function renderStudentAccessList(users = [], query = "") {
           <div class="settings-item-card__content">
             <h3>${escapeHtml(user.displayName || `Estudiante ${index + 1}`)}</h3>
             <p>${escapeHtml(user.email || "Sin email")}</p>
-            <small>${escapeHtml(user.studentId || "Sin studentId")} ? ${
+            <small>${escapeHtml(user.studentId || "Sin studentId")} · ${
               user.active ? "Activo" : "Inactivo"
             }</small>
           </div>
@@ -1012,6 +1104,38 @@ function bindEvents(state) {
     });
   });
 
+  viewRoot.querySelectorAll("[data-art-catalog]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const catalogKey = input.getAttribute("data-art-catalog");
+      const artKey = input.getAttribute("data-art-key");
+      const item = input.getAttribute("data-art-item");
+      if (!catalogKey || !artKey || !item) return;
+
+      setCatalogItemArtAssignment(catalogKey, artKey, item, input.checked);
+      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
+      updateArtAssignmentInput(input);
+      updateArtCatalogCount(catalogKey);
+    });
+  });
+
+  viewRoot.querySelectorAll("[data-art-bulk]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.getAttribute("data-art-bulk");
+      const catalogKey = button.getAttribute("data-art-catalog");
+      const artKey = button.getAttribute("data-art-key");
+      if (!catalogKey || !artKey) return;
+
+      const checked = action === "check";
+      const items = Array.isArray(currentCatalogs[catalogKey])
+        ? currentCatalogs[catalogKey]
+        : [];
+      setAllCatalogItemsArtAssignment(catalogKey, artKey, items, checked);
+      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
+      updateArtBulkInputs(catalogKey, artKey, checked);
+      updateArtCatalogCount(catalogKey);
+    });
+  });
+
   viewRoot.querySelectorAll("[data-remove-item]").forEach((button) => {
     button.addEventListener("click", () => {
       const key = button.getAttribute("data-remove-item");
@@ -1118,6 +1242,125 @@ function appendCatalogItems(key, items = []) {
     type: "info",
     text: `Actualizaste ${getCatalogLabel(key)} localmente. Guarda en Firebase para persistir.`,
   };
+}
+
+function getArtCatalogKey(key) {
+  return `${key}PorArte`;
+}
+
+function getArtAreaLabel(artKey) {
+  return ART_AREAS.find((area) => area.key === artKey)?.label || artKey;
+}
+
+function getArtCatalogGroup(catalogKey, artKey) {
+  const grouped = currentCatalogs[getArtCatalogKey(catalogKey)];
+  const label = getArtAreaLabel(artKey);
+
+  return normalizeStringItems([
+    ...(Array.isArray(grouped?.[artKey]) ? grouped[artKey] : []),
+    ...(Array.isArray(grouped?.[label]) ? grouped[label] : []),
+  ]);
+}
+
+function isCatalogItemAssignedToArt(catalogKey, artKey, item) {
+  const normalizedItem = normalizeText(item);
+  return getArtCatalogGroup(catalogKey, artKey).some(
+    (value) => normalizeText(value) === normalizedItem
+  );
+}
+
+function setCatalogItemArtAssignment(catalogKey, artKey, item, checked) {
+  const groupedKey = getArtCatalogKey(catalogKey);
+  const grouped = isPlainObject(currentCatalogs[groupedKey])
+    ? currentCatalogs[groupedKey]
+    : {};
+  const currentItems = getArtCatalogGroup(catalogKey, artKey);
+  const nextItems = checked
+    ? normalizeStringItems([...currentItems, item])
+    : currentItems.filter((value) => normalizeText(value) !== normalizeText(item));
+
+  currentCatalogs = {
+    ...currentCatalogs,
+    [groupedKey]: {
+      ...grouped,
+      [artKey]: nextItems,
+      [getArtAreaLabel(artKey)]: nextItems,
+    },
+  };
+  currentMessage = {
+    type: "info",
+    text: "Asignacion por arte actualizada localmente. Guarda en Firebase para persistir.",
+  };
+}
+
+function setAllCatalogItemsArtAssignment(catalogKey, artKey, items = [], checked) {
+  const groupedKey = getArtCatalogKey(catalogKey);
+  const grouped = isPlainObject(currentCatalogs[groupedKey])
+    ? currentCatalogs[groupedKey]
+    : {};
+  const nextItems = checked ? normalizeStringItems(items) : [];
+
+  currentCatalogs = {
+    ...currentCatalogs,
+    [groupedKey]: {
+      ...grouped,
+      [artKey]: nextItems,
+      [getArtAreaLabel(artKey)]: nextItems,
+    },
+  };
+  currentMessage = {
+    type: "info",
+    text: "Asignacion por arte actualizada localmente. Guarda en Firebase para persistir.",
+  };
+}
+
+function updateArtAssignmentInput(input) {
+  const label = input?.closest?.(".settings-art-check");
+  const text = label?.querySelector?.("span");
+  if (text) {
+    text.textContent = input.checked ? "Si" : "No";
+  }
+  label?.classList.toggle("is-checked", Boolean(input?.checked));
+}
+
+function updateArtBulkInputs(catalogKey, artKey, checked) {
+  if (!viewRoot) return;
+  viewRoot
+    .querySelectorAll(
+      `input[type="checkbox"][data-art-catalog="${cssEscape(catalogKey)}"][data-art-key="${cssEscape(artKey)}"]`
+    )
+    .forEach((input) => {
+      input.checked = checked;
+      updateArtAssignmentInput(input);
+    });
+}
+
+function updateArtCatalogCount(catalogKey) {
+  if (!viewRoot) return;
+  const listKey = `${getArtCatalogKey(catalogKey)}-matrix`;
+  const root = viewRoot.querySelector(
+    `[data-settings-list-root="${cssEscape(listKey)}"]`
+  );
+  const count = root?.querySelector?.(".settings-collapsible__count");
+  if (count) {
+    count.textContent = formatItemCount(
+      getAssignedArtItemsCount(catalogKey),
+      "asignacion",
+      "asignaciones"
+    );
+  }
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return String(value || "").replace(/"/g, '\\"');
+}
+
+function getAssignedArtItemsCount(catalogKey) {
+  return ART_AREAS.reduce(
+    (total, area) => total + getArtCatalogGroup(catalogKey, area.key).length,
+    0
+  );
 }
 
 function normalizeStringItems(items = []) {
@@ -1813,7 +2056,3 @@ async function withLoading(task) {
     setAppLoading(false);
   }
 }
-
-
-
-
