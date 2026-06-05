@@ -721,6 +721,11 @@
   padding-bottom: 0.25rem;
 }
 
+.settings-art-search {
+  margin-bottom: 0.65rem;
+  max-width: 520px;
+}
+
 .settings-art-matrix__header,
 .settings-art-matrix__row {
   display: grid;

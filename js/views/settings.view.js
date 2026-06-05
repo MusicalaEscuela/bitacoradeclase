@@ -48,7 +48,9 @@ let currentStudentAccessUsers = [];
 let currentStudentAccessSearchQuery = "";
 let currentStudentSyncReport = null;
 let currentBitacoraImportPlan = null;
+let currentArtCatalogSearchQuery = "";
 const expandedSettingsPanels = new Set();
+const ART_MATRIX_VISIBLE_LIMIT = 160;
 
 const STRING_CATALOGS = [
   { key: "categorias", label: "Categorías" },
@@ -457,9 +459,11 @@ function buildCollapsibleList({
   singular = "elemento",
   plural = "elementos",
   content,
+  lazy = false,
 }) {
   const isExpanded = isSettingsListExpanded(listKey);
   const bodyId = getSettingsListBodyId(listKey);
+  const shouldRenderContent = isExpanded || !lazy;
 
   return `
     <section
@@ -491,7 +495,7 @@ function buildCollapsibleList({
         class="settings-collapsible__body ${isExpanded ? "" : "is-hidden"}"
         id="${escapeHtml(bodyId)}"
       >
-        ${content}
+        ${shouldRenderContent ? content : ""}
       </div>
     </section>
   `;
@@ -562,6 +566,7 @@ function buildArtCatalogSection({ key, label }) {
     singular: "asignacion",
     plural: "asignaciones",
     content: renderArtCatalogMatrix(key, items),
+    lazy: true,
   });
 }
 
@@ -573,14 +578,35 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
       </div>
     `;
   }
+  const query = normalizeText(currentArtCatalogSearchQuery);
+  const filteredItems = query
+    ? items.filter((item) => normalizeText(item).includes(query))
+    : items;
+  const visibleItems = filteredItems.slice(0, ART_MATRIX_VISIBLE_LIMIT);
+  const hiddenCount = Math.max(filteredItems.length - visibleItems.length, 0);
 
   return `
+    <label class="field settings-art-search">
+      <span class="field__label">Buscar dentro del catalogo</span>
+      <input
+        class="field__input"
+        type="search"
+        data-art-search
+        value="${escapeHtml(currentArtCatalogSearchQuery)}"
+        placeholder="Filtra para encontrar items rapido"
+        autocomplete="off"
+      />
+      <small class="field__hint">
+        Mostrando ${escapeHtml(String(visibleItems.length))} de ${escapeHtml(String(filteredItems.length))} items.
+        ${hiddenCount ? `Escribe para filtrar los ${escapeHtml(String(hiddenCount))} restantes.` : ""}
+      </small>
+    </label>
     <div class="settings-art-matrix" role="table" aria-label="Asignacion por arte">
       <div class="settings-art-matrix__header" role="row">
         <span role="columnheader">Item</span>
         ${ART_AREAS.map((area) => renderArtMatrixHeaderCell(catalogKey, area)).join("")}
       </div>
-      ${items
+      ${visibleItems
         .map(
           (item) => `
             <div class="settings-art-matrix__row" role="row">
@@ -810,11 +836,19 @@ function bindEvents(state) {
   const bitacoraImportInput = viewRoot.querySelector("#settings-import-bitacoras");
   const bitacoraImportBtn = viewRoot.querySelector("#settings-import-bitacoras-btn");
   const studentAccessSearch = viewRoot.querySelector("#settings-student-access-search");
+  const artSearch = viewRoot.querySelector("[data-art-search]");
 
   if (studentAccessSearch) {
     studentAccessSearch.addEventListener("input", () => {
       currentStudentAccessSearchQuery = studentAccessSearch.value || "";
       refreshStudentAccessSearchResults(studentAccessSearch);
+    });
+  }
+
+  if (artSearch) {
+    artSearch.addEventListener("input", () => {
+      currentArtCatalogSearchQuery = artSearch.value || "";
+      renderView(getState());
     });
   }
 
@@ -851,7 +885,7 @@ function bindEvents(state) {
 
       await withLoading(async () => {
         clearAppError();
-        currentCatalogs = await saveCatalogs(currentCatalogs);
+        currentCatalogs = await saveCatalogs(compactCatalogsForSave(currentCatalogs));
         currentMessage = {
           type: "success",
           text: "Los catálogos se guardaron correctamente en Firestore.",
@@ -1165,6 +1199,10 @@ function toggleSettingsList(button) {
 
   if (shouldExpand) {
     expandedSettingsPanels.add(listKey);
+    if (body && !body.innerHTML.trim()) {
+      renderView(getState());
+      return;
+    }
   } else {
     expandedSettingsPanels.delete(listKey);
   }
@@ -1271,9 +1309,6 @@ function isCatalogItemAssignedToArt(catalogKey, artKey, item) {
 
 function setCatalogItemArtAssignment(catalogKey, artKey, item, checked) {
   const groupedKey = getArtCatalogKey(catalogKey);
-  const grouped = isPlainObject(currentCatalogs[groupedKey])
-    ? currentCatalogs[groupedKey]
-    : {};
   const currentItems = getArtCatalogGroup(catalogKey, artKey);
   const nextItems = checked
     ? normalizeStringItems([...currentItems, item])
@@ -1281,11 +1316,7 @@ function setCatalogItemArtAssignment(catalogKey, artKey, item, checked) {
 
   currentCatalogs = {
     ...currentCatalogs,
-    [groupedKey]: {
-      ...grouped,
-      [artKey]: nextItems,
-      [getArtAreaLabel(artKey)]: nextItems,
-    },
+    [groupedKey]: buildCanonicalArtGroup(catalogKey, artKey, nextItems),
   };
   currentMessage = {
     type: "info",
@@ -1295,23 +1326,53 @@ function setCatalogItemArtAssignment(catalogKey, artKey, item, checked) {
 
 function setAllCatalogItemsArtAssignment(catalogKey, artKey, items = [], checked) {
   const groupedKey = getArtCatalogKey(catalogKey);
-  const grouped = isPlainObject(currentCatalogs[groupedKey])
-    ? currentCatalogs[groupedKey]
-    : {};
   const nextItems = checked ? normalizeStringItems(items) : [];
 
   currentCatalogs = {
     ...currentCatalogs,
-    [groupedKey]: {
-      ...grouped,
-      [artKey]: nextItems,
-      [getArtAreaLabel(artKey)]: nextItems,
-    },
+    [groupedKey]: buildCanonicalArtGroup(catalogKey, artKey, nextItems),
   };
   currentMessage = {
     type: "info",
     text: "Asignacion por arte actualizada localmente. Guarda en Firebase para persistir.",
   };
+}
+
+function buildCanonicalArtGroup(catalogKey, changedArtKey, changedItems = []) {
+  return ART_AREAS.reduce((next, area) => {
+    next[area.key] =
+      area.key === changedArtKey
+        ? normalizeStringItems(changedItems)
+        : getArtCatalogGroup(catalogKey, area.key);
+    return next;
+  }, {});
+}
+
+function compactCatalogsForSave(catalogs = {}) {
+  return STRING_CATALOGS.reduce(
+    (next, catalog) => ({
+      ...next,
+      [getArtCatalogKey(catalog.key)]: ART_AREAS.reduce((grouped, area) => {
+        grouped[area.key] = getArtCatalogGroupFromCatalogs(
+          catalogs,
+          catalog.key,
+          area.key
+        );
+        return grouped;
+      }, {}),
+    }),
+    { ...catalogs }
+  );
+}
+
+function getArtCatalogGroupFromCatalogs(catalogs = {}, catalogKey, artKey) {
+  const grouped = catalogs[getArtCatalogKey(catalogKey)];
+  const label = getArtAreaLabel(artKey);
+
+  return normalizeStringItems([
+    ...(Array.isArray(grouped?.[artKey]) ? grouped[artKey] : []),
+    ...(Array.isArray(grouped?.[label]) ? grouped[label] : []),
+  ]);
 }
 
 function updateArtAssignmentInput(input) {
