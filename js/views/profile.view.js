@@ -5430,7 +5430,7 @@ function repairVisibleText(value) {
   let text = toStringSafe(value);
   if (!text) return "";
 
-  if (/[ÃÂ]/.test(text)) {
+  if (/[\u00c3\u00c2]/.test(text)) {
     try {
       text = decodeURIComponent(escape(text));
     } catch (error) {
@@ -5439,17 +5439,17 @@ function repairVisibleText(value) {
   }
 
   return text
-    .replaceAll("Bit�cora", "Bitácora")
-    .replaceAll("bit�cora", "bitácora")
-    .replaceAll("M�SICA", "MÚSICA")
-    .replaceAll("M�sica", "Música")
-    .replaceAll("m�sica", "música")
-    .replaceAll("Viol�n", "Violín")
-    .replaceAll("viol�n", "violín")
-    .replaceAll("T�cnico", "Técnico")
-    .replaceAll("t�cnico", "técnico")
-    .replaceAll("Te�rico", "Teórico")
-    .replaceAll("te�rico", "teórico");
+    .replaceAll("Bit\ufffdcora", "Bitácora")
+    .replaceAll("bit\ufffdcora", "bitácora")
+    .replaceAll("M\ufffdSICA", "MÚSICA")
+    .replaceAll("M\ufffdsica", "Música")
+    .replaceAll("m\ufffdsica", "música")
+    .replaceAll("Viol\ufffdn", "Violín")
+    .replaceAll("viol\ufffdn", "violín")
+    .replaceAll("T\ufffdcnico", "Técnico")
+    .replaceAll("t\ufffdcnico", "técnico")
+    .replaceAll("Te\ufffdrico", "Teórico")
+    .replaceAll("te\ufffdrico", "teórico");
 }
 
 function parseStructuredContent(content = "") {

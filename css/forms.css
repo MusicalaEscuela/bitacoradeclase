@@ -710,6 +710,111 @@
   margin-top: 1rem;
 }
 
+.settings-panel--wide {
+  grid-column: 1 / -1;
+}
+
+.settings-art-matrix {
+  display: grid;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.settings-art-matrix__header,
+.settings-art-matrix__row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(4, minmax(118px, 0.7fr));
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 780px;
+}
+
+.settings-art-matrix__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.35rem 0.45rem;
+  border-radius: 12px;
+  background: #f3f6fb;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-art-matrix__area {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.settings-art-matrix__area > span {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.settings-art-matrix__area button {
+  border: 1px solid rgba(29, 79, 145, 0.12);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
+  padding: 0.32rem 0.42rem;
+  cursor: pointer;
+}
+
+.settings-art-matrix__area button:hover {
+  border-color: rgba(29, 79, 145, 0.28);
+  background: rgba(29, 79, 145, 0.08);
+}
+
+.settings-art-matrix__row {
+  padding: 0.45rem;
+  border: 1px solid rgba(29, 79, 145, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.settings-art-matrix__item {
+  color: var(--text-strong);
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.settings-art-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 36px;
+  padding: 0.45rem 0.62rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.settings-art-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary);
+}
+
+.settings-art-check.is-checked,
+.settings-art-check:has(input:checked) {
+  border-color: rgba(29, 79, 145, 0.28);
+  background: rgba(29, 79, 145, 0.08);
+  color: var(--primary);
+}
+
 .settings-collapsible {
   display: grid;
   gap: 0.85rem;
@@ -814,6 +919,11 @@
   .settings-collapsible__meta {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .settings-art-matrix__header,
+  .settings-art-matrix__row {
+    min-width: 720px;
   }
 }
 

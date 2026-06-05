@@ -5241,7 +5241,7 @@ function resolveAreaCatalogList(catalogs = {}, key, areaKeys = [], fallback = []
   if (fromGrouped.length) return fromGrouped;
 
   for (const [areaName, areaCatalog] of Object.entries(nestedByArea || {})) {
-    if (!areaKeys.includes(normalizeText(areaName))) continue;
+    if (!matchesAreaCatalogKey(areaName, areaKeys)) continue;
     if (Array.isArray(areaCatalog)) return areaCatalog;
     if (areaCatalog && typeof areaCatalog === "object") {
       const values = areaCatalog[key];
@@ -5263,12 +5263,24 @@ function findCatalogGroup(groups = {}, areaKeys = []) {
   if (!groups || typeof groups !== "object") return [];
 
   for (const [name, values] of Object.entries(groups)) {
-    if (areaKeys.includes(normalizeText(name)) && Array.isArray(values)) {
+    if (matchesAreaCatalogKey(name, areaKeys) && Array.isArray(values)) {
       return values;
     }
   }
 
   return [];
+}
+
+function matchesAreaCatalogKey(name, areaKeys = []) {
+  const normalizedName = normalizeText(name);
+  if (!normalizedName) return false;
+
+  return areaKeys.some((areaKey) => {
+    if (!areaKey) return false;
+    return areaKey === normalizedName ||
+      areaKey.includes(normalizedName) ||
+      normalizedName.includes(areaKey);
+  });
 }
 
 function buildAutoTitle(student, fechaClase = "") {
