@@ -61,6 +61,14 @@ const ROUTE_UI = Object.freeze({
     chip: "Bitácora",
     themeColor: "#fdf0fb",
   },
+  [CONFIG.routes.compare]: {
+    kicker: "Herramienta docente",
+    title: "Comparar últimas bitácoras del grupo",
+    text:
+      "Selecciona varios estudiantes y revisa qué hizo cada uno en su última clase, sin editar registros.",
+    chip: "Comparar",
+    themeColor: "#f2f7f4",
+  },
   [CONFIG.routes.libraries]: {
     kicker: "Recursos",
     title: "Bibliotecas artísticas en un solo lugar",
@@ -197,6 +205,11 @@ function normalizeStaticUiText() {
       title: "Ir a la bitácora",
       navLabel: "Bitácora",
       bottomLabel: "Bitácora",
+    },
+    [CONFIG.routes.compare]: {
+      title: "Comparar bitácoras",
+      navLabel: "Comparar",
+      bottomLabel: "Comparar",
     },
     [CONFIG.routes.libraries]: {
       title: "Ir a bibliotecas",
@@ -671,6 +684,7 @@ async function loadViewModule(viewName) {
     [CONFIG.routes.search]: () => import("./views/search.view.js"),
     [CONFIG.routes.profile]: () => import("./views/profile.view.js"),
     [CONFIG.routes.editor]: () => import("./views/editor.view.js"),
+    [CONFIG.routes.compare]: () => import("./views/compare.view.js"),
     [CONFIG.routes.libraries]: () => import("./views/libraries.view.js"),
     [CONFIG.routes.settings]: () => import("./views/settings.view.js"),
   };
@@ -728,6 +742,7 @@ function renderRouteLoadingState(viewName) {
     [CONFIG.routes.search]: "Búsqueda",
     [CONFIG.routes.profile]: "Perfil",
     [CONFIG.routes.editor]: "Bitácora",
+    [CONFIG.routes.compare]: "Comparar",
     [CONFIG.routes.settings]: "Configuración",
     [CONFIG.routes.libraries]: "Bibliotecas",
   };
@@ -751,6 +766,7 @@ function updateDocumentTitle(state) {
     [CONFIG.routes.search]: "Búsqueda",
     [CONFIG.routes.profile]: "Perfil",
     [CONFIG.routes.editor]: "Bitácora",
+    [CONFIG.routes.compare]: "Comparar",
     [CONFIG.routes.libraries]: "Bibliotecas",
     [CONFIG.routes.settings]: "Configuración",
   };
@@ -1026,7 +1042,8 @@ function getRouteContextLabel(state, currentView) {
 
   if (
     currentView === CONFIG.routes.profile ||
-    currentView === CONFIG.routes.editor
+    currentView === CONFIG.routes.editor ||
+    currentView === CONFIG.routes.compare
   ) {
     return selectedStudent || "Sin estudiante";
   }

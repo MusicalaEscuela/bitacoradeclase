@@ -38,6 +38,17 @@ function normalizeCatalogStringList(values = []) {
   );
 }
 
+function normalizeCatalogGroups(groups = {}) {
+  if (!isPlainObject(groups)) return {};
+
+  return Object.entries(groups).reduce((next, [key, values]) => {
+    const safeKey = toStringSafe(key);
+    if (!safeKey) return next;
+    next[safeKey] = normalizeCatalogStringList(values);
+    return next;
+  }, {});
+}
+
 function normalizeTeacher(item = {}, index = 0) {
   if (!isPlainObject(item)) return null;
 
@@ -97,6 +108,12 @@ function normalizeCatalogsDocument(data = {}) {
     componenteTecnico: normalizeCatalogStringList(normalized.componenteTecnico),
     componenteTeorico: normalizeCatalogStringList(normalized.componenteTeorico),
     componenteObras: normalizeCatalogStringList(normalized.componenteObras),
+    porArte: normalizeCatalogGroups(normalized.porArte || normalized.catalogosPorArte),
+    categoriasPorArte: normalizeCatalogGroups(normalized.categoriasPorArte),
+    componenteCorporalPorArte: normalizeCatalogGroups(normalized.componenteCorporalPorArte),
+    componenteTecnicoPorArte: normalizeCatalogGroups(normalized.componenteTecnicoPorArte),
+    componenteTeoricoPorArte: normalizeCatalogGroups(normalized.componenteTeoricoPorArte),
+    componenteObrasPorArte: normalizeCatalogGroups(normalized.componenteObrasPorArte),
     updatedAt: normalized.updatedAt || null,
   };
 }

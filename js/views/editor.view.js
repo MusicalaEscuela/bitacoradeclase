@@ -43,6 +43,7 @@ import {
   formatDisplayDate,
   getReadableValue,
   getStudentDocument,
+  getStudentCondition,
   getStudentFallbackId,
   getStudentIdentity,
   getStudentName,
@@ -4253,17 +4254,18 @@ function buildMusicalaEditorMarkup({
     student,
     getDraftTeachers(draft, draftFields, student).join(", ")
   );
-  const categoriasOptions = getCatalogOptions(catalogs.categorias);
-  const corporalOptions = getCatalogOptions(catalogs.componenteCorporal);
-  const tecnicoOptions = getCatalogOptions(catalogs.componenteTecnico);
-  const teoricoOptions = getCatalogOptions(catalogs.componenteTeorico);
-  const obrasOptions = getCatalogOptions(catalogs.componenteObras);
   const selectedStudents = getSelectedStudentsForDraft(draft, student, allStudents);
   const processOptions = normalizeStudentProcesses(student);
   const activeProcess =
     resolveStudentProcess(student, currentEditorProcessKey || draft.processKey) ||
     processOptions[0] ||
     null;
+  const areaCatalogs = getCatalogsForProcess(catalogs, activeProcess, student);
+  const categoriasOptions = getCatalogOptions(areaCatalogs.categorias);
+  const corporalOptions = getCatalogOptions(areaCatalogs.componenteCorporal);
+  const tecnicoOptions = getCatalogOptions(areaCatalogs.componenteTecnico);
+  const teoricoOptions = getCatalogOptions(areaCatalogs.componenteTeorico);
+  const obrasOptions = getCatalogOptions(areaCatalogs.componenteObras);
   const activeProcessLabel = toStringSafe(
     activeProcess?.label || activeProcess?.detalle || activeProcess?.arte || "Proceso"
   );
@@ -4415,7 +4417,7 @@ function buildMusicalaEditorMarkup({
                 ${renderStudentOverridesEditor(
                   draft,
                   selectedStudents,
-                  getStudentOverrideCatalogOptions()
+                  getStudentOverrideCatalogOptions(areaCatalogs)
                 )}
               </section>
 
@@ -4714,6 +4716,10 @@ function renderStudentSummaryCompact(student) {
           <div class="student-summary__fact">
             <dt>Modalidad</dt>
             <dd>${escapeHtml(getReadableValue(student.modalidad, "Sin modalidad"))}</dd>
+          </div>
+          <div class="student-summary__fact">
+            <dt>Condición</dt>
+            <dd>${escapeHtml(getReadableValue(getStudentCondition(student), "Sin condición registrada"))}</dd>
           </div>
         </dl>
       </div>
@@ -5186,9 +5192,7 @@ function renderStudentOverrideChips(studentId, key, values = []) {
     .join("");
 }
 
-function getStudentOverrideCatalogOptions() {
-  const catalogs = cachedCatalogs || getEmptyCatalogs();
-
+function getStudentOverrideCatalogOptions(catalogs = cachedCatalogs || getEmptyCatalogs()) {
   return {
     etiquetas: getCatalogOptions(catalogs.categorias),
     componenteCorporal: getCatalogOptions(catalogs.componenteCorporal),
@@ -5196,6 +5200,75 @@ function getStudentOverrideCatalogOptions() {
     componenteTeorico: getCatalogOptions(catalogs.componenteTeorico),
     componenteObras: getCatalogOptions(catalogs.componenteObras),
   };
+}
+
+function getCatalogsForProcess(catalogs = {}, process = {}, student = {}) {
+  const base = {
+    categorias: catalogs.categorias || [],
+    componenteCorporal: catalogs.componenteCorporal || [],
+    componenteTecnico: catalogs.componenteTecnico || [],
+    componenteTeorico: catalogs.componenteTeorico || [],
+    componenteObras: catalogs.componenteObras || [],
+  };
+  const areaKeys = getAreaCatalogKeys(process, student);
+
+  return {
+    categorias: resolveAreaCatalogList(catalogs, "categorias", areaKeys, base.categorias),
+    componenteCorporal: resolveAreaCatalogList(catalogs, "componenteCorporal", areaKeys, base.componenteCorporal),
+    componenteTecnico: resolveAreaCatalogList(catalogs, "componenteTecnico", areaKeys, base.componenteTecnico),
+    componenteTeorico: resolveAreaCatalogList(catalogs, "componenteTeorico", areaKeys, base.componenteTeorico),
+    componenteObras: resolveAreaCatalogList(catalogs, "componenteObras", areaKeys, base.componenteObras),
+  };
+}
+
+function getAreaCatalogKeys(process = {}, student = {}) {
+  return uniqueByNormalized([
+    process?.arte,
+    process?.area,
+    process?.instrumento,
+    process?.programa,
+    process?.detalle,
+    student?.area,
+    student?.instrumento,
+    student?.programa,
+  ]).map((value) => normalizeText(value));
+}
+
+function resolveAreaCatalogList(catalogs = {}, key, areaKeys = [], fallback = []) {
+  const groupedByField = catalogs[`${key}PorArte`];
+  const nestedByArea = catalogs.porArte || catalogs.catalogosPorArte || {};
+  const fromGrouped = findCatalogGroup(groupedByField, areaKeys);
+  if (fromGrouped.length) return fromGrouped;
+
+  for (const [areaName, areaCatalog] of Object.entries(nestedByArea || {})) {
+    if (!areaKeys.includes(normalizeText(areaName))) continue;
+    if (Array.isArray(areaCatalog)) return areaCatalog;
+    if (areaCatalog && typeof areaCatalog === "object") {
+      const values = areaCatalog[key];
+      if (Array.isArray(values) && values.length) return values;
+    }
+  }
+
+  const filteredFallback = getCatalogOptions(fallback).filter((value) => {
+    const normalizedValue = normalizeText(value);
+    return areaKeys.some((areaKey) => areaKey && normalizedValue.includes(areaKey));
+  });
+
+  if (filteredFallback.length) return filteredFallback;
+
+  return fallback;
+}
+
+function findCatalogGroup(groups = {}, areaKeys = []) {
+  if (!groups || typeof groups !== "object") return [];
+
+  for (const [name, values] of Object.entries(groups)) {
+    if (areaKeys.includes(normalizeText(name)) && Array.isArray(values)) {
+      return values;
+    }
+  }
+
+  return [];
 }
 
 function buildAutoTitle(student, fechaClase = "") {

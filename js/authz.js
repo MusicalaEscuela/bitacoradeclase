@@ -115,6 +115,10 @@ export function canAccessRoute(user, routeName) {
     return access.canEditBitacoras;
   }
 
+  if (route === CONFIG.routes.compare) {
+    return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
+  }
+
   if (route === CONFIG.routes.profile) {
     return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
   }
