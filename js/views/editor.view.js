@@ -90,6 +90,34 @@ const GROUP_SEARCH_DEBOUNCE_MS = 100;
 const RECENT_PICKERS_KEY = "bitacoras_recent_pickers_v1";
 const RECENT_PICKERS_LIMIT = 12;
 
+// Identificador sintetico para abrir una bitacora grupal "en blanco": sin
+// estudiante principal preseleccionado. El editor lo trata como contexto valido
+// para poder renderizarse, pero este id nunca se cuenta como integrante del
+// grupo ni se guarda en la bitacora (los integrantes reales se agregan desde el
+// buscador interno del editor grupal).
+const GROUP_PLACEHOLDER_ID = "__nuevo_grupo__";
+
+function createGroupPlaceholderStudent() {
+  return {
+    studentKey: GROUP_PLACEHOLDER_ID,
+    id: GROUP_PLACEHOLDER_ID,
+    studentId: GROUP_PLACEHOLDER_ID,
+    nombre: "Bitacora grupal",
+    __isGroupPlaceholder: true,
+  };
+}
+
+function isGroupPlaceholderId(value) {
+  return toStringSafe(value) === GROUP_PLACEHOLDER_ID;
+}
+
+function isGroupPlaceholderStudent(student) {
+  return (
+    Boolean(student?.__isGroupPlaceholder) ||
+    isGroupPlaceholderId(getStudentIdentity(student))
+  );
+}
+
 export async function beforeEnter({ payload, navigateTo } = {}) {
   clearAppError();
 
@@ -242,6 +270,9 @@ function setupSubscription(config, preferredStudentRef = null) {
 }
 
 async function ensureBitacorasLoaded(student) {
+  // El placeholder grupal no tiene historial propio: no hay nada que cargar.
+  if (isGroupPlaceholderStudent(student)) return;
+
   const studentRef = getStudentIdentity(student);
   if (!studentRef) return;
 
@@ -798,6 +829,15 @@ function bindEditorEvents(student) {
     const input = viewRoot.querySelector(`[data-multi-input="${key}"]`);
     if (!input) return;
 
+    // Al enfocar el campo se despliega la lista completa del componente (sin
+    // necesidad de escribir ni de tocar "Opciones"). Mientras el campo no se
+    // toque la lista permanece cerrada para no generar ruido visual.
+    // Los campos de entrada directa (docentes) usan datalist nativo y no tienen
+    // panel propio, asi que renderPickerOptionsForInput es un no-op para ellos.
+    input.addEventListener("focus", () => {
+      renderPickerOptionsForInput(key, input);
+    });
+
     input.addEventListener("input", () => {
       renderPickerOptionsForInput(key, input);
       const options = getMultiFieldOptions(key, input);
@@ -818,6 +858,16 @@ function bindEditorEvents(student) {
         event.preventDefault();
         addMultiValueSelection(key, input.value, student);
       }
+    });
+  });
+
+  // Cierra cualquier panel de opciones abierto cuando se hace clic fuera del
+  // campo correspondiente, para que la lista no quede flotando ocupando espacio.
+  viewRoot.addEventListener("click", (event) => {
+    const insideField = event.target.closest(".field--multi-value");
+    viewRoot.querySelectorAll("[data-picker-panel].is-open").forEach((panel) => {
+      if (insideField && insideField.contains(panel)) return;
+      panel.classList.remove("is-open");
     });
   });
 
@@ -2391,9 +2441,22 @@ function normalizeCreatedBitacora(response, fallbackPayload) {
 }
 
 function buildBitacoraPayload(student, draft) {
-  const studentRef = getStudentIdentity(student);
   const allStudents = getAllStudentsFromState(getState());
   const selectedStudents = getSelectedStudentsForDraft(draft, student, allStudents);
+
+  // Si la bitacora grupal se abrio en blanco (placeholder), el "estudiante
+  // principal" para metadatos (proceso, area, sede) es el primer integrante real
+  // agregado. Asi el payload nunca queda asociado al id sintetico.
+  if (isGroupPlaceholderStudent(student)) {
+    const firstId = selectedStudents[0]?.id;
+    const firstStudent =
+      (firstId &&
+        allStudents.find((item) => getStudentIdentity(item) === firstId)) ||
+      null;
+    student = firstStudent || createGroupPlaceholderStudent();
+  }
+
+  const studentRef = getStudentIdentity(student);
   const hasGroupSelection = selectedStudents.length > 1;
   const mode =
     getAllowedMode(draft.mode) === CONFIG.modes.group || hasGroupSelection
@@ -2745,6 +2808,22 @@ function getDraftForContext(student) {
   };
 }
 
+function getInitialGroupRefsFromSelection() {
+  const state = getState();
+  const selectedIds = normalizeStudentIds(state?.search?.selectedStudentIds || []);
+  if (!selectedIds.length) return [];
+
+  const allStudents = getAllStudentsFromState(state);
+  return selectedIds
+    .filter((id) => !isGroupPlaceholderId(id))
+    .map((id) => {
+      const found = allStudents.find(
+        (item) => getStudentIdentity(item) === id
+      );
+      return { id, name: found ? getStudentName(found) : id };
+    });
+}
+
 function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual) {
   const normalizedMode = getAllowedMode(mode);
   const baseStudentName = isPlainObject(student) ? getStudentName(student) : "";
@@ -2752,12 +2831,22 @@ function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual)
     resolveStudentProcess(student, currentEditorProcessKey) ||
     normalizeStudentProcesses(student)[0] ||
     null;
-  const refs = [
-    {
-      id: studentRef,
-      name: baseStudentName,
-    },
-  ];
+  // Bitacora grupal en blanco: no hay estudiante base real. Los integrantes
+  // iniciales son los que el docente hubiera preseleccionado en la busqueda
+  // (puede ser ninguno); el resto se agrega desde el buscador interno.
+  const isPlaceholder = isGroupPlaceholderStudent(student);
+  const placeholderRefs = isPlaceholder
+    ? getInitialGroupRefsFromSelection()
+    : [];
+
+  const refs = isPlaceholder
+    ? placeholderRefs
+    : [
+        {
+          id: studentRef,
+          name: baseStudentName,
+        },
+      ];
   // En grupal, si no hay docente en el proceso/estudiante base, usar el del usuario en sesion.
   const sessionUser = getState()?.auth?.user || null;
   const sessionTeacher =
@@ -3723,7 +3812,7 @@ function getSelectedStudentsForDraft(draft, primaryStudent, allStudents = []) {
   const refsFromDraft = normalizeStudentRefs(draft?.studentRefs || []);
   const resultMap = new Map();
 
-  if (primary?.id) {
+  if (primary?.id && !isGroupPlaceholderId(primary.id)) {
     resultMap.set(primary.id, primary);
   }
 
@@ -3895,6 +3984,16 @@ function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") 
 }
 
 function getStudentFromState(state, preferredStudentRef = null) {
+  // Bitacora grupal en blanco: si el contexto apunta al placeholder, devuelve un
+  // estudiante sintetico para que el editor pueda renderizarse sin un estudiante
+  // principal real. Los integrantes se agregan desde el buscador interno.
+  if (
+    isGroupPlaceholderId(preferredStudentRef) ||
+    (!preferredStudentRef && isGroupPlaceholderStudent(state?.students?.selected))
+  ) {
+    return createGroupPlaceholderStudent();
+  }
+
   const selectedRef =
     preferredStudentRef ||
     state?.students?.selected?.studentKey ||
@@ -4245,7 +4344,8 @@ function buildMusicalaEditorMarkup({
     config?.appName ||
     config?.title ||
     "Bitacoras de Clase";
-  const isGroup = draft.mode === CONFIG.modes.group;
+  const isBlankGroup = isGroupPlaceholderStudent(student);
+  const isGroup = isBlankGroup || draft.mode === CONFIG.modes.group;
   const draftFields = getStructuredDraftFields(draft, student);
   const catalogs = cachedCatalogs || getEmptyCatalogs();
   const teacherOptions = getTeacherOptions(
@@ -4312,6 +4412,10 @@ function buildMusicalaEditorMarkup({
             <form id="bitacora-form" class="bitacora-form" novalidate>
               <fieldset class="field field--radio-group editor-mode-strip">
                 <legend class="field__label">Tipo de registro</legend>
+                ${
+                  isBlankGroup
+                    ? ""
+                    : `
                 <label class="choice-pill">
                   <input
                     type="radio"
@@ -4321,6 +4425,8 @@ function buildMusicalaEditorMarkup({
                   />
                   <span>Individual</span>
                 </label>
+                `
+                }
                 ${
                   canUseGroupBitacoras()
                     ? `
@@ -4692,6 +4798,18 @@ function renderStudentSummaryCompact(student) {
     return `<div class="empty-state empty-state--files"><p class="empty-state__text">No hay estudiante seleccionado.</p></div>`;
   }
 
+  if (isGroupPlaceholderStudent(student)) {
+    return `
+      <article class="student-summary student-summary--compact">
+        <div class="student-summary__identity">
+          <p class="student-summary__eyebrow">Bitacora grupal</p>
+          <h2 class="student-summary__name">Nuevo grupo</h2>
+          <p class="student-summary__doc">Busca y agrega los estudiantes mas abajo.</p>
+        </div>
+      </article>
+    `;
+  }
+
   return `
     <article class="student-summary student-summary--compact">
       <div class="student-summary__identity">
@@ -4779,9 +4897,20 @@ function uniqueByNormalized(values = []) {
   return result;
 }
 
+// Las opciones mas usadas se guardan por docente: namespacing la clave de
+// localStorage con el uid/email del usuario autenticado, para que en equipos
+// compartidos cada docente vea arriba sus propios items frecuentes.
+function getRecentPickersStorageKey() {
+  const user = getState()?.auth?.user || null;
+  const owner = toStringSafe(user?.uid || user?.email).toLowerCase();
+  return owner ? `${RECENT_PICKERS_KEY}__${owner}` : RECENT_PICKERS_KEY;
+}
+
 function getRecentPickers() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(RECENT_PICKERS_KEY) || "{}");
+    const parsed = JSON.parse(
+      localStorage.getItem(getRecentPickersStorageKey()) || "{}"
+    );
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -4798,7 +4927,7 @@ function rememberPickerValues(key, values = []) {
       ...cleanValues,
       ...(Array.isArray(recent[key]) ? recent[key] : []),
     ]).slice(0, RECENT_PICKERS_LIMIT);
-    localStorage.setItem(RECENT_PICKERS_KEY, JSON.stringify(recent));
+    localStorage.setItem(getRecentPickersStorageKey(), JSON.stringify(recent));
   } catch (error) {
     console.warn("No se pudieron guardar opciones recientes:", error);
   }
@@ -5221,8 +5350,61 @@ function getCatalogsForProcess(catalogs = {}, process = {}, student = {}) {
   };
 }
 
+// El catalogo se agrupa por las 4 areas canonicas (musica, danza, artes
+// plasticas, teatro), pero los procesos a veces usan nombres alternos: el caso
+// tipico es "Baile" en lugar de "Danza". Sin este mapeo, el area no coincide con
+// ninguna clave del catalogo y se cae al fallback que mezcla TODAS las areas.
+// Cada entrada agrega su(s) equivalente(s) canonico(s) cuando el valor del
+// proceso contiene alguno de los terminos indicados.
+const AREA_KEY_SYNONYMS = [
+  { canonical: "danza", matchers: ["danza", "baile"] },
+  { canonical: "teatro", matchers: ["teatro", "actuacion", "dramaturgia"] },
+  {
+    canonical: "artesplasticas",
+    matchers: [
+      "plastica",
+      "plasticas",
+      "dibujo",
+      "pintura",
+      "ceramica",
+      "modelado",
+      "manualidades",
+    ],
+  },
+  {
+    canonical: "musica",
+    matchers: [
+      "musica",
+      "guitarra",
+      "piano",
+      "teclado",
+      "bateria",
+      "percusion",
+      "canto",
+      "violin",
+      "cello",
+      "violoncello",
+      "bajo",
+      "ukulele",
+      "saxofon",
+      "flauta",
+    ],
+  },
+];
+
+function expandAreaKeyAliases(normalizedKey) {
+  if (!normalizedKey) return [];
+  const out = new Set([normalizedKey]);
+  AREA_KEY_SYNONYMS.forEach(({ canonical, matchers }) => {
+    if (matchers.some((term) => normalizedKey.includes(term))) {
+      out.add(canonical);
+    }
+  });
+  return [...out];
+}
+
 function getAreaCatalogKeys(process = {}, student = {}) {
-  return uniqueByNormalized([
+  const rawKeys = uniqueByNormalized([
     process?.arte,
     process?.area,
     process?.instrumento,
@@ -5232,6 +5414,13 @@ function getAreaCatalogKeys(process = {}, student = {}) {
     student?.instrumento,
     student?.programa,
   ]).map((value) => normalizeText(value));
+
+  const expanded = new Set();
+  rawKeys.forEach((value) => {
+    expandAreaKeyAliases(value).forEach((key) => expanded.add(key));
+  });
+
+  return [...expanded];
 }
 
 function resolveAreaCatalogList(catalogs = {}, key, areaKeys = [], fallback = []) {
