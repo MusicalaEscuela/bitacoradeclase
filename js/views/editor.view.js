@@ -5392,35 +5392,51 @@ const AREA_KEY_SYNONYMS = [
   },
 ];
 
-function expandAreaKeyAliases(normalizedKey) {
-  if (!normalizedKey) return [];
-  const out = new Set([normalizedKey]);
-  AREA_KEY_SYNONYMS.forEach(({ canonical, matchers }) => {
-    if (matchers.some((term) => normalizedKey.includes(term))) {
-      out.add(canonical);
-    }
-  });
-  return [...out];
+// Resuelve un valor (p.ej. "BAILE", "Guitarra", "Artes plasticas") a su area
+// macro canonica. Devuelve "" si no corresponde a ninguna de las 4 areas.
+function resolveCanonicalArea(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return "";
+  const match = AREA_KEY_SYNONYMS.find(({ matchers }) =>
+    matchers.some((term) => normalized.includes(term))
+  );
+  return match ? match.canonical : "";
 }
 
+// El catalogo se filtra SOLO por las 4 areas macro (musica, danza, artes
+// plasticas, teatro). El enfasis (latino, instrumento, etc.) NO se usa para
+// filtrar: todo lo que sea de Musica aplica a cualquier proceso de Musica, lo de
+// Danza/Baile a cualquier proceso de danza, y asi sucesivamente.
 function getAreaCatalogKeys(process = {}, student = {}) {
-  const rawKeys = uniqueByNormalized([
-    process?.arte,
-    process?.area,
+  // 1) Primero el area macro declarada explicitamente.
+  const macroValues = [process?.arte, process?.area, student?.area];
+  // 2) Como respaldo, instrumento/programa/detalle (por si no hay area macro).
+  const detailValues = [
     process?.instrumento,
     process?.programa,
     process?.detalle,
-    student?.area,
     student?.instrumento,
     student?.programa,
-  ]).map((value) => normalizeText(value));
+  ];
 
-  const expanded = new Set();
-  rawKeys.forEach((value) => {
-    expandAreaKeyAliases(value).forEach((key) => expanded.add(key));
+  const fromMacro = new Set();
+  macroValues.forEach((value) => {
+    const canonical = resolveCanonicalArea(value);
+    if (canonical) fromMacro.add(canonical);
   });
+  if (fromMacro.size) return [...fromMacro];
 
-  return [...expanded];
+  const fromDetail = new Set();
+  detailValues.forEach((value) => {
+    const canonical = resolveCanonicalArea(value);
+    if (canonical) fromDetail.add(canonical);
+  });
+  if (fromDetail.size) return [...fromDetail];
+
+  // 3) Sin coincidencia con las 4 areas: usar las claves crudas (compatibilidad).
+  return uniqueByNormalized([...macroValues, ...detailValues]).map((value) =>
+    normalizeText(value)
+  );
 }
 
 function resolveAreaCatalogList(catalogs = {}, key, areaKeys = [], fallback = []) {
