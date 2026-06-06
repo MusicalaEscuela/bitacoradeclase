@@ -871,6 +871,41 @@ function bindEditorEvents(student) {
     });
   });
 
+  // Boton "Opciones": despliega la lista completa del componente. (Antes este
+  // handler estaba mal ubicado dentro de removeDraftFile y no se registraba en
+  // un render normal, por eso el boton no hacia nada.)
+  viewRoot.addEventListener("click", (event) => {
+    const toggle = event.target.closest("[data-picker-toggle]");
+    if (toggle) {
+      const key = toggle.getAttribute("data-picker-toggle");
+      const input = viewRoot.querySelector(`[data-multi-input="${key}"]`);
+      // Re-renderiza con la lista completa (query actual del input) y abre.
+      if (input) {
+        renderPickerOptionsForInput(key, input);
+      } else {
+        togglePickerPanel(key, true);
+      }
+      return;
+    }
+
+    const selectVisible = event.target.closest("[data-picker-select-visible]");
+    if (selectVisible) {
+      setVisiblePickerChecks(
+        selectVisible.getAttribute("data-picker-select-visible"),
+        true
+      );
+      return;
+    }
+
+    const addSelected = event.target.closest("[data-picker-add-selected]");
+    if (addSelected) {
+      addCheckedPickerSelections(
+        addSelected.getAttribute("data-picker-add-selected"),
+        student
+      );
+    }
+  });
+
   viewRoot.querySelectorAll("[data-multi-add]").forEach((button) => {
     button.addEventListener("click", () => {
       const key = button.getAttribute("data-multi-add");
@@ -1215,26 +1250,6 @@ function removeDraftFile(index, student) {
   updateDraft({
     ...currentDraft,
     archivos: currentFiles.filter((_, fileIndex) => fileIndex !== index),
-  });
-
-  viewRoot.addEventListener("click", (event) => {
-    const toggle = event.target.closest("[data-picker-toggle]");
-    if (toggle) {
-      const key = toggle.getAttribute("data-picker-toggle");
-      togglePickerPanel(key, true);
-      return;
-    }
-
-    const selectVisible = event.target.closest("[data-picker-select-visible]");
-    if (selectVisible) {
-      setVisiblePickerChecks(selectVisible.getAttribute("data-picker-select-visible"), true);
-      return;
-    }
-
-    const addSelected = event.target.closest("[data-picker-add-selected]");
-    if (addSelected) {
-      addCheckedPickerSelections(addSelected.getAttribute("data-picker-add-selected"), student);
-    }
   });
 
   renderFilesPreviewBlock(student);
@@ -4917,28 +4932,91 @@ function getRecentPickers() {
   }
 }
 
+// Normaliza el almacenamiento de un componente a un mapa
+// { valorNormalizado: { label, count, ts } }. Acepta el formato viejo (arreglo
+// de strings, donde el orden representaba recencia) para no perder lo guardado.
+function normalizeRecentEntry(rawForKey) {
+  const map = {};
+
+  if (Array.isArray(rawForKey)) {
+    rawForKey.forEach((label, index) => {
+      const norm = normalizeText(label);
+      if (!norm || map[norm]) return;
+      // El primero del arreglo era el mas reciente: le damos mayor conteo para
+      // conservar ese orden hasta que el uso real lo ajuste.
+      map[norm] = { label: toStringSafe(label), count: rawForKey.length - index, ts: 0 };
+    });
+    return map;
+  }
+
+  if (rawForKey && typeof rawForKey === "object") {
+    Object.entries(rawForKey).forEach(([norm, entry]) => {
+      if (!norm || !entry || typeof entry !== "object") return;
+      map[norm] = {
+        label: toStringSafe(entry.label) || norm,
+        count: Number(entry.count) || 1,
+        ts: Number(entry.ts) || 0,
+      };
+    });
+  }
+
+  return map;
+}
+
+// Devuelve los valores ordenados por frecuencia (mas usados primero) y, a igual
+// frecuencia, por uso mas reciente.
+function getRankedPickerValues(key) {
+  const recent = getRecentPickers();
+  const map = normalizeRecentEntry(recent[key]);
+  return Object.values(map)
+    .sort((a, b) => b.count - a.count || b.ts - a.ts)
+    .map((entry) => entry.label);
+}
+
 function rememberPickerValues(key, values = []) {
   const cleanValues = normalizeListValues(values);
   if (!key || !cleanValues.length) return;
 
   try {
     const recent = getRecentPickers();
-    recent[key] = uniqueByNormalized([
-      ...cleanValues,
-      ...(Array.isArray(recent[key]) ? recent[key] : []),
-    ]).slice(0, RECENT_PICKERS_LIMIT);
+    const map = normalizeRecentEntry(recent[key]);
+    const now = Date.now();
+
+    cleanValues.forEach((label) => {
+      const norm = normalizeText(label);
+      if (!norm) return;
+      const prev = map[norm];
+      map[norm] = {
+        label: toStringSafe(label),
+        count: (prev?.count || 0) + 1,
+        ts: now,
+      };
+    });
+
+    // Conserva solo los mas usados para acotar el almacenamiento.
+    recent[key] = Object.values(map)
+      .sort((a, b) => b.count - a.count || b.ts - a.ts)
+      .slice(0, RECENT_PICKERS_LIMIT)
+      .reduce((acc, entry) => {
+        acc[normalizeText(entry.label)] = entry;
+        return acc;
+      }, {});
+
     localStorage.setItem(getRecentPickersStorageKey(), JSON.stringify(recent));
   } catch (error) {
-    console.warn("No se pudieron guardar opciones recientes:", error);
+    console.warn("No se pudieron guardar opciones frecuentes:", error);
   }
 }
 
 function prioritizePickerOptions(key, options = []) {
-  const recent = getRecentPickers();
-  return uniqueByNormalized([
-    ...(Array.isArray(recent[key]) ? recent[key] : []),
-    ...options,
-  ]);
+  // Solo subimos arriba los mas usados que aun existan en el catalogo actual,
+  // para no mostrar items eliminados o de otra area.
+  const optionSet = new Set(options.map((option) => normalizeText(option)));
+  const ranked = getRankedPickerValues(key).filter((value) =>
+    optionSet.has(normalizeText(value))
+  );
+
+  return uniqueByNormalized([...ranked, ...options]);
 }
 
 function getDraftTeachers(draft = {}, structured = {}, student = {}) {
