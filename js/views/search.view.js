@@ -439,11 +439,14 @@ function handleOpenGroupEditor() {
     ? state.search.selectedStudentIds
     : [];
 
+  // Los docentes pidieron poder abrir la bitácora grupal directamente y buscar
+  // los estudiantes dentro del editor. Si hay menos de dos seleccionados, se abre
+  // un grupo "en blanco" (con un estudiante principal sintético) en lugar de
+  // bloquear con un error: los integrantes preseleccionados (si los hay) se
+  // conservan y el resto se agrega desde el buscador interno del editor.
   if (selectedIds.length < 2) {
-    setAppError(
-      CONFIG?.text?.emptyGroup ||
-        "Selecciona al menos dos estudiantes para abrir una bitácora grupal."
-    );
+    clearAppError();
+    openBlankGroupEditor();
     return;
   }
 
@@ -461,6 +464,24 @@ function handleOpenGroupEditor() {
   goToEditor(primaryStudent, {
     mode: CONFIG.modes.group,
     selectedStudentIds: selectedIds,
+  });
+}
+
+// Mantener sincronizado con GROUP_PLACEHOLDER_ID en editor.view.js.
+const GROUP_PLACEHOLDER_ID = "__nuevo_grupo__";
+
+// Abre el editor de bitácora grupal "en blanco". Se navega directamente con el
+// id sintético (sin setSelectedStudent) para no inyectar un estudiante falso en
+// el listado/estado de estudiantes. El editor reconoce este id y se renderiza
+// sin estudiante principal; los integrantes preseleccionados (si los hay) se
+// conservan desde state.search.selectedStudentIds.
+function openBlankGroupEditor() {
+  if (typeof currentNavigateTo !== "function") return;
+  currentNavigateTo(CONFIG.routes.editor, {
+    id: GROUP_PLACEHOLDER_ID,
+    studentId: GROUP_PLACEHOLDER_ID,
+    studentKey: GROUP_PLACEHOLDER_ID,
+    mode: CONFIG.modes.group,
   });
 }
 
