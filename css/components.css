@@ -661,6 +661,43 @@
   box-shadow: 0 16px 34px rgba(87, 41, 255, 0.3);
 }
 
+/* Estado "trabajando": feedback visible mientras una accion larga (guardar
+   en Firebase, sincronizar) esta en curso. */
+.btn.is-busy {
+  position: relative;
+  pointer-events: none;
+  animation: btn-busy-pulse 1.1s ease-in-out infinite;
+}
+
+.btn.is-busy::after {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-left: 0.5em;
+  vertical-align: -0.1em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: btn-busy-spin 0.7s linear infinite;
+}
+
+@keyframes btn-busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes btn-busy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
 .btn--secondary {
   background: linear-gradient(135deg, #f2a33a, #ec951a);
   color: #ffffff;
