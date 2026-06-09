@@ -51,6 +51,8 @@ let currentBitacoraImportPlan = null;
 let currentArtCatalogSearchQuery = "";
 const expandedSettingsPanels = new Set();
 const ART_MATRIX_VISIBLE_LIMIT = 160;
+const ART_MATRIX_PAGE_SIZE = 200;
+const artMatrixVisibleLimits = {};
 
 const STRING_CATALOGS = [
   { key: "categorias", label: "Categorías" },
@@ -582,8 +584,18 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
   const filteredItems = query
     ? items.filter((item) => normalizeText(item).includes(query))
     : items;
-  const visibleItems = filteredItems.slice(0, ART_MATRIX_VISIBLE_LIMIT);
+  const visibleLimit = getArtMatrixVisibleLimit(catalogKey);
+  const visibleItems = filteredItems.slice(0, visibleLimit);
   const hiddenCount = Math.max(filteredItems.length - visibleItems.length, 0);
+
+  // Precalcula una sola vez los items asignados por area (normalizados) para
+  // no reconstruir y reordenar las listas completas por cada checkbox.
+  const assignedSetsByArea = ART_AREAS.map((area) => ({
+    area,
+    assigned: new Set(
+      getArtCatalogGroup(catalogKey, area.key).map((value) => normalizeText(value))
+    ),
+  }));
 
   return `
     <label class="field settings-art-search">
@@ -591,14 +603,14 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
       <input
         class="field__input"
         type="search"
-        data-art-search
+        data-art-search="${escapeHtml(catalogKey)}"
         value="${escapeHtml(currentArtCatalogSearchQuery)}"
         placeholder="Filtra para encontrar items rapido"
         autocomplete="off"
       />
       <small class="field__hint">
         Mostrando ${escapeHtml(String(visibleItems.length))} de ${escapeHtml(String(filteredItems.length))} items.
-        ${hiddenCount ? `Escribe para filtrar los ${escapeHtml(String(hiddenCount))} restantes.` : ""}
+        ${hiddenCount ? `Usa los botones de abajo para ver mas o filtra escribiendo.` : ""}
       </small>
     </label>
     <div class="settings-art-matrix" role="table" aria-label="Asignacion por arte">
@@ -611,13 +623,41 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
           (item) => `
             <div class="settings-art-matrix__row" role="row">
               <span class="settings-art-matrix__item" role="cell">${escapeHtml(item)}</span>
-              ${ART_AREAS.map((area) => renderArtAssignmentCheckbox(catalogKey, area, item)).join("")}
+              ${assignedSetsByArea
+                .map(({ area, assigned }) =>
+                  renderArtAssignmentCheckbox(
+                    catalogKey,
+                    area,
+                    item,
+                    assigned.has(normalizeText(item))
+                  )
+                )
+                .join("")}
             </div>
           `
         )
         .join("")}
     </div>
+    ${
+      hiddenCount
+        ? `
+          <div class="settings-form-actions">
+            <button type="button" class="btn btn--secondary btn--sm" data-art-show-more="${escapeHtml(catalogKey)}">
+              Mostrar ${escapeHtml(String(Math.min(ART_MATRIX_PAGE_SIZE, hiddenCount)))} mas
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" data-art-show-all="${escapeHtml(catalogKey)}">
+              Ver lista completa (${escapeHtml(String(filteredItems.length))})
+            </button>
+          </div>
+        `
+        : ""
+    }
   `;
+}
+
+function getArtMatrixVisibleLimit(catalogKey) {
+  const limit = artMatrixVisibleLimits[catalogKey];
+  return Number.isFinite(limit) || limit === Infinity ? limit : ART_MATRIX_VISIBLE_LIMIT;
 }
 
 function renderArtMatrixHeaderCell(catalogKey, area) {
@@ -632,9 +672,7 @@ function renderArtMatrixHeaderCell(catalogKey, area) {
   `;
 }
 
-function renderArtAssignmentCheckbox(catalogKey, area, item) {
-  const checked = isCatalogItemAssignedToArt(catalogKey, area.key, item);
-
+function renderArtAssignmentCheckbox(catalogKey, area, item, checked) {
   return `
     <label class="settings-art-check ${checked ? "is-checked" : ""}" role="cell">
       <input
@@ -757,6 +795,9 @@ function renderStringItems(key, items = []) {
           <div class="settings-item-card__content">
             <h3>${escapeHtml(item)}</h3>
           </div>
+          <button type="button" class="btn btn--ghost btn--sm" data-edit-item="${escapeHtml(key)}" data-item-value="${escapeHtml(item)}">
+            Editar
+          </button>
           <button type="button" class="btn btn--ghost btn--sm" data-remove-item="${escapeHtml(key)}" data-item-value="${escapeHtml(item)}">
             Quitar
           </button>
@@ -836,7 +877,6 @@ function bindEvents(state) {
   const bitacoraImportInput = viewRoot.querySelector("#settings-import-bitacoras");
   const bitacoraImportBtn = viewRoot.querySelector("#settings-import-bitacoras-btn");
   const studentAccessSearch = viewRoot.querySelector("#settings-student-access-search");
-  const artSearch = viewRoot.querySelector("[data-art-search]");
 
   if (studentAccessSearch) {
     studentAccessSearch.addEventListener("input", () => {
@@ -845,12 +885,42 @@ function bindEvents(state) {
     });
   }
 
-  if (artSearch) {
+  viewRoot.querySelectorAll("[data-art-search]").forEach((artSearch) => {
     artSearch.addEventListener("input", () => {
       currentArtCatalogSearchQuery = artSearch.value || "";
+      const catalogKey = artSearch.getAttribute("data-art-search");
+      renderView(getState());
+      const restored = viewRoot?.querySelector(
+        `[data-art-search="${cssEscape(catalogKey)}"]`
+      );
+      if (restored) {
+        restored.focus();
+        const end = restored.value.length;
+        restored.setSelectionRange(end, end);
+      }
+    });
+  });
+
+  viewRoot.querySelectorAll("[data-art-show-more]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const catalogKey = button.getAttribute("data-art-show-more");
+      if (!catalogKey) return;
+      artMatrixVisibleLimits[catalogKey] =
+        getArtMatrixVisibleLimit(catalogKey) + ART_MATRIX_PAGE_SIZE;
+      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
       renderView(getState());
     });
-  }
+  });
+
+  viewRoot.querySelectorAll("[data-art-show-all]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const catalogKey = button.getAttribute("data-art-show-all");
+      if (!catalogKey) return;
+      artMatrixVisibleLimits[catalogKey] = Infinity;
+      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
+      renderView(getState());
+    });
+  });
 
   if (refreshBtn) {
     refreshBtn.addEventListener("click", async () => {
@@ -882,6 +952,12 @@ function bindEvents(state) {
         renderView(getState());
         return;
       }
+
+      // Feedback inmediato: el guardado puede tardar varios segundos con
+      // catalogos grandes y antes no se veia que algo estuviera pasando.
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Guardando en Firebase...";
+      saveBtn.classList.add("is-busy");
 
       await withLoading(async () => {
         clearAppError();
@@ -1170,6 +1246,23 @@ function bindEvents(state) {
     });
   });
 
+  viewRoot.querySelectorAll("[data-edit-item]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-edit-item");
+      const value = button.getAttribute("data-item-value");
+      if (!key || !value) return;
+
+      const next = toStringSafe(
+        window.prompt(`Editar elemento de ${getCatalogLabel(key)}:`, value)
+      );
+      if (!next || next === value) return;
+
+      renameCatalogItem(key, value, next);
+      expandedSettingsPanels.add(`${key}-list`);
+      renderView(getState());
+    });
+  });
+
   viewRoot.querySelectorAll("[data-remove-item]").forEach((button) => {
     button.addEventListener("click", () => {
       const key = button.getAttribute("data-remove-item");
@@ -1282,6 +1375,41 @@ function appendCatalogItems(key, items = []) {
   };
 }
 
+function renameCatalogItem(key, oldValue, newValue) {
+  const oldNorm = normalizeText(oldValue);
+
+  currentCatalogs = {
+    ...currentCatalogs,
+    [key]: normalizeStringItems(
+      (currentCatalogs[key] || []).map((item) =>
+        normalizeText(item) === oldNorm ? newValue : item
+      )
+    ),
+  };
+
+  // Mantiene las asignaciones por arte apuntando al nuevo nombre.
+  const grouped = ART_AREAS.reduce((next, area) => {
+    const items = getArtCatalogGroup(key, area.key);
+    const wasAssigned = items.some((value) => normalizeText(value) === oldNorm);
+    next[area.key] = wasAssigned
+      ? normalizeStringItems([
+          ...items.filter((value) => normalizeText(value) !== oldNorm),
+          newValue,
+        ])
+      : items;
+    return next;
+  }, {});
+
+  currentCatalogs = {
+    ...currentCatalogs,
+    [getArtCatalogKey(key)]: grouped,
+  };
+  currentMessage = {
+    type: "info",
+    text: `Elemento renombrado en ${getCatalogLabel(key)}. Guarda en Firebase para persistir.`,
+  };
+}
+
 function getArtCatalogKey(key) {
   return `${key}PorArte`;
 }
@@ -1298,13 +1426,6 @@ function getArtCatalogGroup(catalogKey, artKey) {
     ...(Array.isArray(grouped?.[artKey]) ? grouped[artKey] : []),
     ...(Array.isArray(grouped?.[label]) ? grouped[label] : []),
   ]);
-}
-
-function isCatalogItemAssignedToArt(catalogKey, artKey, item) {
-  const normalizedItem = normalizeText(item);
-  return getArtCatalogGroup(catalogKey, artKey).some(
-    (value) => normalizeText(value) === normalizedItem
-  );
 }
 
 function setCatalogItemArtAssignment(catalogKey, artKey, item, checked) {

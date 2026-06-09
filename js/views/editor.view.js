@@ -476,7 +476,8 @@ function buildEditorMarkup({
 
                 <div id="group-selected-students" class="group-selected-students">
                   ${renderSelectedStudentsChips(
-                    getSelectedStudentsForDraft(draft, student, allStudents)
+                    getSelectedStudentsForDraft(draft, student, allStudents),
+                    { allowRemoveAll: isGroupPlaceholderStudent(student) }
                   )}
                 </div>
 
@@ -702,7 +703,23 @@ function bindEditorEvents(student) {
       const pickerToggle = event.target.closest("[data-override-picker-toggle]");
       if (pickerToggle) {
         event.preventDefault();
-        toggleOverridePickerPanel(pickerToggle.getAttribute("data-override-picker-toggle"));
+        const inputKey = pickerToggle.getAttribute("data-override-picker-toggle");
+        const openPanel = viewRoot?.querySelector(
+          `[data-override-picker-panel="${CSS.escape(inputKey)}"].is-open`
+        );
+        if (openPanel) {
+          toggleOverridePickerPanel(inputKey, false);
+          return;
+        }
+        const pickerInput = viewRoot?.querySelector(
+          `[data-override-input="${CSS.escape(inputKey)}"]`
+        );
+        // Re-renderiza la lista completa (mas usados arriba) antes de abrir.
+        if (pickerInput) {
+          renderOverridePickerOptionsForInput(inputKey, pickerInput);
+        } else {
+          toggleOverridePickerPanel(inputKey);
+        }
         return;
       }
 
@@ -1261,7 +1278,7 @@ function refillFormIfNeeded(student) {
   const structured = getStructuredDraftFields(draft, student);
 
   syncInputValue("#bitacora-fecha", normalizeLocalDateInput(draft.fechaClase) || getTodayDate());
-  syncInputValue("#bitacora-titulo", draft.titulo || buildAutoTitle(student, draft.fechaClase));
+  syncInputValue("#bitacora-titulo", draft.titulo || buildAutoTitle(student, draft.fechaClase, draft));
   syncTextareaValue("#bitacora-tareas", structured.tareas || "");
   syncTextareaValue("#bitacora-contenido", draft.contenido || "");
   syncInputValue("#bitacora-docentes-input", "");
@@ -1469,9 +1486,11 @@ function renderPickerOptionsForInput(key, input) {
 
   const query = normalizeText(input.value);
   const options = getMultiFieldOptions(key, input);
-  const filtered = options
-    .filter((option) => !query || normalizeText(option).includes(query))
-    .slice(0, 80);
+  // Lista completa (ya viene con los mas usados arriba); el filtro del input
+  // es la forma de acotarla.
+  const filtered = options.filter(
+    (option) => !query || normalizeText(option).includes(query)
+  );
 
   optionsContainer.innerHTML = renderMultiPickerOptions(
     key,
@@ -1608,7 +1627,7 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
         ? normalizeStudentRefs(normalized.studentRefs)
         : [{ id: studentRef, name: getStudentName(student) }],
     fechaClase: normalizeLocalDateInput(normalized.fechaClase) || getTodayDate(),
-    titulo: normalized.titulo || buildAutoTitle(student, normalized.fechaClase),
+    titulo: normalized.titulo || buildAutoTitle(student, normalized.fechaClase, normalized),
     docentes: normalizeListValues(normalized.docentes || normalized.docente),
     docente: firstNonEmpty(normalized.docente, ...(normalized.docentes || [])),
     etiquetas: normalizeTags(normalized.etiquetas),
@@ -2514,7 +2533,10 @@ function buildBitacoraPayload(student, draft) {
     studentIds,
     studentRefs,
     primaryStudentId: studentRef,
-    title: String(draft.titulo || buildAutoTitle(student, draft.fechaClase)).trim(),
+    title: String(
+      draft.titulo ||
+        buildAutoTitle(student, draft.fechaClase, { mode, studentRefs })
+    ).trim(),
     content: String(draft.contenido || "").trim(),
     tags: normalizeTags(draft.etiquetas),
     fechaClase: normalizeLocalDateInput(draft.fechaClase) || getTodayDate(),
@@ -2691,7 +2713,10 @@ function updateDraftFromForm(student) {
   };
 
   const nextFecha = normalizeLocalDateInput(viewRoot?.querySelector("#bitacora-fecha")?.value || "");
-  const nextTitulo = buildAutoTitle(student, nextFecha);
+  const nextTitulo = buildAutoTitle(student, nextFecha, {
+    mode: nextMode,
+    studentRefs: selectedStudents.map((item) => ({ id: item.id, name: item.name })),
+  });
   const nextContenido = buildStructuredContent(structuredFields);
 
   const nextDraft = {
@@ -2903,6 +2928,17 @@ function draftBelongsToContext(draft, studentOrRef) {
 
   if (!studentRef) return false;
   if (!draft || typeof draft !== "object") return false;
+
+  // El editor grupal en blanco (placeholder) es dueño de cualquier borrador
+  // grupal: al normalizarse en el estado, los borradores grupales quedan con
+  // studentId null, asi que la comparacion por ids nunca coincidiria y el
+  // borrador se descartaba en cada render (los integrantes "desaparecian").
+  if (
+    isGroupPlaceholderId(studentRef) &&
+    getAllowedMode(draft.mode) === CONFIG.modes.group
+  ) {
+    return true;
+  }
 
   const draftRefs = [
     draft.studentId,
@@ -3379,7 +3415,9 @@ function renderGroupSelectionBlocks(student) {
   const resultsContainer = viewRoot?.querySelector("#group-students-results");
 
   if (selectedContainer) {
-    selectedContainer.innerHTML = renderSelectedStudentsChips(selected);
+    selectedContainer.innerHTML = renderSelectedStudentsChips(selected, {
+      allowRemoveAll: isGroupPlaceholderStudent(student),
+    });
   }
 
   if (resultsContainer) {
@@ -3486,9 +3524,9 @@ function renderOverridePickerOptionsForInput(inputKey, input) {
 
   const query = normalizeText(input.value);
   const options = getOverrideFieldOptions(inputKey, input);
-  const filtered = options
-    .filter((option) => !query || normalizeText(option).includes(query))
-    .slice(0, 80);
+  const filtered = options.filter(
+    (option) => !query || normalizeText(option).includes(query)
+  );
 
   optionsContainer.innerHTML = renderOverridePickerOptions(
     inputKey,
@@ -3582,7 +3620,7 @@ function removeStudentOverrideValue(descriptor, student) {
   renderDraftMetaBlock(student);
 }
 
-function renderSelectedStudentsChips(selectedStudents = []) {
+function renderSelectedStudentsChips(selectedStudents = [], { allowRemoveAll = false } = {}) {
   if (!selectedStudents.length) {
     return `
       <div class="empty-state empty-state--files">
@@ -3602,7 +3640,7 @@ function renderSelectedStudentsChips(selectedStudents = []) {
                 <p class="selected-student-chip__meta">${escapeHtml(student.document || student.id || "")}</p>
               </div>
               ${
-                index === 0
+                index === 0 && !allowRemoveAll
                   ? `<span class="badge badge--soft">Principal</span>`
                   : `
                     <button
@@ -4519,7 +4557,8 @@ function buildMusicalaEditorMarkup({
                   </div>
                   <div id="group-selected-students" class="group-selected-students">
                     ${renderSelectedStudentsChips(
-                      getSelectedStudentsForDraft(draft, student, allStudents)
+                      getSelectedStudentsForDraft(draft, student, allStudents),
+                      { allowRemoveAll: isGroupPlaceholderStudent(student) }
                     )}
                   </div>
                   <div id="group-students-results" class="group-students-results ${isGroup ? "" : "is-hidden"}">
@@ -5566,8 +5605,21 @@ function matchesAreaCatalogKey(name, areaKeys = []) {
   });
 }
 
-function buildAutoTitle(student, fechaClase = "") {
+function buildAutoTitle(student, fechaClase = "", draft = null) {
   const safeDate = toStringSafe(fechaClase || getTodayDate());
+
+  // En bitacoras grupales el titulo no debe quedar con el nombre del primer
+  // estudiante seleccionado (confunde al verla desde otro integrante).
+  if (draft && getAllowedMode(draft.mode) === CONFIG.modes.group) {
+    const count =
+      normalizeStudentRefs(draft.studentRefs || []).length ||
+      normalizeStudentIds(draft.studentIds || []).length;
+    const suffix = count
+      ? ` (${count} ${count === 1 ? "estudiante" : "estudiantes"})`
+      : "";
+    return `Registro de clase grupal ${safeDate}${suffix}`;
+  }
+
   const studentName = toStringSafe(getStudentName(student) || "estudiante");
   return `Registro de clase ${safeDate} - ${studentName}`;
 }
