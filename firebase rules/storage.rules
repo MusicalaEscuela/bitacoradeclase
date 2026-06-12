@@ -1,0 +1,85 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function authEmail() {
+      return isSignedIn() && request.auth.token.email is string
+        ? request.auth.token.email
+        : "";
+    }
+
+    function hasAccessProfile() {
+      return authEmail() != "" &&
+        firestore.exists(
+          /databases/(default)/documents/users/$(authEmail())
+        );
+    }
+
+    function accessProfile() {
+      return firestore.get(
+        /databases/(default)/documents/users/$(authEmail())
+      );
+    }
+
+    function accessRole() {
+      return hasAccessProfile() && accessProfile().data.role is string
+        ? accessProfile().data.role
+        : "";
+    }
+
+    function accessIsActive() {
+      return hasAccessProfile()
+        ? accessProfile().data.active != false
+        : false;
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() ||
+        (accessRole() == "admin" && accessIsActive());
+    }
+
+    function isTeacher() {
+      return (accessRole() == "teacher" && accessIsActive()) ||
+        isTeacherFromCatalog();
+    }
+
+    function isBootstrapAdmin() {
+      return authEmail() in [
+        "alekcaballeromusic@gmail.com",
+        "catalina.medina.leal@gmail.com",
+        "imusicala@gmail.com"
+      ];
+    }
+
+    function hasCatalogs() {
+      return firestore.exists(
+        /databases/(default)/documents/app_config/catalogos
+      );
+    }
+
+    function isTeacherFromCatalog() {
+      return hasCatalogs() &&
+        firestore.get(
+          /databases/(default)/documents/app_config/catalogos
+        ).data.teacherAccessEmails is list &&
+        authEmail() in firestore.get(
+          /databases/(default)/documents/app_config/catalogos
+        ).data.teacherAccessEmails;
+    }
+
+    function isAllowedFile() {
+      return request.resource.size < 50 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*|video/.*|audio/.*|application/pdf');
+    }
+
+    match /bitacoras/{studentId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if (isAdmin() || isTeacher()) && isAllowedFile();
+    }
+
+  }
+}

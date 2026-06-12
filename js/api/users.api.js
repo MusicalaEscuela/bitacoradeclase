@@ -24,7 +24,7 @@ const TEACHER_ROLE = "teacher";
 const FIRESTORE_BATCH_LIMIT = 400;
 
 function normalizeAccessEmail(email) {
-  return toStringSafe(email).toLowerCase();
+  return toStringSafe(email).replace(/\s+/g, "").toLowerCase();
 }
 
 export function buildUserAccessDocId(value) {
@@ -204,8 +204,18 @@ function chunkArray(items = [], size = FIRESTORE_BATCH_LIMIT) {
   return chunks;
 }
 
+function normalizeStudentIdList(values = []) {
+  return [...new Set(values.map(toStringSafe).filter(Boolean))].sort();
+}
+
 function hasAccessChanges(existingUser, nextPayload) {
   if (!existingUser) return true;
+
+  const existingStudentIds = normalizeStudentIdList(existingUser.studentIds || []);
+  const nextStudentIds = normalizeStudentIdList(nextPayload.studentIds || []);
+  if (JSON.stringify(existingStudentIds) !== JSON.stringify(nextStudentIds)) {
+    return true;
+  }
 
   return (
     existingUser.email !== nextPayload.email ||
@@ -298,15 +308,19 @@ export async function syncStudentAccessUsersFromSheet(options = {}) {
 
   const existingUsers = await listAllUserAccessProfiles();
   const existingByEmail = new Map();
-  const existingByStudentId = new Map();
 
   existingUsers.forEach((user) => {
-    if (user.email) existingByEmail.set(user.email, user);
-    if (user.studentId) existingByStudentId.set(user.studentId, user);
+    if (!user.email) return;
+
+    const current = existingByEmail.get(user.email);
+    // Preferir siempre el doc canonico users/{correo} sobre docs legados.
+    if (!current || user.id === buildUserAccessDocId(user.email)) {
+      existingByEmail.set(user.email, user);
+    }
   });
 
-  const seenEmails = new Set();
-  const operations = [];
+  // Un acudiente puede tener varios hijos con el mismo correo: agrupar filas.
+  const groupsByEmail = new Map();
 
   students.forEach((student) => {
     const source = normalizeStudentAccessSource(student);
@@ -316,50 +330,70 @@ export async function syncStudentAccessUsersFromSheet(options = {}) {
       return;
     }
 
-    if (seenEmails.has(source.email)) {
+    const group = groupsByEmail.get(source.email);
+    if (group) {
       report.skippedDuplicateEmail += 1;
+      group.push({ source, student });
       return;
     }
 
-    seenEmails.add(source.email);
+    groupsByEmail.set(source.email, [{ source, student }]);
+  });
+
+  const operations = [];
+
+  groupsByEmail.forEach((group, email) => {
     report.validStudents += 1;
 
-    const existingUser =
-      existingByStudentId.get(source.studentId) ||
-      existingByEmail.get(source.email) ||
-      null;
+    const docId = buildUserAccessDocId(email);
+    const existingUser = existingByEmail.get(email) || null;
+    const canonicalUser =
+      existingUser && existingUser.id === docId ? existingUser : null;
 
-    if (existingUser && existingUser.role && existingUser.role !== STUDENT_ROLE) {
+    if (
+      existingUser &&
+      existingUser.role &&
+      !STUDENT_ROLE_ALIASES.has(existingUser.role)
+    ) {
       report.conflicts += 1;
       return;
     }
 
+    const primaryEntry =
+      group.find((entry) => isStudentRecordActive(entry.student)) || group[0];
+    const anyActive = group.some((entry) => isStudentRecordActive(entry.student));
+    const studentIds = normalizeStudentIdList([
+      ...(existingUser?.studentIds || []),
+      ...(existingUser?.studentId ? [existingUser.studentId] : []),
+      ...group.map((entry) => entry.source.studentKey),
+    ]);
+
     const payload = {
-      email: source.email,
+      email,
       role: STUDENT_ROLE,
-      studentId: source.studentId,
-      studentKey: source.studentKey,
-      displayName: source.displayName,
-      studentStatus: source.studentStatus,
-      active: isStudentRecordActive(student),
+      studentId: primaryEntry.source.studentId,
+      studentKey: primaryEntry.source.studentKey,
+      studentIds,
+      displayName: primaryEntry.source.displayName,
+      studentStatus: primaryEntry.source.studentStatus,
+      active: anyActive,
       source: "students_sheet_sync",
-      sourceRow: student?.sourceRow || null,
+      sourceRow: primaryEntry.student?.sourceRow || null,
       syncOrigin: "settings_view",
     };
 
-    if (!hasAccessChanges(existingUser, payload)) {
+    if (canonicalUser && !hasAccessChanges(canonicalUser, payload)) {
       report.unchanged += 1;
       return;
     }
 
-    const docId = buildUserAccessDocId(source.email);
     operations.push({
       docId,
       payload,
-      isCreate: !existingUser || existingUser.id !== docId,
+      isCreate: !canonicalUser,
     });
 
-    if (existingUser) {
+    if (canonicalUser) {
       report.updated += 1;
     } else {
       report.created += 1;
@@ -367,9 +401,9 @@ export async function syncStudentAccessUsersFromSheet(options = {}) {
 
     if (report.samples.length < 8) {
       report.samples.push({
-        email: source.email,
-        displayName: source.displayName,
-        action: existingUser ? "updated" : "created",
+        email,
+        displayName: payload.displayName,
+        action: canonicalUser ? "updated" : "created",
       });
     }
   });
@@ -401,7 +435,10 @@ export async function syncTeacherAccessUsers(teachers = []) {
 
     seenEmails.add(source.email);
 
+    const docId = buildUserAccessDocId(source.email);
     const existingUser = existingTeachersByEmail.get(source.email) || null;
+    const canonicalUser =
+      existingUser && existingUser.id === docId ? existingUser : null;
     const payload = {
       email: source.email,
       role: TEACHER_ROLE,
@@ -414,15 +451,14 @@ export async function syncTeacherAccessUsers(teachers = []) {
       syncOrigin: "catalogs_save",
     };
 
-    if (!hasAccessChanges(existingUser, payload)) {
+    if (canonicalUser && !hasAccessChanges(canonicalUser, payload)) {
       return;
     }
 
-    const docId = buildUserAccessDocId(source.email);
     operations.push({
       docId,
       payload,
-      isCreate: !existingUser || existingUser.id !== docId,
+      isCreate: !canonicalUser,
     });
   });
 
@@ -441,14 +477,17 @@ export async function syncTeacherAccessUsers(teachers = []) {
       syncOrigin: "catalogs_save",
     };
 
-    if (!hasAccessChanges(user, payload)) {
+    const docId = buildUserAccessDocId(email);
+    const isCanonical = user.id === docId;
+
+    if (isCanonical && !hasAccessChanges(user, payload)) {
       return;
     }
 
     operations.push({
-      docId: buildUserAccessDocId(email),
+      docId,
       payload,
-      isCreate: user.id !== buildUserAccessDocId(email),
+      isCreate: !isCanonical,
     });
   });
 

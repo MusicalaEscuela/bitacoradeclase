@@ -438,6 +438,10 @@ async function handleObservedAuthUser(user) {
         )})`
       );
 
+      if (mergedUser.role === CONFIG.roles.admin) {
+        triggerStudentsSyncInBackground(mergedUser.email);
+      }
+
       const currentView =
         getState()?.app?.currentView || CONFIG.app.defaultRoute;
 
@@ -463,6 +467,44 @@ async function handleObservedAuthUser(user) {
 
   setAuthUser(null);
   logDebug("Sin sesión activa en Firebase Auth.");
+}
+
+/*
+  Sincronizacion Sheets -> Firestore al abrir la app como admin.
+  Fire-and-forget: no bloquea la carga de la app ni muestra errores al
+  usuario; el Apps Script tiene throttle propio (no repite si corrio hace
+  menos de 5 minutos) y lock contra corridas simultaneas.
+*/
+let studentsSyncTriggered = false;
+
+function triggerStudentsSyncInBackground(adminEmail = "") {
+  if (studentsSyncTriggered) return;
+  studentsSyncTriggered = true;
+
+  try {
+    const url = new URL(CONFIG.api.baseUrl);
+    url.searchParams.set("action", "sync");
+    url.searchParams.set("source", "app_open");
+
+    fetch(url.toString(), { method: "GET" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (payload?.skipped) {
+          logDebug(`Sync de estudiantes omitido: ${payload.reason || "reciente"}`);
+        } else if (payload?.ok) {
+          logDebug("Sync de estudiantes completado al abrir la app.");
+        } else {
+          console.warn("[Bitácoras App] Sync de estudiantes falló:", payload?.error);
+        }
+      })
+      .catch((error) => {
+        console.warn("[Bitácoras App] No se pudo disparar el sync de estudiantes:", error);
+      });
+
+    logDebug(`Sync de estudiantes disparado en segundo plano (${adminEmail}).`);
+  } catch (error) {
+    console.warn("[Bitácoras App] No se pudo construir la URL de sync:", error);
+  }
 }
 
 function isAllowedTeacherAccessProfile(accessProfile = null) {
