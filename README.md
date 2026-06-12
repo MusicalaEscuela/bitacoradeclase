@@ -1,2 +1,0 @@
-# bitacoradeclase
-Bitácora de clase

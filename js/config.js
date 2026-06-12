@@ -15,18 +15,21 @@ function detectEnvironment() {
 
 const ENV = detectEnvironment();
 
+/*
+  Una sola URL del Apps Script para todo (API y uploads, dev y produccion).
+  Cuando se cree una nueva implementacion en Apps Script, solo se cambia aqui.
+*/
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbwbDZGWyZ2ESJbVzVjVXYNcCbu6JAN6lsS4VnmvRtMBY7XoZYiCfBv5prbLcnLHg5keLQ/exec";
+
 const BASE_URLS = {
   development: {
-    appsScript:
-      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
-    uploads:
-      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
+    appsScript: APPS_SCRIPT_URL,
+    uploads: APPS_SCRIPT_URL,
   },
   production: {
-    appsScript:
-      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
-    uploads:
-      "https://script.google.com/macros/s/AKfycbzU62Q4fDn1fzCRrI83VIlFxVdL26bOCxwZd0-Z4Ymy8qJeqOlzvJPZ03q9TkyAmOiUMw/exec",
+    appsScript: APPS_SCRIPT_URL,
+    uploads: APPS_SCRIPT_URL,
   },
 };
 
@@ -165,7 +168,6 @@ export const CONFIG = Object.freeze({
     bootstrapAdminEmails: Object.freeze([
       "alekcaballeromusic@gmail.com",
       "catalina.medina.leal@gmail.com",
-      "catalina.medina.lea@gmail.com",
       "imusicala@gmail.com",
     ]),
   }),
