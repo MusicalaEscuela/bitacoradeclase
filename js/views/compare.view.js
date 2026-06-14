@@ -469,8 +469,10 @@ function getStudentOverride(item = {}, studentId = "") {
 
 function normalizeList(value) {
   if (Array.isArray(value)) return value.map(toStringSafe).filter(Boolean);
+  // Separamos por salto de linea (no por coma): los nombres de los items pueden
+  // contener comas y no deben fragmentarse.
   return toStringSafe(value)
-    .split(",")
+    .split(/\n/g)
     .map(toStringSafe)
     .filter(Boolean);
 }

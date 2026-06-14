@@ -52,6 +52,7 @@ let currentArtCatalogSearchQuery = "";
 const expandedSettingsPanels = new Set();
 const ART_MATRIX_VISIBLE_LIMIT = 160;
 const ART_MATRIX_PAGE_SIZE = 200;
+const ART_MATRIX_MAX_RENDER = 400;
 const artMatrixVisibleLimits = {};
 
 const STRING_CATALOGS = [
@@ -584,7 +585,10 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
   const filteredItems = query
     ? items.filter((item) => normalizeText(item).includes(query))
     : items;
-  const visibleLimit = getArtMatrixVisibleLimit(catalogKey);
+  // Tope duro: aunque se pida "ver todo", nunca pintamos mas de
+  // ART_MATRIX_MAX_RENDER filas de golpe (cada fila trae checkboxes + select y
+  // miles a la vez congelan la pagina). El buscador cubre el resto.
+  const visibleLimit = Math.min(getArtMatrixVisibleLimit(catalogKey), ART_MATRIX_MAX_RENDER);
   const visibleItems = filteredItems.slice(0, visibleLimit);
   const hiddenCount = Math.max(filteredItems.length - visibleItems.length, 0);
 
@@ -596,6 +600,13 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
       getArtCatalogGroup(catalogKey, area.key).map((value) => normalizeText(value))
     ),
   }));
+
+  // La columna de categoria automatica aplica a los componentes, no al propio
+  // catalogo de categorias.
+  const showAutoCategory = catalogKey !== "categorias";
+  const categoryOptions = Array.isArray(currentCatalogs.categorias)
+    ? currentCatalogs.categorias
+    : [];
 
   return `
     <label class="field settings-art-search">
@@ -613,10 +624,11 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
         ${hiddenCount ? `Usa los botones de abajo para ver mas o filtra escribiendo.` : ""}
       </small>
     </label>
-    <div class="settings-art-matrix" role="table" aria-label="Asignacion por arte">
+    <div class="settings-art-matrix ${showAutoCategory ? "settings-art-matrix--with-category" : ""}" role="table" aria-label="Asignacion por arte">
       <div class="settings-art-matrix__header" role="row">
         <span role="columnheader">Item</span>
         ${ART_AREAS.map((area) => renderArtMatrixHeaderCell(catalogKey, area)).join("")}
+        ${showAutoCategory ? `<span role="columnheader">Categoria automatica</span>` : ""}
       </div>
       ${visibleItems
         .map(
@@ -633,6 +645,7 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
                   )
                 )
                 .join("")}
+              ${showAutoCategory ? renderAutoCategorySelect(catalogKey, item, getAutoCategory(catalogKey, item), categoryOptions) : ""}
             </div>
           `
         )
@@ -645,9 +658,13 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
             <button type="button" class="btn btn--secondary btn--sm" data-art-show-more="${escapeHtml(catalogKey)}">
               Mostrar ${escapeHtml(String(Math.min(ART_MATRIX_PAGE_SIZE, hiddenCount)))} mas
             </button>
-            <button type="button" class="btn btn--ghost btn--sm" data-art-show-all="${escapeHtml(catalogKey)}">
-              Ver lista completa (${escapeHtml(String(filteredItems.length))})
-            </button>
+            ${
+              filteredItems.length <= ART_MATRIX_MAX_RENDER
+                ? `<button type="button" class="btn btn--ghost btn--sm" data-art-show-all="${escapeHtml(catalogKey)}">
+                    Ver lista completa (${escapeHtml(String(filteredItems.length))})
+                  </button>`
+                : `<small class="field__hint">Hay ${escapeHtml(String(filteredItems.length))} items. Para no congelar la pagina se muestran maximo ${escapeHtml(String(ART_MATRIX_MAX_RENDER))}; usa el buscador para llegar al resto.</small>`
+            }
           </div>
         `
         : ""
@@ -685,6 +702,71 @@ function renderArtAssignmentCheckbox(catalogKey, area, item, checked) {
       <span>${checked ? "Si" : "No"}</span>
     </label>
   `;
+}
+
+function renderAutoCategorySelect(catalogKey, item, selectedCategory, categories = []) {
+  const safeSelected = toStringSafe(selectedCategory);
+  const options = [
+    `<option value="">Sin categoria</option>`,
+    ...categories.map((category) => {
+      const value = toStringSafe(category);
+      const isSelected = normalizeText(value) === normalizeText(safeSelected);
+      return `<option value="${escapeHtml(value)}" ${isSelected ? "selected" : ""}>${escapeHtml(value)}</option>`;
+    }),
+  ].join("");
+
+  return `
+    <span class="settings-art-matrix__category" role="cell">
+      <select
+        class="field__input field__input--sm settings-art-category-select"
+        data-art-category-catalog="${escapeHtml(catalogKey)}"
+        data-art-category-item="${escapeHtml(item)}"
+        aria-label="Categoria automatica para ${escapeHtml(item)}"
+      >
+        ${options}
+      </select>
+    </span>
+  `;
+}
+
+function getAutoCategory(catalogKey, item) {
+  const mapping = currentCatalogs.autoCategorias && currentCatalogs.autoCategorias[catalogKey];
+  if (!mapping || typeof mapping !== "object") return "";
+
+  const normalizedItem = normalizeText(item);
+  const entry = Object.entries(mapping).find(
+    ([key]) => normalizeText(key) === normalizedItem
+  );
+  return entry ? toStringSafe(entry[1]) : "";
+}
+
+function setAutoCategory(catalogKey, item, category) {
+  const safeCategory = toStringSafe(category);
+  const previous =
+    currentCatalogs.autoCategorias && typeof currentCatalogs.autoCategorias === "object"
+      ? currentCatalogs.autoCategorias
+      : {};
+  const componentMap = { ...(previous[catalogKey] || {}) };
+
+  // Limpia cualquier clave equivalente (por acentos/mayusculas) antes de guardar.
+  const normalizedItem = normalizeText(item);
+  Object.keys(componentMap).forEach((key) => {
+    if (normalizeText(key) === normalizedItem) delete componentMap[key];
+  });
+
+  if (safeCategory) componentMap[item] = safeCategory;
+
+  const nextComponent = { ...previous, [catalogKey]: componentMap };
+  if (!Object.keys(componentMap).length) delete nextComponent[catalogKey];
+
+  currentCatalogs = {
+    ...currentCatalogs,
+    autoCategorias: nextComponent,
+  };
+  currentMessage = {
+    type: "info",
+    text: "Categoria automatica actualizada localmente. Guarda en Firebase para persistir.",
+  };
 }
 
 function renderTeachersList(teachers = []) {
@@ -1228,6 +1310,17 @@ function bindEvents(state) {
     });
   });
 
+  viewRoot.querySelectorAll("[data-art-category-catalog]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const catalogKey = select.getAttribute("data-art-category-catalog");
+      const item = select.getAttribute("data-art-category-item");
+      if (!catalogKey || !item) return;
+
+      setAutoCategory(catalogKey, item, select.value);
+      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
+    });
+  });
+
   viewRoot.querySelectorAll("[data-art-bulk]").forEach((button) => {
     button.addEventListener("click", () => {
       const action = button.getAttribute("data-art-bulk");
@@ -1273,6 +1366,7 @@ function bindEvents(state) {
         ...currentCatalogs,
         [key]: (currentCatalogs[key] || []).filter((item) => item !== value),
       };
+      setAutoCategory(key, value, "");
       expandedSettingsPanels.add(`${key}-list`);
       renderView(getState());
     });
@@ -1404,6 +1498,14 @@ function renameCatalogItem(key, oldValue, newValue) {
     ...currentCatalogs,
     [getArtCatalogKey(key)]: grouped,
   };
+
+  // Conserva la categoria automatica apuntando al nuevo nombre del item.
+  const previousCategory = getAutoCategory(key, oldValue);
+  if (previousCategory) {
+    setAutoCategory(key, oldValue, "");
+    setAutoCategory(key, newValue, previousCategory);
+  }
+
   currentMessage = {
     type: "info",
     text: `Elemento renombrado en ${getCatalogLabel(key)}. Guarda en Firebase para persistir.`,
