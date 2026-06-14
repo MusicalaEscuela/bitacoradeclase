@@ -5508,10 +5508,20 @@ function parseStructuredContent(content = "") {
     });
 
     const value = text.slice(contentStart, end).trim();
-    result[key] =
-      key === "docente" || key === "tareas"
-        ? value
-        : normalizeTags(value);
+    if (key === "docente" || key === "tareas") {
+      result[key] = value;
+    } else {
+      // Los items se separan por salto de linea (no por coma): sus nombres
+      // pueden contener comas (p. ej. "... sistema 1, compas 01").
+      result[key] = [
+        ...new Set(
+          value
+            .split(/\n/g)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        ),
+      ];
+    }
   });
 
   return result;

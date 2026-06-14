@@ -178,7 +178,7 @@ function normalizeOverrideValues(values = []) {
     source
       .flatMap((value) =>
         String(value || "")
-          .split(/,|;|\n/g)
+          .split(/\n/g)
           .map((item) => safeString(item))
       )
       .filter(Boolean)

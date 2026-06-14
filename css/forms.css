@@ -735,6 +735,21 @@
   min-width: 780px;
 }
 
+.settings-art-matrix--with-category .settings-art-matrix__header,
+.settings-art-matrix--with-category .settings-art-matrix__row {
+  grid-template-columns: minmax(200px, 1.25fr) repeat(4, minmax(96px, 0.6fr)) minmax(160px, 1fr);
+  min-width: 940px;
+}
+
+.settings-art-matrix__category {
+  display: flex;
+  align-items: center;
+}
+
+.settings-art-category-select {
+  width: 100%;
+}
+
 .settings-art-matrix__header {
   position: sticky;
   top: 0;
@@ -929,6 +944,11 @@
   .settings-art-matrix__header,
   .settings-art-matrix__row {
     min-width: 720px;
+  }
+
+  .settings-art-matrix--with-category .settings-art-matrix__header,
+  .settings-art-matrix--with-category .settings-art-matrix__row {
+    min-width: 880px;
   }
 }
 

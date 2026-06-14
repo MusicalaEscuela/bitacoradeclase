@@ -48,6 +48,36 @@ function normalizeCatalogStringList(values = []) {
   );
 }
 
+// Componentes que admiten una categoria automatica por item. (Las "categorias"
+// no se mapean a si mismas.)
+const AUTO_CATEGORY_COMPONENTS = Object.freeze([
+  "componenteCorporal",
+  "componenteTecnico",
+  "componenteTeorico",
+  "componenteObras",
+]);
+
+// Mapa { componenteX: { "<item>": "<categoria>" } } que define que categoria se
+// agrega automaticamente al seleccionar un item de ese componente en el editor.
+function normalizeAutoCategorias(value = {}) {
+  if (!isPlainObject(value)) return {};
+
+  return AUTO_CATEGORY_COMPONENTS.reduce((next, key) => {
+    const group = value[key];
+    if (!isPlainObject(group)) return next;
+
+    const mapping = Object.entries(group).reduce((acc, [item, category]) => {
+      const safeItem = toStringSafe(item);
+      const safeCategory = toStringSafe(category);
+      if (safeItem && safeCategory) acc[safeItem] = safeCategory;
+      return acc;
+    }, {});
+
+    if (Object.keys(mapping).length) next[key] = mapping;
+    return next;
+  }, {});
+}
+
 function normalizeCatalogGroups(groups = {}) {
   if (!isPlainObject(groups)) return {};
 
@@ -139,6 +169,7 @@ function normalizeCatalogsDocument(data = {}) {
     componenteTecnicoPorArte: normalizeCatalogGroups(normalized.componenteTecnicoPorArte),
     componenteTeoricoPorArte: normalizeCatalogGroups(normalized.componenteTeoricoPorArte),
     componenteObrasPorArte: normalizeCatalogGroups(normalized.componenteObrasPorArte),
+    autoCategorias: normalizeAutoCategorias(normalized.autoCategorias),
     updatedAt: normalized.updatedAt || null,
   };
 }

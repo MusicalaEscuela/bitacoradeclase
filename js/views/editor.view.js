@@ -89,6 +89,9 @@ const DRAFT_INPUT_DEBOUNCE_MS = 140;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
 const RECENT_PICKERS_KEY = "bitacoras_recent_pickers_v1";
 const RECENT_PICKERS_LIMIT = 12;
+// Maximo de opciones que se pintan a la vez en el panel del picker. Evita que
+// catalogos enormes (cientos/miles de items) congelen la vista al abrir.
+const PICKER_RENDER_LIMIT = 200;
 
 // Identificador sintetico para abrir una bitacora grupal "en blanco": sin
 // estudiante principal preseleccionado. El editor lo trata como contexto valido
@@ -1387,15 +1390,40 @@ function addMultiValueSelection(key, rawValue, student) {
 function applySuggestedCategoriesFromSelection(key, values = [], student) {
   if (key === "etiquetas" || key === "docentes") return;
 
+  // La categoria configurada explicitamente en Configuracion tiene prioridad;
+  // la heuristica por palabras clave queda como respaldo.
+  const configured = getConfiguredCategoriesForItems(key, values);
   const inferred = inferCategoriesFromActivities(values, key);
-  if (!inferred.length) return;
+  const suggested = normalizeListValues([...configured, ...inferred]);
+  if (!suggested.length) return;
 
   const nextCategories = normalizeListValues([
     ...getMultiValueSelection("etiquetas"),
-    ...inferred,
+    ...suggested,
   ]);
   renderMultiValueSelection("etiquetas", nextCategories);
-  rememberPickerValues("etiquetas", inferred);
+  rememberPickerValues("etiquetas", suggested);
+}
+
+// Lee el mapa { componenteX: { item: categoria } } guardado en Configuracion y
+// devuelve las categorias que correspondan a los items recien agregados.
+function getConfiguredCategoriesForItems(key, values = []) {
+  const catalogs = cachedCatalogs || getEmptyCatalogs();
+  const mapping = catalogs.autoCategorias && catalogs.autoCategorias[key];
+  if (!mapping || typeof mapping !== "object") return [];
+
+  const lookup = new Map();
+  Object.entries(mapping).forEach(([item, category]) => {
+    lookup.set(normalizeText(item), category);
+  });
+
+  const result = [];
+  normalizeListValues(values).forEach((value) => {
+    const category = lookup.get(normalizeText(value));
+    if (category) result.push(category);
+  });
+
+  return normalizeListValues(result);
 }
 
 function inferCategoriesFromActivities(values = [], sourceKey = "") {
@@ -5158,7 +5186,13 @@ function renderMultiPickerOptions(key, options = [], selectedValues = [], pendin
     return `<p class="multi-picker-empty">No hay opciones en el catalogo. Puedes escribir un valor y agregarlo con Enter.</p>`;
   }
 
-  return items
+  // Con catalogos muy grandes (cientos/miles de items) pintar todos los botones
+  // de golpe congela la vista. Limitamos cuantos se renderizan y dejamos que el
+  // buscador del campo acote el resto.
+  const visibleItems = items.slice(0, PICKER_RENDER_LIMIT);
+  const hiddenCount = items.length - visibleItems.length;
+
+  const optionsMarkup = visibleItems
     .map((option) => {
       const isSelected = selected.has(normalizeText(option));
       const isPending = pending.has(normalizeText(option));
@@ -5180,6 +5214,15 @@ function renderMultiPickerOptions(key, options = [], selectedValues = [], pendin
       `;
     })
     .join("");
+
+  if (hiddenCount <= 0) return optionsMarkup;
+
+  return `
+    ${optionsMarkup}
+    <p class="multi-picker-empty">
+      Mostrando ${visibleItems.length} de ${items.length} opciones. Escribe en el campo de arriba para filtrar y encontrar el resto.
+    </p>
+  `;
 }
 
 function renderMultiValueChips(key, values = []) {
@@ -5378,7 +5421,10 @@ function renderOverridePickerOptions(inputKey, options = [], selectedValues = []
     return `<p class="multi-picker-empty">No hay opciones en el catalogo. Puedes escribir un valor y agregarlo con Enter.</p>`;
   }
 
-  return items
+  const visibleItems = items.slice(0, PICKER_RENDER_LIMIT);
+  const hiddenCount = items.length - visibleItems.length;
+
+  const optionsMarkup = visibleItems
     .map((option) => {
       const isSelected = selected.has(normalizeText(option));
       return `
@@ -5396,6 +5442,15 @@ function renderOverridePickerOptions(inputKey, options = [], selectedValues = []
       `;
     })
     .join("");
+
+  if (hiddenCount <= 0) return optionsMarkup;
+
+  return `
+    ${optionsMarkup}
+    <p class="multi-picker-empty">
+      Mostrando ${visibleItems.length} de ${items.length} opciones. Escribe en el campo de arriba para filtrar y encontrar el resto.
+    </p>
+  `;
 }
 
 function renderStudentOverrideChips(studentId, key, values = []) {
@@ -5560,7 +5615,16 @@ function resolveAreaCatalogList(catalogs = {}, key, areaKeys = [], fallback = []
   const groupedByField = catalogs[`${key}PorArte`];
   const nestedByArea = catalogs.porArte || catalogs.catalogosPorArte || {};
   const fromGrouped = findCatalogGroup(groupedByField, areaKeys);
-  if (fromGrouped.length) return fromGrouped;
+
+  // Items del catalogo general que no estan asignados a NINGUNA area se tratan
+  // como universales: deben aparecer en todas las areas. Esto cubre items
+  // nuevos que aun no se han marcado en la matriz por arte y evita que
+  // "desaparezcan" del editor cuando el area ya tiene otras asignaciones.
+  const orphanGeneralItems = getUnassignedGeneralItems(groupedByField, fallback);
+
+  if (fromGrouped.length) {
+    return uniqueByNormalized([...fromGrouped, ...orphanGeneralItems]);
+  }
 
   for (const [areaName, areaCatalog] of Object.entries(nestedByArea || {})) {
     if (!matchesAreaCatalogKey(areaName, areaKeys)) continue;
@@ -5579,6 +5643,20 @@ function resolveAreaCatalogList(catalogs = {}, key, areaKeys = [], fallback = []
   if (filteredFallback.length) return filteredFallback;
 
   return fallback;
+}
+
+function getUnassignedGeneralItems(groupedByField, fallback = []) {
+  const general = getCatalogOptions(fallback);
+  if (!groupedByField || typeof groupedByField !== "object") return general;
+
+  const assigned = new Set();
+  Object.values(groupedByField).forEach((values) => {
+    if (Array.isArray(values)) {
+      values.forEach((value) => assigned.add(normalizeText(value)));
+    }
+  });
+
+  return general.filter((item) => !assigned.has(normalizeText(item)));
 }
 
 function findCatalogGroup(groups = {}, areaKeys = []) {
@@ -5731,16 +5809,16 @@ function buildStructuredContent(fields = {}) {
     normalized.docente ? `DOCENTE: ${normalized.docente}` : "",
     normalized.tareas ? `TAREAS / OBSERVACIONES: ${normalized.tareas}` : "",
     normalized.componenteCorporal.length
-      ? `COMPONENTE CORPORAL: ${normalized.componenteCorporal.join(", ")}`
+      ? `COMPONENTE CORPORAL:\n${normalized.componenteCorporal.join("\n")}`
       : "",
     normalized.componenteTecnico.length
-      ? `COMPONENTE TECNICO: ${normalized.componenteTecnico.join(", ")}`
+      ? `COMPONENTE TECNICO:\n${normalized.componenteTecnico.join("\n")}`
       : "",
     normalized.componenteTeorico.length
-      ? `COMPONENTE TEORICO: ${normalized.componenteTeorico.join(", ")}`
+      ? `COMPONENTE TEORICO:\n${normalized.componenteTeorico.join("\n")}`
       : "",
     normalized.componenteObras.length
-      ? `COMPONENTE DE OBRAS: ${normalized.componenteObras.join(", ")}`
+      ? `COMPONENTE DE OBRAS:\n${normalized.componenteObras.join("\n")}`
       : "",
   ]
     .filter(Boolean)
@@ -5766,12 +5844,17 @@ function getStructuredDraftFields(draft, student) {
 function normalizeListValues(values = []) {
   const source = Array.isArray(values) ? values : [values];
 
+  // IMPORTANTE: solo separamos por salto de linea. Antes se separaba tambien por
+  // coma y punto y coma, lo que rompia items cuyo NOMBRE contiene comas (p. ej.
+  // "Sevcik - SOVT Op. 1 pag. 1, sistema 1, compas 01"): se fragmentaban en el
+  // picker y al guardar/reabrir. Cada item es atomico; el unico separador entre
+  // items es "\n".
   return [
     ...new Set(
       source
         .flatMap((value) =>
             String(value || "")
-              .split(/,|;|\n/g)
+              .split(/\n/g)
               .map((item) => toStringSafe(item))
           )
           .filter((item) => Boolean(item) && !isStructuredPlaceholderValue(item))
