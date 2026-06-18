@@ -4810,6 +4810,9 @@ function shouldParseAsSheetText(text = "", rows = []) {
     "fechaClase",
     "docente",
     "tareas",
+    "comentariosyrecursos",
+    "comentarios",
+    "recursos",
     "etiquetas",
     "componenteCorporal",
     "componenteTecnico",
@@ -4875,12 +4878,15 @@ function resolveSheetImportStudents(row = {}, context = {}) {
 
   const students = Array.isArray(context.allStudents) ? context.allStudents : [];
   const index = new Map();
+  const searchableStudents = [];
 
   students.forEach((student) => {
     const id = getStudentIdentity(student);
     const name = getStudentName(student);
     const normalized = normalizeText(name);
-    if (id && normalized && !index.has(normalized)) index.set(normalized, student);
+    if (!id || !normalized) return;
+    if (!index.has(normalized)) index.set(normalized, student);
+    searchableStudents.push({ student, id, normalized });
   });
 
   const linkedStudents = [];
@@ -4890,7 +4896,7 @@ function resolveSheetImportStudents(row = {}, context = {}) {
   studentNames.forEach((name) => {
     const normalized = normalizeText(name);
     if (!normalized) return;
-    const matched = index.get(normalized);
+    const matched = index.get(normalized) || findLooseStudentMatch(normalized, searchableStudents);
     if (!matched) {
       unresolvedStudents.push(name);
       return;
@@ -4909,6 +4915,16 @@ function resolveSheetImportStudents(row = {}, context = {}) {
     linkedStudents,
     unresolvedStudents: [...new Set(unresolvedStudents)],
   };
+}
+
+function findLooseStudentMatch(normalizedName = "", searchableStudents = []) {
+  if (!normalizedName || normalizedName.length < 5) return null;
+  const matches = searchableStudents.filter(({ normalized }) => {
+    if (!normalized || normalized.length < 5) return false;
+    return normalized === normalizedName || normalized.includes(normalizedName) || normalizedName.includes(normalized);
+  });
+
+  return matches.length === 1 ? matches[0].student : null;
 }
 
 function parseBitacorasFromPlainText(rawText, context = {}) {
