@@ -72,6 +72,7 @@ import {
 } from "../utils/shared.js";
 import { applyAutomaticCategoriesFromWorks } from "../utils/bitacoras.js";
 import {
+  normalizeLinkList,
   parseBitacoraSheetText,
   splitDelimitedRows,
 } from "../utils/bitacoras-import.js";
@@ -4787,8 +4788,10 @@ function parseBitacorasFromSheetText(rawText, context = {}) {
 }
 
 function shouldParseAsSheetText(text = "", rows = []) {
-  if (!Array.isArray(rows) || rows.length < 2) return false;
-  if (String(text || "").includes("\t")) return true;
+  if (!Array.isArray(rows) || !rows.length) return false;
+  if (String(text || "").includes("\t")) {
+    return rows.length > 1 || (rows[0] || []).filter((cell) => toStringSafe(cell)).length >= 4;
+  }
 
   const firstRow = rows[0] || [];
   if (firstRow.length < 2) return false;
@@ -4818,6 +4821,19 @@ function shouldParseAsSheetText(text = "", rows = []) {
 }
 
 function mapSheetRowToTextImport(row = {}) {
+  const attachments = [
+    ...normalizeLinkList(row.imagenes).map((url, index) => ({
+      name: `Imagen importada ${index + 1}`,
+      url,
+      type: "image/link",
+    })),
+    ...normalizeLinkList(row.videos).map((url, index) => ({
+      name: `Video importado ${index + 1}`,
+      url,
+      type: "video/link",
+    })),
+  ];
+
   return {
     fechaClase: row.fechaClase || "",
     docente: row.docente || "",
@@ -4833,6 +4849,7 @@ function mapSheetRowToTextImport(row = {}) {
     componenteTecnico: row.componenteTecnico || [],
     componenteTeorico: row.componenteTeorico || [],
     componenteObras: row.componenteObras || [],
+    attachments,
   };
 }
 
@@ -5060,8 +5077,8 @@ function buildImportedBitacoraPayload(parsed, context = {}, index = 0) {
     fechaClase: parsed.fechaClase,
     docentes: docente ? [docente] : [],
     docente,
-    attachments: [],
-    archivos: [],
+    archivos: parsed.attachments || [],
+    attachments: parsed.attachments || [],
     studentOverrides: {},
     processKey: process?.processKey || "",
     process: {
@@ -5178,6 +5195,7 @@ function renderTextImportPreview(items = []) {
             ...structured.componenteTeorico,
           ])}
           ${renderPreviewList("Canciones/obras detectadas", structured.componenteObras)}
+          ${renderPreviewList("Adjuntos detectados", (payload.attachments || []).map((attachment) => attachment.name || attachment.url))}
           ${item.warnings.length ? `<p class="text-bitacoras-preview-card__warning">${escapeHtml(item.warnings.join(". "))}</p>` : ""}
           ${item.errors.length ? `<p class="text-bitacoras-preview-card__error">${escapeHtml(item.errors.join(". "))}</p>` : ""}
         </article>

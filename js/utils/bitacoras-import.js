@@ -72,6 +72,17 @@ export function normalizeCellList(value) {
     .filter(Boolean);
 }
 
+export function normalizeLinkList(value) {
+  return String(value || "")
+    .split(/,|;|\n/g)
+    .map((item) => {
+      const safeItem = toStringSafe(item);
+      const markdownMatch = safeItem.match(/\((https?:\/\/[^)]+)\)/i);
+      return markdownMatch ? markdownMatch[1] : safeItem;
+    })
+    .filter((item) => /^https?:\/\//i.test(item));
+}
+
 export function parseFlexibleDate(value) {
   const raw = toStringSafe(value);
   if (!raw) return "";
@@ -103,14 +114,14 @@ export function parseFlexibleDate(value) {
 export function extractStudentName(rawStudent) {
   const safe = toStringSafe(rawStudent);
   if (!safe) return "";
-  return safe.includes(" - ") ? toStringSafe(safe.split(" - ")[0]) : safe;
+  return toStringSafe(safe.split(/\s+-\s*/)[0] || safe);
 }
 
 export function extractStudentProcessHint(rawStudent) {
   const hints = splitStudentEntries(rawStudent)
     .map((entry) => {
-      if (!entry.includes(" - ")) return "";
-      const parts = entry.split(" - ").map((part) => toStringSafe(part)).filter(Boolean);
+      if (!/\s+-\s*/.test(entry)) return "";
+      const parts = entry.split(/\s+-\s*/).map((part) => toStringSafe(part)).filter(Boolean);
       return parts.length < 2 ? "" : parts.slice(1).join(" - ");
     })
     .filter(Boolean);
@@ -169,6 +180,10 @@ export function mapBitacoraRow(row = [], headerIndex = {}) {
     getByHeader("componentedeobras", "componenteobras", "obras") || getByIndex(8);
   const componenteComplementario =
     getByHeader("componentecomplementario", "complementario") || getByIndex(9);
+  const imagenes =
+    getByHeader("imagenes", "imagen", "fotos", "foto", "images", "image") ||
+    getByIndex(10);
+  const videos = getByHeader("videos", "video") || getByIndex(11);
 
   return {
     fechaClase: parseFlexibleDate(fechaClase),
@@ -183,6 +198,8 @@ export function mapBitacoraRow(row = [], headerIndex = {}) {
     componenteTeorico: normalizeCellList(componenteTeorico),
     componenteObras: normalizeCellList(componenteObras),
     componenteComplementario: normalizeCellList(componenteComplementario),
+    imagenes: normalizeLinkList(imagenes),
+    videos: normalizeLinkList(videos),
   };
 }
 
