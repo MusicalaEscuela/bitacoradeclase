@@ -111,6 +111,16 @@ export function parseFlexibleDate(value) {
   return normalizeLocalDateInput(raw) || raw;
 }
 
+function findDateLikeCell(row = []) {
+  return [...row].reverse().find((cell) => {
+    const value = toStringSafe(cell);
+    return (
+      /^\d{4}-\d{1,2}-\d{1,2}/.test(value) ||
+      /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}(?:\s+\d{1,2}:\d{2})?/.test(value)
+    );
+  });
+}
+
 export function extractStudentName(rawStudent) {
   const safe = toStringSafe(rawStudent);
   if (!safe) return "";
@@ -129,10 +139,22 @@ export function extractStudentProcessHint(rawStudent) {
 }
 
 export function splitStudentEntries(rawStudent) {
-  return toStringSafe(rawStudent)
+  const parts = toStringSafe(rawStudent)
     .split(",")
     .map((entry) => toStringSafe(entry))
     .filter(Boolean);
+  const entries = [];
+
+  parts.forEach((part) => {
+    const startsStudentEntry = /\s+-\s*/.test(part);
+    if (!entries.length || startsStudentEntry) {
+      entries.push(part);
+      return;
+    }
+    entries[entries.length - 1] = `${entries[entries.length - 1]}, ${part}`;
+  });
+
+  return entries;
 }
 
 export function extractStudentNames(rawStudent) {
@@ -154,7 +176,8 @@ export function mapBitacoraRow(row = [], headerIndex = {}) {
     return "";
   };
 
-  const fechaClase = getByHeader("fecha", "fechaclase", "date") || getByIndex(0);
+  const fechaClase =
+    getByHeader("fecha", "fechaclase", "date") || getByIndex(0) || findDateLikeCell(row);
   const docente = getByHeader("docente", "teacher", "profesor") || getByIndex(1);
   const estudianteRaw =
     getByHeader("estudiante", "alumno", "student", "nombreestudiante") ||
@@ -164,6 +187,9 @@ export function mapBitacoraRow(row = [], headerIndex = {}) {
       "tareasobservaciones",
       "tareas",
       "observaciones",
+      "comentariosyrecursos",
+      "comentarios",
+      "recursos",
       "contenido",
       "content",
       "apuntes"
