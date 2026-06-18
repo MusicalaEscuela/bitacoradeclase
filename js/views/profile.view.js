@@ -6,6 +6,7 @@ import {
   getState,
   getSelectedStudentId,
   getSelectedStudentBitacoras,
+  getAllStudents,
   getStudentGoals,
   getStudentRoute,
   setAppError,
@@ -4710,6 +4711,7 @@ function getTextImportContext(student, selectedProcessKey = "") {
   return {
     student,
     studentId: getStudentIdentity(student),
+    allStudents: getAllStudents(),
     process: activeProcess,
     existingBitacoras: getBitacorasFromState(student),
   };
@@ -4754,21 +4756,26 @@ function parseBitacorasFromSheetText(rawText, context = {}) {
 
   return parsedRows.map((row, index) => {
     const parsed = mapSheetRowToTextImport(row);
+    const matched = resolveSheetImportStudents(row, context);
+    parsed.linkedStudents = matched.linkedStudents;
+    parsed.unresolvedStudents = matched.unresolvedStudents;
+    parsed.importedStudentNames = row.estudianteNombres || [];
     const payload = buildImportedBitacoraPayload(parsed, context, index);
     const validation = validateImportedBitacora(payload, context);
     const duplicate = findImportedDuplicate(payload, context.existingBitacoras || []);
     const repeatedInImport = markImportDuplicate(payload, seenImportFingerprints);
     const warnings = [...validation.warnings];
 
-    if (row.estudianteNombres?.length) {
-      const currentName = normalizeText(getStudentName(context.student));
-      const includesCurrent = row.estudianteNombres.some(
-        (name) => normalizeText(name) === currentName
-      );
-      if (!includesCurrent) {
-        warnings.push(
-          `La fila menciona estudiante(s): ${row.estudianteNombres.join(", ")}`
-        );
+    if (matched.unresolvedStudents.length) {
+      warnings.push(`No se encontraron: ${matched.unresolvedStudents.join(", ")}`);
+    }
+    if (matched.linkedStudents.length > 1) {
+      warnings.push(`Se guardará como grupal (${matched.linkedStudents.length} estudiantes)`);
+    } else if (row.estudianteNombres?.length) {
+      const linkedName = getStudentName(matched.linkedStudents[0] || context.student);
+      const mentionedName = row.estudianteNombres[0] || "";
+      if (normalizeText(mentionedName) && normalizeText(mentionedName) !== normalizeText(linkedName)) {
+        warnings.push(`La fila menciona: ${row.estudianteNombres.join(", ")}`);
       }
     }
     if (duplicate) warnings.push("Posible duplicado");
@@ -4850,6 +4857,57 @@ function mapSheetRowToTextImport(row = {}) {
     componenteTeorico: row.componenteTeorico || [],
     componenteObras: row.componenteObras || [],
     attachments,
+  };
+}
+
+function resolveSheetImportStudents(row = {}, context = {}) {
+  const currentStudent = context.student || {};
+  const currentStudentId = context.studentId || getStudentIdentity(currentStudent);
+  const currentFallback = currentStudentId ? [currentStudent] : [];
+  const studentNames = normalizeTags(row.estudianteNombres || []);
+
+  if (!studentNames.length) {
+    return {
+      linkedStudents: currentFallback,
+      unresolvedStudents: [],
+    };
+  }
+
+  const students = Array.isArray(context.allStudents) ? context.allStudents : [];
+  const index = new Map();
+
+  students.forEach((student) => {
+    const id = getStudentIdentity(student);
+    const name = getStudentName(student);
+    const normalized = normalizeText(name);
+    if (id && normalized && !index.has(normalized)) index.set(normalized, student);
+  });
+
+  const linkedStudents = [];
+  const unresolvedStudents = [];
+  const seenIds = new Set();
+
+  studentNames.forEach((name) => {
+    const normalized = normalizeText(name);
+    if (!normalized) return;
+    const matched = index.get(normalized);
+    if (!matched) {
+      unresolvedStudents.push(name);
+      return;
+    }
+    const id = getStudentIdentity(matched);
+    if (!id || seenIds.has(id)) return;
+    seenIds.add(id);
+    linkedStudents.push(matched);
+  });
+
+  if (!linkedStudents.length && currentStudentId) {
+    linkedStudents.push(currentStudent);
+  }
+
+  return {
+    linkedStudents,
+    unresolvedStudents: [...new Set(unresolvedStudents)],
   };
 }
 
@@ -5052,22 +5110,33 @@ function splitCommaValues(value = "") {
 
 function buildImportedBitacoraPayload(parsed, context = {}, index = 0) {
   const student = context.student || {};
-  const studentId = context.studentId || getStudentIdentity(student);
+  const linkedStudents = normalizeImportedLinkedStudents(parsed.linkedStudents, student);
+  const primaryStudent = linkedStudents[0] || student;
+  const studentId = getStudentIdentity(primaryStudent) || context.studentId || getStudentIdentity(student);
   const process = context.process || null;
   const withCategories = applyAutomaticCategoriesFromWorks({
     ...parsed,
     content: buildImportedStructuredContent(parsed),
   });
-  const docente = toStringSafe(parsed.docente || process?.docente || student?.docente || student?.teacher);
+  const docente = toStringSafe(parsed.docente || process?.docente || primaryStudent?.docente || primaryStudent?.teacher);
+  const studentIds = normalizeStudentIds(linkedStudents.map((item) => getStudentIdentity(item))).filter(Boolean);
+  const studentRefs = studentIds.map((id) => {
+    const matchedStudent = linkedStudents.find((item) => getStudentIdentity(item) === id) || {};
+    return {
+      id,
+      name: getStudentName(matchedStudent) || id,
+    };
+  });
+  const isGroup = studentIds.length > 1;
 
   return {
-    mode: parsed.mode === CONFIG.modes.group ? CONFIG.modes.group : CONFIG.modes.individual,
+    mode: isGroup || parsed.mode === CONFIG.modes.group ? CONFIG.modes.group : CONFIG.modes.individual,
     studentId,
-    studentKey: student.studentKey || studentId,
-    studentIds: [studentId],
-    studentRefs: [{ id: studentId, name: getStudentName(student) }],
+    studentKey: primaryStudent.studentKey || studentId,
+    studentIds: studentIds.length ? studentIds : [studentId].filter(Boolean),
+    studentRefs: studentRefs.length ? studentRefs : [{ id: studentId, name: getStudentName(primaryStudent) }],
     primaryStudentId: studentId,
-    title: `Bitácora ${formatDisplayDate(parsed.fechaClase) || index + 1}`,
+    title: `${isGroup ? "Bitácora grupal" : "Bitácora"} ${formatDisplayDate(parsed.fechaClase) || index + 1}`,
     content: buildImportedStructuredContent({
       ...parsed,
       docente,
@@ -5084,18 +5153,39 @@ function buildImportedBitacoraPayload(parsed, context = {}, index = 0) {
     process: {
       processKey: process?.processKey || "",
       processLabel: firstNonEmpty(process?.label, process?.detalle, process?.arte),
-      area: firstNonEmpty(process?.arte, student.area, student.programa, student.instrumento),
-      modalidad: firstNonEmpty(student.modalidad),
+      area: firstNonEmpty(process?.arte, primaryStudent.area, primaryStudent.programa, primaryStudent.instrumento),
+      modalidad: firstNonEmpty(primaryStudent.modalidad),
       docente,
-      sede: firstNonEmpty(student.sede),
-      programa: firstNonEmpty(process?.detalle, process?.label, student.programa, student.area),
+      sede: firstNonEmpty(primaryStudent.sede),
+      programa: firstNonEmpty(process?.detalle, process?.label, primaryStudent.programa, primaryStudent.area),
     },
     source: "plain-text-import",
     metadata: {
       importedFromPlainText: true,
+      importedAsGroup: isGroup,
+      importedStudentCount: studentIds.length,
+      unresolvedStudents: parsed.unresolvedStudents || [],
       importedAt: new Date().toISOString(),
     },
   };
+}
+
+function normalizeImportedLinkedStudents(linkedStudents = [], fallbackStudent = {}) {
+  const normalized = [];
+  const seenIds = new Set();
+
+  (Array.isArray(linkedStudents) ? linkedStudents : []).forEach((student) => {
+    const id = getStudentIdentity(student);
+    if (!id || seenIds.has(id)) return;
+    seenIds.add(id);
+    normalized.push(student);
+  });
+
+  if (!normalized.length && getStudentIdentity(fallbackStudent)) {
+    normalized.push(fallbackStudent);
+  }
+
+  return normalized;
 }
 
 function buildImportedStructuredContent(fields = {}) {
@@ -5124,11 +5214,14 @@ function validateImportedBitacora(bitacora, context = {}) {
   const warnings = [];
 
   if (!bitacora.fechaClase) errors.push("Falta fecha válida");
-  if (!context.studentId) errors.push("Falta estudiante actual");
+  if (!normalizeStudentIds(bitacora.studentIds || [bitacora.studentId]).length) {
+    errors.push("Falta estudiante asociado");
+  }
   if (!bitacora.processKey) errors.push("Selecciona un proceso para asociar estas bitácoras.");
   if (!hasImportedContent(bitacora)) errors.push("No tiene contenido pedagógico para guardar");
-  if (bitacora.mode === CONFIG.modes.group) {
-    errors.push("Tipo: Grupal no se puede importar desde texto sin los demás estudiantes.");
+  const unresolvedStudents = normalizeTags(bitacora.metadata?.unresolvedStudents || []);
+  if (unresolvedStudents.length) {
+    errors.push(`Faltan estudiantes por asociar: ${unresolvedStudents.join(", ")}`);
   }
 
   return { errors, warnings };
@@ -5187,6 +5280,7 @@ function renderTextImportPreview(items = []) {
             </span>
           </header>
           ${payload.docente ? `<p class="text-bitacoras-preview-card__line"><strong>Docente:</strong> ${escapeHtml(payload.docente)}</p>` : ""}
+          ${renderPreviewList("Estudiantes asociados", (payload.studentRefs || []).map((studentRef) => studentRef.name || studentRef.id))}
           ${renderPreviewList("Categorías detectadas", payload.etiquetas)}
           ${structured.tareas ? `<p class="text-bitacoras-preview-card__line"><strong>Tareas/Observaciones:</strong> ${escapeHtml(structured.tareas)}</p>` : ""}
           ${renderPreviewList("Componentes detectados", [
