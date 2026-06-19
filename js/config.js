@@ -38,7 +38,6 @@ const APP_ROUTES = Object.freeze({
   profile: "profile",
   editor: "editor",
   compare: "compare",
-  libraries: "libraries",
   settings: "settings",
 });
 

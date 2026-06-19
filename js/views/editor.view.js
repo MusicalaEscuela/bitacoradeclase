@@ -5369,7 +5369,6 @@ function renderStudentOverrideField(
   options = []
 ) {
   const inputKey = `${studentId}:${key}`;
-  const listId = `override-${studentId}-${key}-list`;
   const selectedValues = normalizeListValues(values);
   const prioritizedOptions = prioritizePickerOptions(key, options);
   const visibleOptions = prioritizedOptions.slice(0, 80);
@@ -5381,11 +5380,10 @@ function renderStudentOverrideField(
         <input
           type="text"
           class="field__input"
-            data-override-input="${escapeHtml(inputKey)}"
-            data-override-options="${escapeHtml(JSON.stringify(prioritizedOptions))}"
-            list="${escapeHtml(listId)}"
-            placeholder="${escapeHtml(placeholder)}"
-            autocomplete="off"
+          data-override-input="${escapeHtml(inputKey)}"
+          data-override-options="${escapeHtml(JSON.stringify(prioritizedOptions))}"
+          placeholder="${escapeHtml(placeholder)}"
+          autocomplete="off"
           />
           <button type="button" class="btn btn--ghost btn--sm" data-override-picker-toggle="${escapeHtml(inputKey)}">Opciones</button>
         </div>
@@ -5406,7 +5404,6 @@ function renderStudentOverrideField(
         <div class="multi-value-list" data-override-values="${escapeHtml(inputKey)}">
           ${renderStudentOverrideChips(studentId, key, selectedValues)}
         </div>
-      ${renderDatalist(listId, options)}
     </section>
   `;
 }

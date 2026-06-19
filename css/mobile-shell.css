@@ -60,11 +60,6 @@
   --route-glow-b: rgba(223, 7, 157, 0.12);
 }
 
-.app-shell[data-current-route="libraries"] {
-  --route-glow-a: rgba(122, 217, 255, 0.18);
-  --route-glow-b: rgba(93, 52, 255, 0.1);
-}
-
 .app-shell[data-current-route="settings"] {
   --route-glow-a: rgba(93, 52, 255, 0.12);
   --route-glow-b: rgba(255, 180, 95, 0.16);

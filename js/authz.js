@@ -107,10 +107,6 @@ export function canAccessRoute(user, routeName) {
     return access.canViewSearch || access.role === "guest";
   }
 
-  if (route === CONFIG.routes.libraries) {
-    return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
-  }
-
   if (route === CONFIG.routes.editor) {
     return access.canEditBitacoras;
   }
