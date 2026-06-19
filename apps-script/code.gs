@@ -1467,42 +1467,126 @@ function buildDeleteWrite_(collectionName, docId) {
  * Envia escrituras a Firestore via :batchWrite en lotes de hasta 500.
  * Antes cada doc era un PATCH/DELETE HTTP individual y las corridas grandes
  * (sync inicial, migraciones) se morian por "Exceeded maximum execution time".
+ *
+ * Firestore limita el ancho de banda de escrituras: en corridas grandes devuelve
+ * RESOURCE_EXHAUSTED ("exceeded their maximum bandwidth for writes"). Por eso:
+ *  - se pausa brevemente entre lotes para "ramp up" gradual,
+ *  - cada lote se reintenta con espera exponencial cuando el error es transitorio,
+ *  - dentro del lote solo se reintentan las escrituras que fallaron por throttling.
  */
 function commitFirestoreWrites_(writes) {
   const BATCH_SIZE = 500;
+  const PAUSE_BETWEEN_BATCHES_MS = 250;
   const all = writes || [];
 
   for (let i = 0; i < all.length; i += BATCH_SIZE) {
     const chunk = all.slice(i, i + BATCH_SIZE);
+    commitFirestoreBatchWithRetry_(chunk, i);
+
+    if (i + BATCH_SIZE < all.length && PAUSE_BETWEEN_BATCHES_MS > 0) {
+      Utilities.sleep(PAUSE_BETWEEN_BATCHES_MS);
+    }
+  }
+}
+
+/**
+ * Codigos gRPC transitorios que conviene reintentar (google.rpc.Code).
+ * 8 RESOURCE_EXHAUSTED, 14 UNAVAILABLE, 10 ABORTED, 4 DEADLINE_EXCEEDED, 13 INTERNAL.
+ */
+function isRetryableFirestoreCode_(code) {
+  return code === 8 || code === 14 || code === 10 || code === 4 || code === 13;
+}
+
+function commitFirestoreBatchWithRetry_(chunk, baseIndex) {
+  const MAX_ATTEMPTS = 6;
+  const BASE_DELAY_MS = 1000;
+
+  // pending[k] = indice (relativo al chunk) de una escritura aun no confirmada.
+  let pending = [];
+  for (let k = 0; k < chunk.length; k += 1) pending.push(k);
+
+  let lastError = null;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      // Espera exponencial con jitter antes de reintentar.
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250);
+      Utilities.sleep(delay);
+    }
+
+    const subChunk = pending.map(function (k) {
+      return chunk[k];
+    });
+
     const response = UrlFetchApp.fetch(firestoreBaseUrl_() + "/documents:batchWrite", {
       method: "post",
       contentType: "application/json",
       headers: {
         Authorization: "Bearer " + getFirestoreAccessToken_(),
       },
-      payload: JSON.stringify({ writes: chunk }),
+      payload: JSON.stringify({ writes: subChunk }),
       muteHttpExceptions: true,
     });
 
-    assertFirestoreResponse_(response, "batchWrite (" + chunk.length + " escrituras)");
+    const httpCode = response.getResponseCode();
+
+    // Throttling / indisponibilidad a nivel HTTP: reintentar todo el sub-lote.
+    if (httpCode === 429 || httpCode === 500 || httpCode === 503) {
+      lastError = new Error(
+        "batchWrite HTTP " + httpCode + ": " + response.getContentText()
+      );
+      continue;
+    }
+
+    assertFirestoreResponse_(response, "batchWrite (" + subChunk.length + " escrituras)");
 
     // batchWrite responde 200 aunque fallen escrituras puntuales: revisar status.
     const payload = JSON.parse(response.getContentText() || "{}");
     const statuses = payload.status || [];
-    for (let j = 0; j < statuses.length; j += 1) {
+
+    const stillPending = [];
+    for (let j = 0; j < pending.length; j += 1) {
       const status = statuses[j] || {};
-      if (status.code) {
+      if (!status.code) continue; // escritura OK
+
+      const writeIndex = baseIndex + pending[j];
+      const docRef = chunk[pending[j]].update
+        ? chunk[pending[j]].update.name
+        : chunk[pending[j]].delete;
+
+      if (isRetryableFirestoreCode_(status.code)) {
+        stillPending.push(pending[j]);
+        lastError = new Error(
+          "batchWrite throttled en la escritura " +
+            writeIndex +
+            " (" +
+            JSON.stringify(docRef) +
+            "): " +
+            (status.message || JSON.stringify(status))
+        );
+      } else {
+        // Error no transitorio (datos invalidos, permisos, etc.): abortar.
         throw new Error(
           "batchWrite fallo en la escritura " +
-            (i + j) +
+            writeIndex +
             " (" +
-            JSON.stringify(chunk[j].update ? chunk[j].update.name : chunk[j].delete) +
+            JSON.stringify(docRef) +
             "): " +
             (status.message || JSON.stringify(status))
         );
       }
     }
+
+    if (stillPending.length === 0) return; // lote completo confirmado
+    pending = stillPending;
   }
+
+  throw new Error(
+    "batchWrite agoto los reintentos (" +
+      pending.length +
+      " escrituras pendientes por throttling). Ultimo error: " +
+      (lastError ? lastError.message : "desconocido")
+  );
 }
 
 function setFirestoreDocument_(collectionName, docId, payload) {

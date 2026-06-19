@@ -20,7 +20,7 @@ const ENV = detectEnvironment();
   Cuando se cree una nueva implementacion en Apps Script, solo se cambia aqui.
 */
 const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbwbDZGWyZ2ESJbVzVjVXYNcCbu6JAN6lsS4VnmvRtMBY7XoZYiCfBv5prbLcnLHg5keLQ/exec";
+  "https://script.google.com/macros/s/AKfycbyPaqPmViYGR3dv5REoyWzoCTxOMsY3xCIKdux5vqSAkCQg35SniHB9DnYI4IHit4sVqA/exec";
 
 const BASE_URLS = {
   development: {
