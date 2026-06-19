@@ -69,14 +69,6 @@ const ROUTE_UI = Object.freeze({
     chip: "Comparar",
     themeColor: "#f2f7f4",
   },
-  [CONFIG.routes.libraries]: {
-    kicker: "Recursos",
-    title: "Bibliotecas artísticas en un solo lugar",
-    text:
-      "Accede rápido al material por área con una navegación más limpia y visible.",
-    chip: "Bibliotecas",
-    themeColor: "#effcff",
-  },
   [CONFIG.routes.settings]: {
     kicker: "Administración",
     title: "Ajustes del sistema con mejor orden visual",
@@ -210,11 +202,6 @@ function normalizeStaticUiText() {
       title: "Comparar bitácoras",
       navLabel: "Comparar",
       bottomLabel: "Comparar",
-    },
-    [CONFIG.routes.libraries]: {
-      title: "Ir a bibliotecas",
-      navLabel: "Bibliotecas",
-      bottomLabel: "Biblioteca",
     },
     [CONFIG.routes.settings]: {
       title: "Ir a configuración",
@@ -727,7 +714,6 @@ async function loadViewModule(viewName) {
     [CONFIG.routes.profile]: () => import("./views/profile.view.js"),
     [CONFIG.routes.editor]: () => import("./views/editor.view.js"),
     [CONFIG.routes.compare]: () => import("./views/compare.view.js"),
-    [CONFIG.routes.libraries]: () => import("./views/libraries.view.js"),
     [CONFIG.routes.settings]: () => import("./views/settings.view.js"),
   };
 
@@ -786,7 +772,6 @@ function renderRouteLoadingState(viewName) {
     [CONFIG.routes.editor]: "Bitácora",
     [CONFIG.routes.compare]: "Comparar",
     [CONFIG.routes.settings]: "Configuración",
-    [CONFIG.routes.libraries]: "Bibliotecas",
   };
 
   dom.root.innerHTML = `
@@ -809,7 +794,6 @@ function updateDocumentTitle(state) {
     [CONFIG.routes.profile]: "Perfil",
     [CONFIG.routes.editor]: "Bitácora",
     [CONFIG.routes.compare]: "Comparar",
-    [CONFIG.routes.libraries]: "Bibliotecas",
     [CONFIG.routes.settings]: "Configuración",
   };
 
@@ -1094,10 +1078,6 @@ function getRouteContextLabel(state, currentView) {
     return access?.role ? getRoleLabel(access.role) : "Administración";
   }
 
-  if (currentView === CONFIG.routes.libraries) {
-    return "Recursos activos";
-  }
-
   return "Musicala";
 }
 
@@ -1112,5 +1092,3 @@ function getSelectedStudentLabel(student) {
 }
 
 export { initApp, navigateTo };
-
-
