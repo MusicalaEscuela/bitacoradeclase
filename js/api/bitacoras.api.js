@@ -460,8 +460,10 @@ function applyClientFilters(items = [], options = {}) {
     });
   }
 
-  const max = Number(options.limit || DEFAULT_LIMIT);
-  return sortBitacoras(results).slice(0, max > 0 ? max : DEFAULT_LIMIT);
+  // limit === 0 significa "sin límite" (mostrar todas).
+  const requested = options.limit === 0 ? 0 : Number(options.limit || DEFAULT_LIMIT);
+  const sorted = sortBitacoras(results);
+  return requested > 0 ? sorted.slice(0, requested) : sorted;
 }
 
 async function runQueryWithOrderFallback(bitacorasRef, max) {
@@ -533,9 +535,12 @@ export async function getBitacorasByStudent(studentId, options = {}) {
   const snapshot = await getDocs(q);
   const items = snapshot.docs.map(normalizeBitacoraRecord);
 
+  // La consulta ya viene acotada por estudiante (array-contains), así que no
+  // recortamos el resultado: mostramos todas las bitácoras del estudiante.
+  // Solo se aplica un límite si quien llama lo pide explícitamente.
   return applyClientFilters(items, {
     ...options,
-    limit: options.limit || CONFIG.limits.maxRecentBitacoras,
+    limit: options.limit || 0,
   });
 }
 
