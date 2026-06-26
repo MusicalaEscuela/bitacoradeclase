@@ -115,6 +115,10 @@ export function canAccessRoute(user, routeName) {
     return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
   }
 
+  if (route === CONFIG.routes.planeador) {
+    return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
+  }
+
   if (route === CONFIG.routes.profile) {
     return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
   }

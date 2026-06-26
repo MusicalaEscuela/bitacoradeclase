@@ -69,6 +69,14 @@ const ROUTE_UI = Object.freeze({
     chip: "Comparar",
     themeColor: "#f2f7f4",
   },
+  [CONFIG.routes.planeador]: {
+    kicker: "Planeación docente",
+    title: "Planea tu clase con la estructura de Musicala",
+    text:
+      "Organiza objetivo, momentos, materiales y evidencia. Guarda, duplica, comparte y deja claridad a coordinación.",
+    chip: "Planeador",
+    themeColor: "#f3ecff",
+  },
   [CONFIG.routes.settings]: {
     kicker: "Administración",
     title: "Ajustes del sistema con mejor orden visual",
@@ -202,6 +210,11 @@ function normalizeStaticUiText() {
       title: "Comparar bitácoras",
       navLabel: "Comparar",
       bottomLabel: "Comparar",
+    },
+    [CONFIG.routes.planeador]: {
+      title: "Ir al planeador docente",
+      navLabel: "Planeador",
+      bottomLabel: "Planear",
     },
     [CONFIG.routes.settings]: {
       title: "Ir a configuración",
@@ -714,6 +727,7 @@ async function loadViewModule(viewName) {
     [CONFIG.routes.profile]: () => import("./views/profile.view.js"),
     [CONFIG.routes.editor]: () => import("./views/editor.view.js"),
     [CONFIG.routes.compare]: () => import("./views/compare.view.js"),
+    [CONFIG.routes.planeador]: () => import("./views/planeador.view.js"),
     [CONFIG.routes.settings]: () => import("./views/settings.view.js"),
   };
 
@@ -771,6 +785,7 @@ function renderRouteLoadingState(viewName) {
     [CONFIG.routes.profile]: "Perfil",
     [CONFIG.routes.editor]: "Bitácora",
     [CONFIG.routes.compare]: "Comparar",
+    [CONFIG.routes.planeador]: "Planeador",
     [CONFIG.routes.settings]: "Configuración",
   };
 
@@ -794,6 +809,7 @@ function updateDocumentTitle(state) {
     [CONFIG.routes.profile]: "Perfil",
     [CONFIG.routes.editor]: "Bitácora",
     [CONFIG.routes.compare]: "Comparar",
+    [CONFIG.routes.planeador]: "Planeador",
     [CONFIG.routes.settings]: "Configuración",
   };
 
