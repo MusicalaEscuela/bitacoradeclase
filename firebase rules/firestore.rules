@@ -17,6 +17,7 @@ service cloud.firestore {
           "alekcaballeromusic@gmail.com",
           "catalina.medina.leal@gmail.com",
           "imusicala@gmail.com",
+          "adminmusicala@gmail.com",
           "musicalaasesor@gmail.com"
         ];
     }
@@ -145,6 +146,24 @@ service cloud.firestore {
     match /bitacoras/{bitacoraId} {
       allow read: if isAdmin() || isTeacher() || studentOwnsBitacora();
       allow create, update, delete: if isAdmin() || isTeacher();
+    }
+
+    // Planeador Docente: planeaciones de clase.
+    // Admin ve y gestiona todo; cada docente SOLO sus propios documentos
+    // (marcados con ownerEmail == su correo).
+    match /planeaciones/{planeacionId} {
+      allow read, update, delete: if isAdmin() ||
+        (isTeacher() && resource.data.ownerEmail == authEmail());
+      allow create: if isAdmin() ||
+        (isTeacher() && request.resource.data.ownerEmail == authEmail());
+    }
+
+    // Tablero de post-its del planeador (mismo criterio de propiedad).
+    match /planeador_postits/{postitId} {
+      allow read, update, delete: if isAdmin() ||
+        (isTeacher() && resource.data.ownerEmail == authEmail());
+      allow create: if isAdmin() ||
+        (isTeacher() && request.resource.data.ownerEmail == authEmail());
     }
 
     match /student_routes/{studentId} {

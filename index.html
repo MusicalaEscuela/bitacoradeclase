@@ -33,6 +33,7 @@
     <link rel="stylesheet" href="./css/components.css" />
     <link rel="stylesheet" href="./css/forms.css" />
     <link rel="stylesheet" href="./css/mobile-shell.css" />
+    <link rel="stylesheet" href="./css/planeador.css" />
 
     <link rel="icon" href="data:," />
   </head>
@@ -185,6 +186,24 @@
               <button
                 type="button"
                 class="nav-chip"
+                data-route="planeador"
+                data-nav-item
+                title="Ir al planeador docente"
+              >
+                <span class="nav-chip__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M5 4h11l3 3v13H5z" />
+                    <path d="M8 9h8" />
+                    <path d="M8 13h8" />
+                    <path d="M8 17h5" />
+                  </svg>
+                </span>
+                <span class="nav-chip__label">Planeador</span>
+              </button>
+
+              <button
+                type="button"
+                class="nav-chip"
                 data-route="settings"
                 data-nav-item
                 title="Ir a configuración"
@@ -327,6 +346,23 @@
             </svg>
           </span>
           <span class="bottom-nav__label">Comparar</span>
+        </button>
+
+        <button
+          type="button"
+          class="bottom-nav__item"
+          data-route="planeador"
+          title="Ir al planeador docente"
+        >
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M5 4h11l3 3v13H5z" />
+              <path d="M8 9h8" />
+              <path d="M8 13h8" />
+              <path d="M8 17h5" />
+            </svg>
+          </span>
+          <span class="bottom-nav__label">Planear</span>
         </button>
 
         <button

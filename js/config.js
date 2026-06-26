@@ -38,6 +38,7 @@ const APP_ROUTES = Object.freeze({
   profile: "profile",
   editor: "editor",
   compare: "compare",
+  planeador: "planeador",
   settings: "settings",
 });
 
@@ -115,6 +116,8 @@ const FIRESTORE_CONFIG = Object.freeze({
   studentRouteProgressCollection: "student_route_progress",
   appConfigCollection: "app_config",
   catalogsDocumentId: "catalogos",
+  planeacionesCollection: "planeaciones",
+  planeadorPostitsCollection: "planeador_postits",
 });
 
 const ACTIVE_BASE_URLS = BASE_URLS[ENV] || BASE_URLS.production;
@@ -304,6 +307,14 @@ export function getAppConfigCollectionName() {
 
 export function getCatalogsDocumentId() {
   return CONFIG.firestore.catalogsDocumentId || "catalogos";
+}
+
+export function getPlaneacionesCollectionName() {
+  return CONFIG.firestore.planeacionesCollection || "planeaciones";
+}
+
+export function getPlaneadorPostitsCollectionName() {
+  return CONFIG.firestore.planeadorPostitsCollection || "planeador_postits";
 }
 
 export function assertValidBitacoraMode(mode) {
