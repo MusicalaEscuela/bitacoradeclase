@@ -10,7 +10,7 @@ estructura pedagógica de Musicala, más un tablero de post-its tipo kanban.
 |---|---|
 | `js/utils/planeador.constants.js` | Estructura pedagógica: tipos de clase, componentes, habilidades, momentos, plantillas, estados, columnas, colores y factorías de documentos. |
 | `js/api/planeador.api.js` | CRUD de `planeaciones` y `planeador_postits` + **puente con los catálogos existentes**. |
-| `js/views/planeador.view.js` | Vista completa: lista con filtros, formulario por bloques, detalle, tablero y datos de ejemplo. |
+| `js/views/planeador.view.js` | Vista completa: lista con filtros, formulario por bloques, detalle y tablero. |
 | `css/planeador.css` | Estilos (paleta violeta/lila/fucsia, responsive, impresión). |
 | `firebase rules/firestore.rules` | Reglas para las nuevas colecciones (solo equipo admin/docente). |
 
@@ -90,12 +90,11 @@ la planeación, en el arreglo `comentariosCoordinacion`.
 No hay que tocar `firebase.client.js`: el planeador reutiliza la misma
 instancia de Firestore y los mismos helpers.
 
-## Probar con datos de ejemplo
+## Empezar a planear
 
-En la vista **Planeador**:
-- Si no hay planeaciones, el estado vacío ofrece **"Cargar datos de ejemplo"**
-  (crea 3 planeaciones —incluida una de reemplazo— y 5 post-its).
-- En el **Tablero**, el botón **"Datos de ejemplo"** crea post-its de muestra.
+En la vista **Planeador** se crea una planeación desde cero con **"Crear
+planeación"** o partiendo de una **plantilla** rápida (clase de diagnóstico,
+técnica, montaje, reemplazo o interdisciplinar).
 
 ## Flujo del docente
 

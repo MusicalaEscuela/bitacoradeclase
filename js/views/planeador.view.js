@@ -284,7 +284,7 @@ function renderList() {
         <p>Crea tu primera planeación o empieza desde una plantilla.</p>
         <div class="btn-group" style="justify-content:center;margin-top:1rem">
           <button type="button" class="btn btn--primary" data-action="nueva">Crear planeación</button>
-          <button type="button" class="btn btn--ghost" data-action="seed">Cargar datos de ejemplo</button>
+          <button type="button" class="btn btn--ghost" data-action="plantillas">✨ Usar una plantilla</button>
         </div>
       </div>`;
   }
@@ -802,9 +802,6 @@ function renderBoard() {
   return `
     <div class="planeador-toolbar">
       <p class="planeacion-block__hint">Organiza ideas antes de planear. Arrastra los post-its entre columnas.</p>
-      <div class="btn-group">
-        ${!pState.postits.length ? '<button type="button" class="btn btn--ghost btn--sm" data-action="seed-postits">Datos de ejemplo</button>' : ""}
-      </div>
     </div>
     <div class="board">
       ${POSTIT_COLUMNAS.map((col) => renderBoardColumn(col)).join("")}
@@ -1080,13 +1077,6 @@ async function handleAction(action, el) {
       break;
     }
 
-    case "seed":
-      await seedDemo();
-      break;
-    case "seed-postits":
-      await seedPostits();
-      break;
-
     case "add-postit":
       await quickAddPostit(el.dataset.column);
       break;
@@ -1248,139 +1238,3 @@ function bindBoardDnD() {
   });
 }
 
-/* ==========================================================================
-   DATOS DE EJEMPLO
-   ========================================================================== */
-
-async function seedDemo() {
-  const docente = defaultTeacherName() || "Docente Musicala";
-  const demos = [
-    {
-      fechaClase: getTodayDate(),
-      horaInicio: "09:00",
-      horaFin: "10:00",
-      docenteNombre: docente,
-      sede: "Sede Norte",
-      programa: "Programa Sinfónico",
-      grupoNombre: "Iniciación Musical A",
-      ciclo: "7-9 años",
-      duracion: "60 min",
-      arte: "musica",
-      categorias: ["Pulso", "Ritmo"],
-      componenteCorporal: ["Percusión corporal", "Marcación de pulso"],
-      componenteTecnico: ["Patrón rítmico 4/4"],
-      componenteTeorico: ["Pulso y acento"],
-      componenteObras: [],
-      tipoClase: "regular",
-      objetivo: "Al finalizar la clase, los estudiantes podrán reconocer el pulso estable mediante ejercicios de percusión corporal.",
-      habilidades: ["Rítmica", "Auditiva", "Corporal"],
-      momentosClase: {
-        bienvenida: "Saludo, ronda de nombres con palmas y presentación del objetivo.",
-        calentamiento: "Escucha activa de una canción y marcación del pulso con el cuerpo.",
-        desarrolloTecnico: "Patrón de percusión corporal en 4/4 con variaciones.",
-        practicaCreacion: "En parejas, crean un patrón corporal de 8 tiempos.",
-        cierre: "Muestra breve por parejas y reflexión.",
-      },
-      materiales: ["Parlante", "Canción o pista", "Celular para evidencia"],
-      evidenciaEsperada: { tipo: "video", descripcion: "Video corto del grupo marcando el pulso." },
-      estado: "listaEnviar",
-    },
-    {
-      fechaClase: getTodayDate(),
-      docenteNombre: docente,
-      sede: "Sede Sur",
-      grupoNombre: "Danza Intermedio",
-      ciclo: "10-12 años",
-      arte: "danza",
-      categorias: ["Montaje coreográfico", "Musicalidad"],
-      componenteCorporal: ["Movilidad articular", "Coordinación"],
-      componenteTecnico: ["Secuencia de 8 tiempos"],
-      componenteTeorico: ["Conteo musical"],
-      componenteObras: ["Coreografía muestra fin de año"],
-      tipoClase: "montaje",
-      objetivo: "Al finalizar la clase, los estudiantes podrán ejecutar una secuencia de 8 tiempos mediante repetición guiada y trabajo grupal.",
-      habilidades: ["Coordinación", "Memoria", "Grupal"],
-      momentosClase: {
-        bienvenida: "Saludo y repaso del objetivo del montaje.",
-        calentamiento: "Movilidad articular y activación física.",
-        desarrolloTecnico: "Repaso de la secuencia y montaje de un nuevo fragmento.",
-        practicaCreacion: "Integración del fragmento con la coreografía.",
-        cierre: "Muestra del avance y registro en video.",
-      },
-      materiales: ["Parlante", "Colchonetas"],
-      evidenciaEsperada: { tipo: "video", descripcion: "Video del avance coreográfico." },
-      estado: "borrador",
-    },
-    {
-      fechaClase: getTodayDate(),
-      docenteNombre: docente,
-      sede: "Sede Centro",
-      grupoNombre: "Artes Exploración B",
-      arte: "artesPlasticas",
-      categorias: ["Textura", "Color"],
-      componenteCorporal: [],
-      componenteTecnico: ["Técnicas de textura", "Mezcla de color"],
-      componenteTeorico: ["Composición visual"],
-      componenteObras: ["Collage colectivo"],
-      tipoClase: "exploracion",
-      esReemplazo: true,
-      reemplazo: {
-        docenteTitular: "Prof. Titular",
-        docenteReemplazante: docente,
-        continuidad: "Seguir con el proyecto de collage iniciado.",
-        noCambiar: "Los grupos de trabajo ya conformados.",
-        indicacionesGrupo: "Grupo creativo pero conversador, mantener ritmo.",
-        nivelReal: "Básico-intermedio",
-        alertas: "Un estudiante con alergia a ciertos pegamentos.",
-        evidenciaSolicitada: "Foto de los collages y resumen para coordinación.",
-      },
-      objetivo: "Al finalizar la clase, los estudiantes podrán crear una composición visual usando textura, color y materiales reciclados.",
-      habilidades: ["Creativa", "Visual", "Motriz"],
-      momentosClase: {
-        bienvenida: "Revisar indicaciones del titular y saludar al grupo.",
-        calentamiento: "Exploración de materiales reciclados disponibles.",
-        desarrolloTecnico: "Técnicas de textura con distintos materiales.",
-        practicaCreacion: "Continúan el collage por grupos.",
-        cierre: "Socialización y registro fotográfico.",
-      },
-      materiales: ["Pinturas", "Elementos reciclados", "Cinta", "Hojas"],
-      evidenciaEsperada: { tipo: "foto", descripcion: "Foto de los collages terminados." },
-      estado: "compartida",
-    },
-  ];
-
-  try {
-    for (const demo of demos) {
-      await createPlaneacion(stampOwner(createEmptyPlaneacion(demo)));
-    }
-    await seedPostits(true);
-    await loadData();
-    showSuccess("Datos de ejemplo cargados.");
-    renderActive();
-  } catch (err) {
-    showError(err?.message || "No se pudieron crear los datos de ejemplo.");
-  }
-}
-
-async function seedPostits(silent = false) {
-  const docente = defaultTeacherName() || "Docente Musicala";
-  const demos = [
-    { titulo: "Probar juego de pulso", descripcion: "Idea para iniciación musical", columna: "ideas", arte: "musica", color: "lila", estado: "idea" },
-    { titulo: "Objetivo: lateralidad", descripcion: "Para grupo de danza inicial", columna: "objetivos", arte: "danza", color: "violeta", estado: "enProceso" },
-    { titulo: "Collage con reciclaje", descripcion: "Actividad de artes", columna: "actividades", arte: "artesPlasticas", color: "fucsia", estado: "idea" },
-    { titulo: "Pedir parlante nuevo", descripcion: "El de la sede sur no sirve", columna: "coordinacion", color: "durazno", estado: "idea" },
-    { titulo: "Canción 'El reloj'", descripcion: "Referente de pulso", columna: "repertorio", arte: "musica", color: "azul", estado: "usado" },
-  ];
-  try {
-    for (const demo of demos) {
-      await createPostit(stampOwner(createEmptyPostit({ ...demo, docenteNombre: docente, fecha: getTodayDate() })));
-    }
-    if (!silent) {
-      await loadData();
-      showSuccess("Post-its de ejemplo cargados.");
-      renderActive();
-    }
-  } catch (err) {
-    if (!silent) showError(err?.message || "No se pudieron crear los post-its.");
-  }
-}
