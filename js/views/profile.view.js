@@ -34,6 +34,7 @@ import {
   updateStudentTeacher,
   updateStudentRepertoire,
   updateStudentProfileFields,
+  updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
 } from "../api/students.api.js";
@@ -806,8 +807,10 @@ function buildProfileMarkup(student, state, config) {
       <header class="profile-quick-header">
         <div class="profile-quick-header__identity">
           <p class="view-eyebrow">${escapeHtml(title)}</p>
-          <h1 class="profile-card__name">${escapeHtml(getStudentName(student))}</h1>
-          <p class="profile-card__doc">${escapeHtml(getStudentDocument(student) || "Sin documento")}</p>
+          <div class="profile-card__title-row">
+            ${renderStudentStatusDot(student)}
+            <h1 class="profile-card__name">${escapeHtml(getStudentName(student))}</h1>
+          </div>
           <div class="profile-card__badges" id="profile-badges">
             ${renderStudentBadges(student)}
           </div>
@@ -911,6 +914,9 @@ function buildProfileMarkup(student, state, config) {
             <dl class="profile-grid" id="profile-grid">
               ${renderProfileGrid(student)}
             </dl>
+            <section class="processes-manager" id="profile-processes-manager" aria-label="Areas y procesos del estudiante">
+              ${renderProcessesManager(student)}
+            </section>
             <section class="internal-notes" id="profile-internal-notes" aria-label="Observaciones internas">
               ${renderInternalNotesBlock(student)}
             </section>
@@ -970,7 +976,23 @@ function bindProfileEvents(student) {
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const processSelect = viewRoot.querySelector("#profile-process-select");
   const gridContainer = viewRoot.querySelector("#profile-grid");
+  const processesContainer = viewRoot.querySelector("#profile-processes-manager");
   const internalNotesContainer = viewRoot.querySelector("#profile-internal-notes");
+
+  if (processesContainer) {
+    processesContainer.addEventListener("click", async (event) => {
+      const addButton = event.target.closest("[data-process-add]");
+      if (addButton) {
+        await addProfileProcess(student);
+        return;
+      }
+
+      const removeButton = event.target.closest("[data-process-remove]");
+      if (removeButton) {
+        await removeProfileProcess(student, removeButton.getAttribute("data-process-remove"));
+      }
+    });
+  }
 
   if (internalNotesContainer) {
     internalNotesContainer.addEventListener("click", async (event) => {
@@ -1224,7 +1246,6 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   const repertoireContainer = viewRoot.querySelector("#profile-repertoire-content");
   const historyTitle = viewRoot.querySelector("#profile-history-title");
   const titleNode = viewRoot.querySelector(".profile-card__name");
-  const docNode = viewRoot.querySelector(".profile-card__doc");
   const gridNode = viewRoot.querySelector("#profile-grid");
   const statsNode = viewRoot.querySelector("#profile-stats");
   const badgesNode = viewRoot.querySelector("#profile-badges");
@@ -1235,16 +1256,16 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
     titleNode.textContent = getStudentName(student);
   }
 
-  if (docNode) {
-    docNode.textContent = getStudentDocument(student) || "Sin documento";
-  }
-
   if (badgesNode) {
     badgesNode.innerHTML = renderStudentBadges(student);
   }
 
   if (gridNode) {
     gridNode.innerHTML = renderProfileGrid(student);
+  }
+
+  if (viewRoot.querySelector("#profile-processes-manager")) {
+    renderProcessesManagerContainer(student);
   }
 
   if (summaryContainer) {
@@ -1304,10 +1325,32 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
 
 function renderStudentBadges(student) {
   return `
-    ${renderBadge(student.estado)}
     ${renderBadge(student.modalidad)}
     ${renderBadge(student.area || student.instrumento || student.programa)}
   `;
+}
+
+/**
+ * Tono del punto de estado: verde (activo), ambar (en pausa),
+ * gris (inactivo) o neutro (desconocido).
+ */
+function resolveStudentStatusTone(estado = "") {
+  const normalized = normalizeText(estado);
+  if (!normalized) return "neutral";
+  if (normalized.includes("pausa")) return "warning";
+  if (normalized.includes("inactivo")) return "muted";
+  if (normalized.includes("activo")) return "active";
+  return "neutral";
+}
+
+function renderStudentStatusDot(student) {
+  const estado = getReadableValue(student?.estado, "Sin estado");
+  const tone = resolveStudentStatusTone(student?.estado);
+  return `<span class="student-summary__status student-summary__status--${tone}" title="${escapeHtml(
+    estado
+  )}"><span class="student-summary__status-dot" aria-hidden="true"></span><span class="sr-only">${escapeHtml(
+    estado
+  )}</span></span>`;
 }
 
 function renderProfileGrid(student) {
@@ -1512,6 +1555,160 @@ async function saveInternalNotes(student) {
 function isHomeModality(value = "") {
   const modality = normalizeText(value);
   return modality.includes("hogar") || modality.includes("domicilio");
+}
+
+function canManageProcesses() {
+  // Las reglas de Firestore solo permiten escribir `students` a administradores,
+  // por eso el gestor de areas se limita a admin (un docente recibiria
+  // permission-denied al guardar).
+  return resolveUserAccess(getState()?.auth?.user).role === CONFIG.roles.admin;
+}
+
+function renderProcessesManager(student = {}) {
+  if (!canManageProcesses()) return "";
+
+  const processes = normalizeStudentProcesses(student);
+  const teacherOptions = getTeacherCatalogOptions("");
+
+  const teacherSelectOptions = (selected = "") => `
+    <option value="">Sin docente</option>
+    ${teacherOptions
+      .map(
+        (name) =>
+          `<option value="${escapeHtml(name)}" ${
+            normalizeText(name) === normalizeText(selected) ? "selected" : ""
+          }>${escapeHtml(name)}</option>`
+      )
+      .join("")}
+  `;
+
+  const items = processes
+    .map(
+      (process) => `
+        <li class="processes-manager__item" data-process-item="${escapeHtml(process.processKey)}">
+          <div class="processes-manager__item-info">
+            <span class="processes-manager__item-label">${escapeHtml(process.label || "Proceso")}</span>
+            <span class="processes-manager__item-meta">${escapeHtml(
+              getReadableValue(process.docente, "Sin docente")
+            )}</span>
+          </div>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-process-remove="${escapeHtml(process.processKey)}"
+          >Quitar</button>
+        </li>
+      `
+    )
+    .join("");
+
+  return `
+    <header class="processes-manager__header">
+      <div>
+        <p class="panel-header__eyebrow">Configuracion</p>
+        <h3 class="processes-manager__title">Areas y procesos</h3>
+      </div>
+    </header>
+    <ul class="processes-manager__list">
+      ${items || `<li class="processes-manager__empty">Sin procesos registrados.</li>`}
+    </ul>
+    <div class="processes-manager__form">
+      <label class="field field--compact">
+        <span class="field__label">Area</span>
+        <input type="text" class="field__input" data-process-new="arte" placeholder="Ej: Musica" />
+      </label>
+      <label class="field field--compact">
+        <span class="field__label">Instrumento / detalle</span>
+        <input type="text" class="field__input" data-process-new="detalle" placeholder="Ej: Piano" />
+      </label>
+      <label class="field field--compact">
+        <span class="field__label">Docente</span>
+        <select class="field__input" data-process-new="docente">
+          ${teacherSelectOptions("")}
+        </select>
+      </label>
+      <button type="button" class="btn btn--secondary btn--sm" data-process-add>Agregar area</button>
+    </div>
+    <div class="profile-inline-message" data-process-message role="status" aria-live="polite"></div>
+  `;
+}
+
+function renderProcessesManagerContainer(student) {
+  const container = viewRoot?.querySelector("#profile-processes-manager");
+  if (!container) return;
+  container.innerHTML = renderProcessesManager(student);
+}
+
+async function persistStudentProcesses(student, nextProcesses, successMessage) {
+  const studentId = getStudentIdentity(student);
+  const message = viewRoot?.querySelector("[data-process-message]");
+  if (!studentId) {
+    setAppError("No hay estudiante seleccionado.");
+    return;
+  }
+
+  try {
+    clearAppError();
+    const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_processes";
+    const updated = await updateStudentProcesses(studentId, nextProcesses, { updatedBy });
+    updateStudentProfile({ ...student, ...updated });
+    renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+    showProfileTeacherMessage(
+      viewRoot?.querySelector("[data-process-message]") || message,
+      successMessage,
+      "success"
+    );
+  } catch (error) {
+    console.error("No se pudieron guardar las areas:", error);
+    showProfileTeacherMessage(message, error?.message || "No se pudo guardar.", "error");
+    setAppError(error?.message || "No se pudieron guardar las areas.");
+  }
+}
+
+async function addProfileProcess(student) {
+  if (!canManageProcesses()) {
+    setAppError("Solo un administrador puede editar las areas.");
+    return;
+  }
+
+  const container = viewRoot?.querySelector("#profile-processes-manager");
+  const arteInput = container?.querySelector('[data-process-new="arte"]');
+  const detalleInput = container?.querySelector('[data-process-new="detalle"]');
+  const docenteInput = container?.querySelector('[data-process-new="docente"]');
+
+  const arte = toStringSafe(arteInput?.value);
+  const detalle = toStringSafe(detalleInput?.value);
+  const docente = toStringSafe(docenteInput?.value);
+
+  if (!arte && !detalle) {
+    showProfileTeacherMessage(
+      viewRoot?.querySelector("[data-process-message]"),
+      "Indica al menos un area o instrumento.",
+      "error"
+    );
+    return;
+  }
+
+  const existing = normalizeStudentProcesses(student).filter(
+    (process) => process.arte || process.detalle
+  );
+  const nextProcesses = [...existing, { arte, detalle, docente }];
+
+  await persistStudentProcesses(student, nextProcesses, "Area agregada.");
+}
+
+async function removeProfileProcess(student, processKey) {
+  if (!canManageProcesses()) {
+    setAppError("Solo un administrador puede editar las areas.");
+    return;
+  }
+
+  const safeKey = toStringSafe(processKey);
+  const nextProcesses = normalizeStudentProcesses(student)
+    .filter((process) => process.arte || process.detalle)
+    .filter((process) => toStringSafe(process.processKey) !== safeKey);
+
+  await persistStudentProcesses(student, nextProcesses, "Area eliminada.");
 }
 
 function renderTeacherProfileItem(student = {}) {
