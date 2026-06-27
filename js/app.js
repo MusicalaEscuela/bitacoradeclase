@@ -27,6 +27,14 @@ import {
 import { getCatalogs } from "./api/catalogs.api.js";
 import { getUserAccessProfile } from "./api/users.api.js";
 
+// ============================================================
+// VERSIÓN DE LA APP (cache-busting).
+// Sube este token en CADA despliegue (ej. la fecha: AAAAMMDD) para que
+// todos los usuarios carguen la última versión sin limpiar la caché.
+// Debe coincidir con el ?v= de las hojas de estilo y del script en index.html.
+// ============================================================
+export const APP_VERSION = "20260627";
+
 const appModules = {
   views: new Map(),
   initialized: false,
@@ -722,13 +730,14 @@ async function loadViewModule(viewName) {
     return appModules.views.get(viewName);
   }
 
+  const v = `?v=${APP_VERSION}`;
   const importMap = {
-    [CONFIG.routes.search]: () => import("./views/search.view.js"),
-    [CONFIG.routes.profile]: () => import("./views/profile.view.js"),
-    [CONFIG.routes.editor]: () => import("./views/editor.view.js"),
-    [CONFIG.routes.compare]: () => import("./views/compare.view.js"),
-    [CONFIG.routes.planeador]: () => import("./views/planeador.view.js"),
-    [CONFIG.routes.settings]: () => import("./views/settings.view.js"),
+    [CONFIG.routes.search]: () => import(`./views/search.view.js${v}`),
+    [CONFIG.routes.profile]: () => import(`./views/profile.view.js${v}`),
+    [CONFIG.routes.editor]: () => import(`./views/editor.view.js${v}`),
+    [CONFIG.routes.compare]: () => import(`./views/compare.view.js${v}`),
+    [CONFIG.routes.planeador]: () => import(`./views/planeador.view.js${v}`),
+    [CONFIG.routes.settings]: () => import(`./views/settings.view.js${v}`),
   };
 
   const importer = importMap[viewName];
