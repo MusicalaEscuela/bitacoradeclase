@@ -307,8 +307,6 @@ function buildSearchViewMarkup(state, config) {
             Bitácora grupal
           </button>
         </div>
-
-        <div id="search-summary" class="search-summary" aria-live="polite"></div>
       </section>
 
       <section class="search-layout search-layout--single" aria-label="Listado de estudiantes">

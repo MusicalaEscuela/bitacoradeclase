@@ -3107,9 +3107,8 @@ function renderStudentSummary(student) {
   return `
     <article class="student-summary">
       <div class="student-summary__identity">
-        <p class="student-summary__eyebrow">Estudiante activo</p>
+        ${renderStudentStatusDot(student)}
         <h2 class="student-summary__name">${escapeHtml(getStudentName(student))}</h2>
-        <p class="student-summary__doc">${escapeHtml(getStudentDocument(student) || "Sin documento")}</p>
       </div>
 
       <dl class="student-summary__grid">
@@ -4453,15 +4452,7 @@ function buildMusicalaEditorMarkup({
 
   return `
     <section class="view-shell view-shell--editor">
-      <header class="view-header">
-        <div class="view-header__content">
-          <p class="view-eyebrow">${escapeHtml(title)}</p>
-          <h1 class="view-title">Registro de Clase - Musicala</h1>
-          <p class="view-description">
-            Usa el mismo formato del registro docente para dejar observaciones,
-            componentes y archivos en una sola vista.
-          </p>
-        </div>
+      <header class="view-header view-header--actions-only">
         <div class="view-header__actions">
           <button type="button" class="btn btn--ghost" id="editor-back-search-btn">
             Volver a busqueda
@@ -4875,6 +4866,29 @@ function formatBitacoraSequence(value = 0) {
   return String(numeric).padStart(2, "0");
 }
 
+/**
+ * Devuelve la clase de color del punto segun el estado del estudiante:
+ * verde (activo), ambar (en pausa) o gris (inactivo / desconocido).
+ */
+function resolveStudentStatusTone(estado = "") {
+  const normalized = normalizeText(estado);
+  if (!normalized) return "neutral";
+  if (normalized.includes("pausa")) return "warning";
+  if (normalized.includes("inactivo")) return "muted";
+  if (normalized.includes("activo")) return "active";
+  return "neutral";
+}
+
+function renderStudentStatusDot(student) {
+  const estado = getReadableValue(student?.estado, "Sin estado");
+  const tone = resolveStudentStatusTone(student?.estado);
+  return `<span class="student-summary__status student-summary__status--${tone}" title="${escapeHtml(
+    estado
+  )}"><span class="student-summary__status-dot" aria-hidden="true"></span><span class="sr-only">${escapeHtml(
+    estado
+  )}</span></span>`;
+}
+
 function renderStudentSummaryCompact(student) {
   if (!student) {
     return `<div class="empty-state empty-state--files"><p class="empty-state__text">No hay estudiante seleccionado.</p></div>`;
@@ -4895,18 +4909,25 @@ function renderStudentSummaryCompact(student) {
   return `
     <article class="student-summary student-summary--compact">
       <div class="student-summary__identity">
-        <p class="student-summary__eyebrow">Estudiante activo</p>
+        ${renderStudentStatusDot(student)}
         <h2 class="student-summary__name">${escapeHtml(getStudentName(student))}</h2>
-        <p class="student-summary__doc">${escapeHtml(getStudentDocument(student) || "Sin documento")}</p>
       </div>
       <div class="student-summary__aside">
         <div class="student-summary__badges">
-          <span class="badge">${escapeHtml(getReadableValue(student.estado))}</span>
           <span class="badge">${escapeHtml(
             getReadableValue(getStudentProcessesSummary(student), "Sin procesos")
           )}</span>
         </div>
         <dl class="student-summary__facts">
+          <div class="student-summary__fact">
+            <dt>Área</dt>
+            <dd>${escapeHtml(
+              getReadableValue(
+                firstNonEmpty(student.area, student.instrumento, student.programa),
+                "Sin área"
+              )
+            )}</dd>
+          </div>
           <div class="student-summary__fact">
             <dt>Docente</dt>
             <dd>${escapeHtml(

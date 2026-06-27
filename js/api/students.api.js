@@ -17,6 +17,7 @@ import {
 import {
   isPlainObject,
   normalizeText,
+  slugifyProcessKey,
   toStringSafe,
 } from "../utils/shared.js";
 
@@ -168,6 +169,80 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
     studentKey: safeStudentId,
     repertorioEscogido,
     repertoire: repertorioEscogido,
+  };
+}
+
+/**
+ * Normaliza un proceso recibido desde el front antes de persistirlo.
+ * Cada proceso queda como { processKey, arte, detalle, docente, label }.
+ */
+function normalizeProcessForWrite(process = {}, index = 0) {
+  if (!isPlainObject(process)) return null;
+
+  const arte = normalizeScalar(process.arte || process.area);
+  const detalle = normalizeScalar(process.detalle || process.instrumento);
+  const docente = normalizeScalar(process.docente || process.teacher);
+  const label =
+    normalizeScalar(process.label) ||
+    [arte, detalle].filter(Boolean).join(" - ") ||
+    `Proceso ${index + 1}`;
+
+  if (!arte && !detalle) return null;
+
+  const processKey =
+    normalizeScalar(process.processKey) ||
+    `${slugifyProcessKey(arte || label)}_${slugifyProcessKey(detalle || label)}_${index + 1}`;
+
+  return { processKey, arte, detalle, docente, label };
+}
+
+/**
+ * Reemplaza el array de procesos (areas) del estudiante en Firestore.
+ * Tambien recalcula los campos derivados area/instrumento/programa para
+ * mantener compatibilidad con el resto de la app. A diferencia del sync
+ * desde Sheets, esto permite administrar las areas desde el front.
+ */
+export async function updateStudentProcesses(studentId, processes = [], options = {}) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) {
+    throw createApiError("Se requiere estudiante para actualizar las areas.", {
+      code: "MISSING_STUDENT_ID",
+    });
+  }
+
+  const normalizedProcesses = (Array.isArray(processes) ? processes : [])
+    .map((process, index) => normalizeProcessForWrite(process, index))
+    .filter(Boolean);
+
+  const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
+  const snapshot = await getDoc(ref);
+  if (!snapshot.exists()) {
+    throw createApiError("No se encontro el estudiante en Firebase para actualizar areas.", {
+      code: "STUDENT_NOT_FOUND",
+      studentId: safeStudentId,
+    });
+  }
+
+  const firstProcess = normalizedProcesses[0] || null;
+  const payload = {
+    processes: normalizedProcesses,
+    area: normalizeScalar(firstProcess?.arte),
+    instrumento: normalizeScalar(firstProcess?.detalle),
+    programa: normalizeScalar(firstProcess?.label),
+    updatedAt: serverTimestamp(),
+    updatedBy: normalizeScalar(options.updatedBy) || "profile_processes",
+  };
+
+  await updateDoc(ref, payload);
+
+  return {
+    id: safeStudentId,
+    studentId: safeStudentId,
+    studentKey: safeStudentId,
+    processes: normalizedProcesses,
+    area: payload.area,
+    instrumento: payload.instrumento,
+    programa: payload.programa,
   };
 }
 
@@ -951,4 +1026,5 @@ export default {
   isStudentAllowedToLogIn,
   updateStudentTeacher,
   updateStudentRepertoire,
+  updateStudentProcesses,
 };

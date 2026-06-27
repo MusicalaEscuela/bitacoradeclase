@@ -435,6 +435,11 @@ body::before {
   color: var(--brand-violet);
 }
 
+/* En el editor no mostramos el hero del shell para evitar texto repetido. */
+[data-app-shell][data-current-route="editor"] .route-spotlight {
+  display: none;
+}
+
 .view-title {
   font-size: clamp(1.6rem, 3vw, 2.45rem);
   letter-spacing: -0.06em;
@@ -581,6 +586,15 @@ body::before {
 
 .search-toolbar__actions > * {
   width: 100%;
+}
+
+/* Botones de la toolbar de busqueda mas pequenos y en fila en movil */
+.search-toolbar__actions .btn,
+.search-toolbar__bulk-actions .btn {
+  min-height: 40px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.86rem;
+  border-radius: 12px;
 }
 
 .search-summary__content {
@@ -1181,7 +1195,7 @@ body::before {
   }
 
   .search-toolbar__actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .bottom-nav {
