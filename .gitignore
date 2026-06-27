@@ -1,0 +1,11 @@
+# Configuración local de herramientas (no forma parte del sitio)
+.claude/
+.vscode/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Logs y temporales
+*.log
+node_modules/
