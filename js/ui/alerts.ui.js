@@ -145,6 +145,78 @@ export function showInfo(message, options = {}) {
   });
 }
 
+/**
+ * Muestra un toast persistente con spinner para indicar que una operación
+ * está en curso (guardando, sincronizando, actualizando, etc.).
+ * Devuelve el id del toast para luego resolverlo con resolveLoadingToast().
+ */
+export function showLoadingToast(message, options = {}) {
+  return showToast({
+    title: "Procesando",
+    ...options,
+    type: "loading",
+    message,
+    autoClose: false,
+    dismissible: false,
+  });
+}
+
+/**
+ * Actualiza un toast existente (texto, tipo, título y comportamiento de cierre).
+ * Útil para convertir un toast de carga en éxito o error sin parpadeos.
+ */
+export function updateToast(toastId, input = {}) {
+  const entry = toastState.items.get(String(toastId));
+  if (!entry) return false;
+
+  const options = {
+    ...entry.options,
+    ...(typeof input === "string" ? { message: input } : input),
+  };
+
+  entry.options = options;
+
+  const type = normalizeAlertType(options.type);
+  entry.element.className = `toast toast--${type}`;
+  entry.element.setAttribute("role", type === "error" ? "alert" : "status");
+  entry.element.innerHTML = createToastInner(type, options);
+
+  clearToastTimer(entry);
+
+  if (options.autoClose && Number(options.duration) > 0) {
+    entry.timerId = window.setTimeout(() => {
+      dismissToast(toastId);
+    }, Number(options.duration));
+  }
+
+  return true;
+}
+
+/**
+ * Convierte un toast de carga en un resultado final (éxito o error) y programa
+ * su cierre automático.
+ */
+export function resolveLoadingToast(toastId, input = {}) {
+  const type = input.type || "success";
+  const updated = updateToast(toastId, {
+    ...input,
+    type,
+    dismissible: input.dismissible ?? true,
+    autoClose: input.autoClose ?? true,
+    duration:
+      input.duration ?? (type === "error" ? 4200 : DEFAULT_OPTIONS.duration),
+  });
+
+  if (!updated) {
+    if (type === "error") {
+      return showError(input.message || "Ocurrió un error.");
+    }
+    return showSuccess(input.message || "Listo.");
+  }
+
+  return toastId;
+}
+
 export function dismissToast(toastId) {
   const entry = toastState.items.get(String(toastId));
   if (!entry) return false;
@@ -286,7 +358,16 @@ function createToastElement(toastId, options) {
     },
   });
 
-  toastEl.innerHTML = `
+  toastEl.innerHTML = createToastInner(type, { ...options, title, message });
+
+  return toastEl;
+}
+
+function createToastInner(type, options = {}) {
+  const title = String(options.title || getDefaultTitle(type)).trim();
+  const message = String(options.message || "").trim();
+
+  return `
     <div class="toast__content">
       <div class="toast__icon" aria-hidden="true">${getAlertIcon(type)}</div>
       <div class="toast__body">
@@ -309,8 +390,6 @@ function createToastElement(toastId, options) {
       }
     </div>
   `;
-
-  return toastEl;
 }
 
 function createInlineAlertMarkup(options = {}) {
@@ -367,7 +446,7 @@ function resolveInlineTarget(target) {
 function normalizeAlertType(type) {
   const normalized = String(type || "info").trim().toLowerCase();
 
-  if (["success", "error", "warning", "info"].includes(normalized)) {
+  if (["success", "error", "warning", "info", "loading"].includes(normalized)) {
     return normalized;
   }
 
@@ -378,6 +457,7 @@ function getDefaultTitle(type) {
   if (type === "success") return "Listo";
   if (type === "error") return "Ojo";
   if (type === "warning") return "Atención";
+  if (type === "loading") return "Procesando";
   return "Información";
 }
 
@@ -385,6 +465,7 @@ function getAlertIcon(type) {
   if (type === "success") return "✓";
   if (type === "error") return "⚠";
   if (type === "warning") return "!";
+  if (type === "loading") return '<span class="toast__spinner" aria-hidden="true"></span>';
   return "i";
 }
 

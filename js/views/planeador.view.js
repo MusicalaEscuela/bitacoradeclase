@@ -18,7 +18,13 @@
 import { CONFIG } from "../config.js";
 import { resolveUserAccess } from "../authz.js";
 import { getState } from "../state.js";
-import { showSuccess, showError, showInfo } from "../ui/alerts.ui.js";
+import {
+  showSuccess,
+  showError,
+  showInfo,
+  showLoadingToast,
+  resolveLoadingToast,
+} from "../ui/alerts.ui.js";
 import {
   escapeHtml,
   toStringSafe,
@@ -1140,15 +1146,28 @@ async function savePlaneacion(mode) {
   // Garantiza dueño (las reglas exigen ownerEmail == tu correo al crear).
   Object.assign(d, stampOwner(d));
 
+  const isUpdating = Boolean(pState.draftId);
+  const loadingToastId = showLoadingToast(
+    isUpdating
+      ? "Estamos actualizando la planeación."
+      : "Estamos guardando la planeación.",
+    { title: isUpdating ? "Actualizando" : "Guardando" }
+  );
+
   try {
     if (pState.draftId) {
       await updatePlaneacion(pState.draftId, d);
-      showSuccess("Planeación actualizada.");
     } else {
       const newId = await createPlaneacion(d);
       pState.draftId = newId;
-      showSuccess("Planeación guardada.");
     }
+    resolveLoadingToast(loadingToastId, {
+      type: "success",
+      title: "Listo",
+      message: isUpdating
+        ? "La planeación se actualizó correctamente."
+        : "La planeación se guardó correctamente.",
+    });
     await loadData();
     pState.mode = "list";
     pState.draft = null;
@@ -1156,7 +1175,11 @@ async function savePlaneacion(mode) {
     renderActive();
   } catch (err) {
     console.error("[Planeador] Error guardando:", err);
-    showError(err?.message || "No se pudo guardar la planeación.");
+    resolveLoadingToast(loadingToastId, {
+      type: "error",
+      title: "No se pudo guardar",
+      message: err?.message || "No se pudo guardar la planeación.",
+    });
   }
 }
 

@@ -37,6 +37,10 @@ import {
   mapBitacoraRow as mapBitacoraRowShared,
   splitDelimitedRows as splitDelimitedRowsShared,
 } from "../utils/bitacoras-import.js";
+import {
+  showLoadingToast,
+  resolveLoadingToast,
+} from "../ui/alerts.ui.js";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -1006,10 +1010,18 @@ function bindEvents(state) {
 
   if (refreshBtn) {
     refreshBtn.addEventListener("click", async () => {
-      await withLoading(async () => {
-        await Promise.all([refreshCatalogs(), refreshStudentAccessUsers()]);
-        renderView(getState());
-      });
+      await withLoading(
+        async () => {
+          await Promise.all([refreshCatalogs(), refreshStudentAccessUsers()]);
+          renderView(getState());
+        },
+        {
+          loading: "Estamos actualizando las listas.",
+          loadingTitle: "Actualizando",
+          success: "Las listas están al día.",
+          successTitle: "Listas actualizadas",
+        }
+      );
     });
   }
 
@@ -1041,15 +1053,23 @@ function bindEvents(state) {
       saveBtn.textContent = "Guardando en Firebase...";
       saveBtn.classList.add("is-busy");
 
-      await withLoading(async () => {
-        clearAppError();
-        currentCatalogs = await saveCatalogs(compactCatalogsForSave(currentCatalogs));
-        currentMessage = {
-          type: "success",
-          text: "Los catálogos se guardaron correctamente en Firestore.",
-        };
-        renderView(getState());
-      });
+      await withLoading(
+        async () => {
+          clearAppError();
+          currentCatalogs = await saveCatalogs(compactCatalogsForSave(currentCatalogs));
+          currentMessage = {
+            type: "success",
+            text: "Los catálogos se guardaron correctamente en Firestore.",
+          };
+          renderView(getState());
+        },
+        {
+          loading: "Estamos guardando los catálogos en Firebase.",
+          loadingTitle: "Guardando",
+          success: "Los catálogos se guardaron en Firebase.",
+          successTitle: "Catálogos guardados",
+        }
+      );
     });
   }
 
@@ -1075,14 +1095,22 @@ function bindEvents(state) {
         return;
       }
 
-      await withLoading(async () => {
-        currentStudentSyncReport = await syncStudentsFromSheetToFirestore();
-        currentMessage = {
-          type: "success",
-          text: `Sincronizacion completada. Estudiantes nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
-        };
-        renderView(getState());
-      });
+      await withLoading(
+        async () => {
+          currentStudentSyncReport = await syncStudentsFromSheetToFirestore();
+          currentMessage = {
+            type: "success",
+            text: `Sincronizacion completada. Estudiantes nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
+          };
+          renderView(getState());
+        },
+        {
+          loading: "Estamos sincronizando la base de estudiantes.",
+          loadingTitle: "Sincronizando",
+          success: "La base de estudiantes quedó sincronizada.",
+          successTitle: "Sincronización completa",
+        }
+      );
     });
   }
 
@@ -1108,26 +1136,42 @@ function bindEvents(state) {
         return;
       }
 
-      await withLoading(async () => {
-        currentStudentSyncReport = await syncStudentAccessUsersFromSheet();
-        await refreshStudentAccessUsers();
-        expandedSettingsPanels.add("student-access-list");
-        currentMessage = {
-          type: "success",
-          text: `Accesos del HUB Estudiantes sincronizados. Nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
-        };
-        renderView(getState());
-      });
+      await withLoading(
+        async () => {
+          currentStudentSyncReport = await syncStudentAccessUsersFromSheet();
+          await refreshStudentAccessUsers();
+          expandedSettingsPanels.add("student-access-list");
+          currentMessage = {
+            type: "success",
+            text: `Accesos del HUB Estudiantes sincronizados. Nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
+          };
+          renderView(getState());
+        },
+        {
+          loading: "Estamos sincronizando los accesos del HUB Estudiantes.",
+          loadingTitle: "Sincronizando",
+          success: "Los accesos del HUB Estudiantes quedaron sincronizados.",
+          successTitle: "Accesos sincronizados",
+        }
+      );
     });
   }
 
   if (refreshStudentAccessBtn) {
     refreshStudentAccessBtn.addEventListener("click", async () => {
-      await withLoading(async () => {
-        await refreshStudentAccessUsers();
-        expandedSettingsPanels.add("student-access-list");
-        renderView(getState());
-      });
+      await withLoading(
+        async () => {
+          await refreshStudentAccessUsers();
+          expandedSettingsPanels.add("student-access-list");
+          renderView(getState());
+        },
+        {
+          loading: "Estamos actualizando la lista de accesos.",
+          loadingTitle: "Actualizando",
+          success: "La lista de accesos está al día.",
+          successTitle: "Lista actualizada",
+        }
+      );
     });
   }
 
@@ -1184,14 +1228,22 @@ function bindEvents(state) {
       const files = Array.from(event.target.files || []).filter(Boolean);
       if (!files.length) return;
 
-      await withLoading(async () => {
-        currentBitacoraImportPlan = await buildBitacoraImportPlanFromFiles(files);
-        currentMessage = {
-          type: "success",
-          text: `Archivos preparados (${currentBitacoraImportPlan.summary.sourceFiles || files.length}). Registros listos para importar: ${currentBitacoraImportPlan.summary.validRows}.`,
-        };
-        renderView(getState());
-      });
+      await withLoading(
+        async () => {
+          currentBitacoraImportPlan = await buildBitacoraImportPlanFromFiles(files);
+          currentMessage = {
+            type: "success",
+            text: `Archivos preparados (${currentBitacoraImportPlan.summary.sourceFiles || files.length}). Registros listos para importar: ${currentBitacoraImportPlan.summary.validRows}.`,
+          };
+          renderView(getState());
+        },
+        {
+          loading: "Estamos procesando los archivos.",
+          loadingTitle: "Procesando",
+          success: "Los archivos quedaron listos para importar.",
+          successTitle: "Archivos preparados",
+        }
+      );
     });
   }
 
@@ -1226,14 +1278,22 @@ function bindEvents(state) {
         return;
       }
 
-      await withLoading(async () => {
-        const result = await importBitacoraPlan(currentBitacoraImportPlan);
-        currentMessage = {
-          type: "success",
-          text: `Importación completada. Creadas: ${result.created}, actualizadas: ${result.updated}, duplicadas omitidas: ${result.deduped}, fallidas: ${result.failed}.`,
-        };
-        renderView(getState());
-      });
+      await withLoading(
+        async () => {
+          const result = await importBitacoraPlan(currentBitacoraImportPlan);
+          currentMessage = {
+            type: "success",
+            text: `Importación completada. Creadas: ${result.created}, actualizadas: ${result.updated}, duplicadas omitidas: ${result.deduped}, fallidas: ${result.failed}.`,
+          };
+          renderView(getState());
+        },
+        {
+          loading: "Estamos importando las bitácoras.",
+          loadingTitle: "Importando",
+          success: "La importación de bitácoras se completó.",
+          successTitle: "Importación completa",
+        }
+      );
     });
   }
 
@@ -2323,11 +2383,26 @@ async function importBitacoraPlan(plan) {
   return { created, updated, failed, deduped };
 }
 
-async function withLoading(task) {
+async function withLoading(task, feedback = {}) {
+  const {
+    loading = "Estamos guardando los cambios.",
+    loadingTitle = "Guardando",
+    success = "Los cambios se guardaron correctamente.",
+    successTitle = "Listo",
+    errorTitle = "No se pudo guardar",
+  } = typeof feedback === "string" ? { loading: feedback } : feedback;
+
+  const loadingToastId = showLoadingToast(loading, { title: loadingTitle });
+
   try {
     setAppLoading(true);
     clearAppError();
     await task();
+    resolveLoadingToast(loadingToastId, {
+      type: "success",
+      title: successTitle,
+      message: success,
+    });
   } catch (error) {
     console.error("Error en configuración:", error);
     setAppError(error?.message || "No se pudo completar la operación.");
@@ -2336,6 +2411,11 @@ async function withLoading(task) {
       text: error?.message || "No se pudo completar la operación.",
     };
     renderView(getState());
+    resolveLoadingToast(loadingToastId, {
+      type: "error",
+      title: errorTitle,
+      message: error?.message || "No se pudo completar la operación.",
+    });
   } finally {
     setAppLoading(false);
   }
