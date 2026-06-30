@@ -1763,6 +1763,27 @@
   border-left-color: var(--error, #dc2626);
 }
 
+.toast--loading {
+  border-left-color: var(--primary, #5729ff);
+}
+
+.toast__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(87, 41, 255, 0.25);
+  border-top-color: var(--primary, #5729ff);
+  border-radius: 50%;
+  animation: toastSpin 0.7s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes toastSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .toast__title {
   margin: 0;
   font-size: 0.94rem;

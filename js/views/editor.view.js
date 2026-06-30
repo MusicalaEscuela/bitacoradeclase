@@ -36,6 +36,12 @@ import {
 } from "../api/catalogs.api.js";
 
 import { uploadFileResumable } from "../firebase.client.js";
+import {
+  showLoadingToast,
+  resolveLoadingToast,
+  updateToast,
+  dismissToast,
+} from "../ui/alerts.ui.js";
 
 import {
   escapeHtml,
@@ -1778,6 +1784,8 @@ async function handleSubmit(student) {
   setAppSaving(true);
   updateSaveButtonState(true);
 
+  let loadingToastId = null;
+
   try {
     let editingBitacoraId = toStringSafe(
       draft.editingBitacoraId || currentEditingBitacoraId
@@ -1794,6 +1802,24 @@ async function handleSubmit(student) {
         editingBitacoraId = toStringSafe(duplicate.id || duplicate.bitacoraId);
         currentEditingBitacoraId = editingBitacoraId;
       }
+    }
+
+    const isUpdating = Boolean(editingBitacoraId);
+    loadingToastId = showLoadingToast(
+      isUpdating
+        ? "Estamos actualizando la bitácora."
+        : "Estamos guardando la bitácora.",
+      { title: isUpdating ? "Actualizando" : "Guardando" }
+    );
+
+    const hasPendingFiles = (Array.isArray(draft?.archivos) ? draft.archivos : []).some(
+      (item) => item?.sourceFile instanceof File && !item?.url
+    );
+    if (hasPendingFiles && loadingToastId) {
+      updateToast(loadingToastId, {
+        title: "Subiendo archivos",
+        message: "Estamos cargando los archivos adjuntos.",
+      });
     }
 
     draft = await uploadDraftFilesToStorage(student, draft);
@@ -1832,6 +1858,17 @@ async function handleSubmit(student) {
     renderDraftMetaBlock(student);
     syncModeInputs();
     clearUploads();
+
+    if (loadingToastId) {
+      resolveLoadingToast(loadingToastId, {
+        type: "success",
+        title: "Listo",
+        message: editingBitacoraId
+          ? "La bitácora se actualizó correctamente."
+          : "La bitácora se guardó correctamente.",
+      });
+      loadingToastId = null;
+    }
   } catch (error) {
     console.error("Error guardando bitacora:", error);
     setAppError(
@@ -1839,7 +1876,22 @@ async function handleSubmit(student) {
         CONFIG?.text?.saveError ||
         "No se pudo guardar la bitacora."
     );
+
+    if (loadingToastId) {
+      resolveLoadingToast(loadingToastId, {
+        type: "error",
+        title: "No se pudo guardar",
+        message:
+          error?.message ||
+          CONFIG?.text?.saveError ||
+          "No se pudo guardar la bitácora.",
+      });
+      loadingToastId = null;
+    }
   } finally {
+    if (loadingToastId) {
+      dismissToast(loadingToastId);
+    }
     setAppSaving(false);
     updateSaveButtonState(false);
   }
@@ -1943,6 +1995,9 @@ async function reloadHistory(student) {
   if (!studentRef) return;
 
   setBitacorasLoading(true);
+  const loadingToastId = showLoadingToast("Estamos actualizando el historial.", {
+    title: "Sincronizando",
+  });
 
   try {
     clearAppError();
@@ -1953,9 +2008,20 @@ async function reloadHistory(student) {
     if (fallbackId && fallbackId !== studentRef) {
       setBitacorasForStudent(fallbackId, items);
     }
+
+    resolveLoadingToast(loadingToastId, {
+      type: "success",
+      title: "Historial actualizado",
+      message: "El historial está al día.",
+    });
   } catch (error) {
     console.error("Error recargando historial:", error);
     setAppError(error?.message || "No se pudo recargar el historial.");
+    resolveLoadingToast(loadingToastId, {
+      type: "error",
+      title: "No se pudo actualizar",
+      message: error?.message || "No se pudo recargar el historial.",
+    });
   } finally {
     setBitacorasLoading(false);
   }
