@@ -79,11 +79,32 @@ function normalizeStudentAccessSource(student = {}) {
   const displayName = toStringSafe(
     student.nombre || student.name || student.nombreCompleto
   );
+  const studentIds = normalizeStudentIdList([
+    student.studentKey,
+    student.id,
+    student.studentId,
+    student.estudianteId,
+    student.documento,
+    student.identificacion,
+    student.numeroDocumento,
+    student.sourceRow,
+    ...(Array.isArray(student.studentIds) ? student.studentIds : []),
+    ...(Array.isArray(student.duplicateRecords)
+      ? student.duplicateRecords.flatMap((record) => [
+          record?.studentKey,
+          record?.id,
+          record?.studentId,
+          record?.estudianteId,
+          record?.documento,
+        ])
+      : []),
+  ]);
 
   return {
     email,
     studentId: studentKey,
     studentKey,
+    studentIds,
     displayName,
     studentStatus: toStringSafe(
       student.estado || student.status || student.estadoActual
@@ -365,7 +386,7 @@ export async function syncStudentAccessUsersFromSheet(options = {}) {
     const studentIds = normalizeStudentIdList([
       ...(existingUser?.studentIds || []),
       ...(existingUser?.studentId ? [existingUser.studentId] : []),
-      ...group.map((entry) => entry.source.studentKey),
+      ...group.flatMap((entry) => entry.source.studentIds),
     ]);
 
     const payload = {

@@ -904,8 +904,34 @@ function syncStudentAccessUsersToFirestore(options) {
 
     const idsMap = existingStudentIdsByEmail[email] || {};
     group.forEach(function (member) {
-      const memberKey = String(member.studentKey || member.id || member.studentId || "").trim();
-      if (memberKey) idsMap[memberKey] = true;
+      [
+        member.studentKey,
+        member.id,
+        member.studentId,
+        member.estudianteId,
+        member.documento,
+        member.identificacion,
+        member.numeroDocumento,
+        member.sourceRow,
+      ]
+        .concat(Array.isArray(member.studentIds) ? member.studentIds : [])
+        .forEach(function (memberId) {
+          const safeMemberId = String(memberId || "").trim();
+          if (safeMemberId) idsMap[safeMemberId] = true;
+        });
+
+      (Array.isArray(member.duplicateRecords) ? member.duplicateRecords : []).forEach(function (record) {
+        [
+          record && record.studentKey,
+          record && record.id,
+          record && record.studentId,
+          record && record.estudianteId,
+          record && record.documento,
+        ].forEach(function (duplicateId) {
+          const safeDuplicateId = String(duplicateId || "").trim();
+          if (safeDuplicateId) idsMap[safeDuplicateId] = true;
+        });
+      });
     });
     const studentIds = Object.keys(idsMap).sort();
     const studentKey = String(primary.studentKey || primary.id || primary.studentId || "").trim();
