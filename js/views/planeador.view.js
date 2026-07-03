@@ -92,7 +92,6 @@ const pState = {
     sede: "",
     grupo: "",
     arte: "",
-    programa: "",
     estado: "",
     tipoClase: "",
   },
@@ -233,7 +232,6 @@ function getFilteredPlaneaciones() {
       if (f.sede && p.sede !== f.sede) return false;
       if (f.grupo && p.grupoNombre !== f.grupo) return false;
       if (f.arte && p.arte !== f.arte) return false;
-      if (f.programa && p.programa !== f.programa) return false;
       if (f.estado && p.estado !== f.estado) return false;
       if (f.tipoClase && p.tipoClase !== f.tipoClase) return false;
       return true;
@@ -264,7 +262,6 @@ function renderList() {
           <option value="">Área artística</option>
           ${ARTES.map((a) => `<option value="${a.value}" ${pState.filters.arte === a.value ? "selected" : ""}>${escapeHtml(a.label)}</option>`).join("")}
         </select>
-        ${filterSelect("programa", "Programa", uniqueValues("programa"))}
         <select data-filter="estado">
           <option value="">Estado</option>
           ${ESTADOS_PLANEACION.map((e) => `<option value="${e.value}" ${pState.filters.estado === e.value ? "selected" : ""}>${e.label}</option>`).join("")}
@@ -409,7 +406,6 @@ function renderForm() {
           ${field("Hora fin", `<input type="time" data-field="horaFin" value="${escapeHtml(d.horaFin)}" />`)}
           ${field("Docente", teacherOptions)}
           ${field("Sede", `<input type="text" data-field="sede" value="${escapeHtml(d.sede)}" placeholder="Sede" />`)}
-          ${field("Programa o convenio", `<input type="text" data-field="programa" value="${escapeHtml(d.programa)}" placeholder="Programa" />`)}
           ${field("Grupo", `<input type="text" data-field="grupoNombre" value="${escapeHtml(d.grupoNombre)}" placeholder="Nombre del grupo" />`)}
           ${field("Edad o ciclo", `<input type="text" data-field="ciclo" value="${escapeHtml(d.ciclo)}" placeholder="Ej: 7-9 años / Ciclo 1" />`)}
           ${field("Duración", `<input type="text" data-field="duracion" value="${escapeHtml(d.duracion)}" placeholder="Ej: 60 min" />`)}
@@ -636,7 +632,6 @@ function renderDetail() {
           ${p.horaInicio ? `<span>⏰ ${escapeHtml(p.horaInicio)}${p.horaFin ? `–${escapeHtml(p.horaFin)}` : ""}</span>` : ""}
           ${p.docenteNombre ? `<span>🧑‍🏫 ${escapeHtml(p.docenteNombre)}</span>` : ""}
           ${p.sede ? `<span>📍 ${escapeHtml(p.sede)}</span>` : ""}
-          ${p.programa ? `<span>🎓 ${escapeHtml(p.programa)}</span>` : ""}
           ${p.ciclo ? `<span>👥 ${escapeHtml(p.ciclo)}</span>` : ""}
           ${tipo ? `<span>🏷️ ${escapeHtml(tipo.label)}</span>` : ""}
           ${isAdminUser() && toStringSafe(p.ownerEmail) ? `<span>👤 ${escapeHtml(p.ownerEmail)}</span>` : ""}
