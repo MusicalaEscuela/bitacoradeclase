@@ -206,6 +206,7 @@ export const MATERIALES_SUGERIDOS = Object.freeze([
   "Vestuario",
   "Escenografía",
   "Celular para evidencia",
+  "Computador para evidencia",
   "Canción o pista",
   "Marcadores",
   "Elementos reciclados",
