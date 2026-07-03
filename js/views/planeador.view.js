@@ -54,10 +54,8 @@ import {
   ARTES,
   COMPONENTES_BITACORA,
   TIPOS_CLASE,
-  HABILIDADES,
   MOMENTOS,
   NIVELES_GRUPO,
-  TIPOS_EVIDENCIA,
   MATERIALES_SUGERIDOS,
   ESTADOS_PLANEACION,
   ESTADO_LABELS,
@@ -447,14 +445,6 @@ function renderForm() {
         </div>
       </section>
 
-      <!-- 4. Habilidades -->
-      <section class="planeacion-block">
-        ${blockHead(4, "Habilidades trabajadas", "Selecciona una o varias.")}
-        <div class="chip-set">
-          ${HABILIDADES.map((h) => `<button type="button" class="chip-toggle ${toArraySafe(d.habilidades).includes(h) ? "is-active" : ""}" data-action="toggle-habilidad" data-value="${escapeHtml(h)}">${escapeHtml(h)}</button>`).join("")}
-        </div>
-      </section>
-
       <!-- 5. Momentos -->
       <section class="planeacion-block">
         ${blockHead(5, "Momentos de clase", "La columna vertebral de la clase Musicala.")}
@@ -476,10 +466,7 @@ function renderForm() {
           <label class="material-item"><input type="checkbox" data-field="adapt.estudiantesNuevos" ${d.adaptaciones?.estudiantesNuevos ? "checked" : ""}/> Hay estudiantes nuevos</label>
           <label class="material-item"><input type="checkbox" data-field="adapt.grupoMixto" ${d.adaptaciones?.grupoMixto ? "checked" : ""}/> Grupo mixto</label>
         </div>
-        ${field("¿Qué ajustes necesita la actividad?", `<textarea data-field="adapt.descripcion">${escapeHtml(d.adaptaciones?.descripcion || "")}</textarea>`)}
-        ${field("¿Estudiantes que requieren apoyo?", `<textarea data-field="adapt.requierenApoyo">${escapeHtml(d.adaptaciones?.requierenApoyo || "")}</textarea>`)}
-        ${field("¿Qué hacer si llegan pocos estudiantes?", `<textarea data-field="adapt.pocosEstudiantes">${escapeHtml(d.adaptaciones?.pocosEstudiantes || "")}</textarea>`)}
-        ${field("¿Qué hacer si el grupo está disperso o difícil?", `<textarea data-field="adapt.grupoDisperso">${escapeHtml(d.adaptaciones?.grupoDisperso || "")}</textarea>`)}
+        ${field("Ajustes o apoyos necesarios (opcional)", `<textarea data-field="adapt.descripcion" placeholder="Escribe aquí únicamente si el grupo requiere algún ajuste.">${escapeHtml(d.adaptaciones?.descripcion || "")}</textarea>`)}
       </section>
 
       <!-- 7. Materiales -->
@@ -489,21 +476,6 @@ function renderForm() {
           ${MATERIALES_SUGERIDOS.map((mat) => `<label class="material-item"><input type="checkbox" data-material value="${escapeHtml(mat)}" ${toArraySafe(d.materiales).includes(mat) ? "checked" : ""}/> ${escapeHtml(mat)}</label>`).join("")}
         </div>
         ${field("Otros materiales (uno por línea)", `<textarea data-field="materialesExtra" placeholder="Otro material...">${escapeHtml(toArraySafe(d.materiales).filter((m) => !MATERIALES_SUGERIDOS.includes(m)).join("\n"))}</textarea>`)}
-      </section>
-
-      <!-- 8. Evidencia -->
-      <section class="planeacion-block">
-        ${blockHead(8, "Evidencia esperada", "¿Qué se espera mostrar de la clase?")}
-        <div class="field-grid">
-          ${field("Tipo de evidencia", `<select data-field="evidencia.tipo">${[{ value: "", label: "Selecciona" }, ...TIPOS_EVIDENCIA].map((e) => `<option value="${e.value}" ${d.evidenciaEsperada?.tipo === e.value ? "selected" : ""}>${e.label}</option>`).join("")}</select>`)}
-        </div>
-        ${field("¿Qué debe mostrar la evidencia?", `<textarea data-field="evidencia.descripcion" placeholder="Ej: Video corto del grupo ejecutando la secuencia coreográfica.">${escapeHtml(d.evidenciaEsperada?.descripcion || "")}</textarea>`)}
-      </section>
-
-      <!-- 9. Observaciones coordinación -->
-      <section class="planeacion-block">
-        ${blockHead(9, "Observaciones para coordinación", "Alertas, necesidades, dudas, cambios del grupo, info para reemplazos.")}
-        ${field("", `<textarea data-field="observacionesCoordinacion">${escapeHtml(d.observacionesCoordinacion || "")}</textarea>`)}
       </section>
 
       <!-- Reemplazo -->
@@ -673,12 +645,9 @@ function renderDetail() {
 
       ${p.objetivo ? `<section class="detalle-section"><h3>🎯 Objetivo</h3><p>${escapeHtml(p.objetivo)}</p></section>` : ""}
       ${renderComponentesDetail(p)}
-      ${toArraySafe(p.habilidades).length ? `<section class="detalle-section"><h3>Habilidades</h3><div class="chip-set">${p.habilidades.map((h) => `<span class="chip-toggle is-active">${escapeHtml(h)}</span>`).join("")}</div></section>` : ""}
       ${momentos ? `<section class="detalle-section"><h3>Momentos de clase</h3>${momentos}</section>` : ""}
       ${renderAdaptacionesDetail(p)}
       ${toArraySafe(p.materiales).length ? `<section class="detalle-section"><h3>📦 Materiales</h3><div class="chip-set">${p.materiales.map((m) => `<span class="postit__chip" style="background:var(--bg-muted)">${escapeHtml(m)}</span>`).join("")}</div></section>` : ""}
-      ${p.evidenciaEsperada?.tipo || p.evidenciaEsperada?.descripcion ? `<section class="detalle-section"><h3>📸 Evidencia esperada</h3><p><strong>${escapeHtml((TIPOS_EVIDENCIA.find((e) => e.value === p.evidenciaEsperada.tipo) || {}).label || "")}</strong></p><p>${escapeHtml(p.evidenciaEsperada.descripcion || "")}</p></section>` : ""}
-      ${p.observacionesCoordinacion ? `<section class="detalle-section"><h3>📝 Observaciones para coordinación</h3><p>${escapeHtml(p.observacionesCoordinacion)}</p></section>` : ""}
       ${renderReemplazoDetail(p)}
 
       <section class="detalle-section">
@@ -713,9 +682,6 @@ function renderAdaptacionesDetail(p) {
     ["Estudiantes nuevos", a.estudiantesNuevos ? "Sí" : ""],
     ["Grupo mixto", a.grupoMixto ? "Sí" : ""],
     ["Ajustes de la actividad", a.descripcion],
-    ["Requieren apoyo", a.requierenApoyo],
-    ["Si llegan pocos", a.pocosEstudiantes],
-    ["Si el grupo está disperso", a.grupoDisperso],
   ].filter(([, v]) => toStringSafe(v));
   if (!rows.length) return "";
   return `<section class="detalle-section"><h3>🔧 Adaptaciones</h3>${rows.map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join("")}</section>`;
@@ -746,7 +712,6 @@ function renderReemplazoDetail(p) {
 function buildResumen(p) {
   const comp = arteMeta(p.arte);
   const tipo = (TIPOS_CLASE.find((t) => t.value === p.tipoClase) || {}).label || "";
-  const ev = (TIPOS_EVIDENCIA.find((e) => e.value === p.evidenciaEsperada?.tipo) || {}).label || "";
   const m = p.momentosClase || {};
   const compLine = (label, arr) => {
     const vals = toArraySafe(arr);
@@ -762,7 +727,6 @@ Sede: ${p.sede || "—"}
 Tipo de clase: ${tipo}${p.esReemplazo ? " [REEMPLAZO]" : ""}
 
 Objetivo: ${p.objetivo || "—"}
-Habilidades trabajadas: ${toArraySafe(p.habilidades).join(", ") || "—"}
 Categorías: ${toArraySafe(p.categorias).join(", ") || "—"}${compLine("Componente corporal", p.componenteCorporal)}${compLine("Componente técnico", p.componenteTecnico)}${compLine("Componente teórico", p.componenteTeorico)}${compLine("Componente de repertorio", p.componenteObras)}
 
 Momentos de clase:
@@ -772,9 +736,7 @@ Momentos de clase:
 4. Práctica / creación: ${m.practicaCreacion || "—"}
 5. Cierre: ${m.cierre || "—"}
 
-Materiales: ${toArraySafe(p.materiales).join(", ") || "—"}
-Evidencia esperada: ${ev}${p.evidenciaEsperada?.descripcion ? ` — ${p.evidenciaEsperada.descripcion}` : ""}
-Observaciones para coordinación: ${p.observacionesCoordinacion || "—"}`;
+Materiales: ${toArraySafe(p.materiales).join(", ") || "—"}`;
 }
 
 async function copyResumen(p) {
@@ -975,16 +937,6 @@ async function handleAction(action, el) {
       pState.draft.objetivo = OBJETIVO_EJEMPLOS[Number(el.dataset.idx)] || "";
       renderActive();
       break;
-
-    case "toggle-habilidad": {
-      harvestForm();
-      const h = el.dataset.value;
-      const set = new Set(toArraySafe(pState.draft.habilidades));
-      set.has(h) ? set.delete(h) : set.add(h);
-      pState.draft.habilidades = [...set];
-      renderActive();
-      break;
-    }
 
     case "set-reemplazo":
       harvestForm();
@@ -1260,4 +1212,3 @@ function bindBoardDnD() {
     });
   });
 }
-
