@@ -2423,6 +2423,13 @@
   color: var(--text-muted, #667085);
 }
 
+.ai-report-modal__section-label {
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 750;
+  color: var(--text-strong, #1f2937);
+}
+
 .ai-report-modal__custom {
   display: flex;
   flex-wrap: wrap;

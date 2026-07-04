@@ -2058,7 +2058,21 @@ function buildAiReportBitacoraBlock(item, student) {
   return lines.filter(Boolean).join("\n");
 }
 
-function buildStudentAiReport(student, range = {}) {
+// Instrucciones de tono/lenguaje para la IA según el público del informe.
+const AI_REPORT_TONES = Object.freeze({
+  tecnico: {
+    label: "Lenguaje técnico",
+    instruction:
+      "Redacta el informe con lenguaje técnico y preciso, propio del arte trabajado. El lector es un estudiante adulto o un acudiente que conoce los conceptos del instrumento o disciplina, así que usa la terminología especializada (nombres de técnicas, ejercicios, teoría musical, repertorio) sin necesidad de explicarla. Sé riguroso y específico sobre lo trabajado y el nivel alcanzado.",
+  },
+  sencillo: {
+    label: "Lenguaje sencillo",
+    instruction:
+      "Redacta el informe con lenguaje sencillo, claro y cercano, pensado para un acudiente que no tiene conocimientos musicales o artísticos (por ejemplo, la familia de un niño pequeño). Cuando aparezca un término técnico, explícalo con palabras cotidianas y da contexto de por qué es importante y por qué puede ser difícil. Describe en qué consisten los procesos y da recomendaciones concretas de cómo acompañar al estudiante en casa. Evita las metáforas rebuscadas y el lenguaje florido: sé concreto y explicativo, como si le explicaras a alguien que empieza desde cero.",
+  },
+});
+
+function buildStudentAiReport(student, range = {}, tone = "tecnico") {
   const studentId = getStudentIdentity(student);
   const bitacoras = getBitacorasFromState(student);
   // Rango opcional (inclusivo). Vacío = todo el tiempo.
@@ -2097,11 +2111,12 @@ function buildStudentAiReport(student, range = {}) {
   const periodDescription = rangeLabel
     ? ` correspondiente a: ${rangeLabel}`
     : " de todo su proceso";
+  const toneConfig = AI_REPORT_TONES[tone] || AI_REPORT_TONES.tecnico;
 
   const parts = [
     `# Informe de proceso musical — ${getStudentName(student)}`,
     "",
-    `> **Instrucción para la IA:** Con la información de este documento, redacta un informe pedagógico claro y bien escrito sobre el proceso musical del estudiante${periodDescription}. Resume qué se ha trabajado clase a clase (sin listar cada clase una por una), destaca los avances y logros, el repertorio trabajado, y sugiere posibles siguientes pasos. Usa un tono cálido y profesional, dirigido a la familia del estudiante o al equipo académico.`,
+    `> **Instrucción para la IA:** Con la información de este documento, redacta un informe pedagógico claro y bien escrito sobre el proceso musical del estudiante${periodDescription}. Resume qué se ha trabajado clase a clase (sin listar cada clase una por una), destaca los avances y logros, el repertorio trabajado, y sugiere posibles siguientes pasos. ${toneConfig.instruction}`,
     "",
     buildAiReportSection("Datos generales", [
       `- **Nombre:** ${getStudentName(student)}`,
@@ -2164,11 +2179,13 @@ function slugifyForFilename(value = "", fallback = "estudiante") {
   );
 }
 
-function downloadStudentAiReport(student, range = {}) {
+function downloadStudentAiReport(student, range = {}, tone = "tecnico") {
   try {
-    const content = buildStudentAiReport(student, range);
+    const content = buildStudentAiReport(student, range, tone);
     const safeName = slugifyForFilename(getStudentName(student), "estudiante");
-    const safeSuffix = range?.slug ? `-${slugifyForFilename(range.slug, "periodo")}` : "";
+    const periodSuffix = range?.slug ? `-${slugifyForFilename(range.slug, "periodo")}` : "";
+    const toneSuffix = tone === "sencillo" ? "-sencillo" : "-tecnico";
+    const safeSuffix = `${periodSuffix}${toneSuffix}`;
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -2263,6 +2280,11 @@ function openAiReportModal(student) {
       modalRoot.querySelector('input[name="ai-report-period"]:checked')?.value
     ) || "all";
 
+  const getSelectedTone = () =>
+    toStringSafe(
+      modalRoot.querySelector('input[name="ai-report-tone"]:checked')?.value
+    ) || "tecnico";
+
   const syncCustomVisibility = () => {
     if (customFields) customFields.hidden = getSelectedPreset() !== "custom";
   };
@@ -2291,7 +2313,7 @@ function openAiReportModal(student) {
       }
       return;
     }
-    downloadStudentAiReport(student, range);
+    downloadStudentAiReport(student, range, getSelectedTone());
     close();
   });
 }
@@ -2305,14 +2327,27 @@ function renderAiReportModal() {
     { value: "custom", label: "Período personalizado", hint: "Elige las fechas exactas." },
   ];
 
+  const tones = [
+    {
+      value: "tecnico",
+      label: "Lenguaje técnico",
+      hint: "Para estudiantes adultos o acudientes que conocen los conceptos del arte.",
+    },
+    {
+      value: "sencillo",
+      label: "Lenguaje sencillo",
+      hint: "Explica los conceptos desde cero. Ideal para acudientes de niños pequeños.",
+    },
+  ];
+
   return `
     <div class="text-bitacoras-modal-backdrop"></div>
     <section class="text-bitacoras-modal ai-report-modal" role="dialog" aria-modal="true" aria-labelledby="ai-report-title">
       <header class="text-bitacoras-modal__header">
         <div>
           <p class="panel-header__eyebrow">Informe para IA</p>
-          <h2 class="panel-header__title" id="ai-report-title">Elige el período del informe</h2>
-          <p class="section-text">Se descargará un .md listo para pegar en cualquier IA con la información del período elegido.</p>
+          <h2 class="panel-header__title" id="ai-report-title">Configura el informe</h2>
+          <p class="section-text">Elige el período y el lenguaje. Se descargará un .md listo para pegar en cualquier IA.</p>
         </div>
         <button type="button" class="btn btn--ghost btn--sm" data-ai-report-cancel>Cancelar</button>
       </header>
@@ -2342,6 +2377,23 @@ function renderAiReportModal() {
           <span class="field__label">Hasta</span>
           <input type="date" id="ai-report-to" class="field__input" />
         </label>
+      </div>
+
+      <p class="ai-report-modal__section-label">Lenguaje del informe</p>
+      <div class="ai-report-modal__periods" role="radiogroup" aria-label="Lenguaje del informe">
+        ${tones
+          .map(
+            (toneOption, index) => `
+              <label class="choice-pill ai-report-modal__period">
+                <input type="radio" name="ai-report-tone" value="${toneOption.value}"${index === 0 ? " checked" : ""} />
+                <span class="ai-report-modal__period-text">
+                  <strong>${escapeHtml(toneOption.label)}</strong>
+                  ${toneOption.hint ? `<small>${escapeHtml(toneOption.hint)}</small>` : ""}
+                </span>
+              </label>
+            `
+          )
+          .join("")}
       </div>
 
       <p class="text-bitacoras-modal__status" data-ai-report-status role="status"></p>
