@@ -2402,6 +2402,38 @@
   gap: 0.55rem;
 }
 
+.ai-report-modal__periods {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.ai-report-modal__period {
+  align-items: flex-start;
+}
+
+.ai-report-modal__period-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.ai-report-modal__period-text small {
+  font-weight: 500;
+  color: var(--text-muted, #667085);
+}
+
+.ai-report-modal__custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.ai-report-modal__custom .field {
+  flex: 1 1 160px;
+}
+
 .text-bitacoras-modal__status {
   margin: 0;
   font-size: 0.9rem;

@@ -1167,7 +1167,7 @@ function bindProfileEvents(student) {
     }
 
     if (event.target.closest("[data-profile-report]")) {
-      downloadStudentAiReport(student);
+      openAiReportModal(student);
       return;
     }
 
@@ -1967,9 +1967,13 @@ function renderQuickActions(access = {}) {
       <button type="button" class="btn btn--ghost" data-profile-panel-target="student-info">
         Ver información del estudiante
       </button>
-      <button type="button" class="btn btn--ghost" data-profile-report>
-        Descargar informe para IA
-      </button>
+      ${
+        access.role === CONFIG.roles.admin
+          ? `<button type="button" class="btn btn--ghost" data-profile-report>
+              Descargar informe para IA
+            </button>`
+          : ""
+      }
       <button type="button" class="btn btn--ghost" data-profile-panel-target="bitacoras">
         Ver todas las bitácoras
       </button>
@@ -2054,10 +2058,22 @@ function buildAiReportBitacoraBlock(item, student) {
   return lines.filter(Boolean).join("\n");
 }
 
-function buildStudentAiReport(student) {
+function buildStudentAiReport(student, range = {}) {
   const studentId = getStudentIdentity(student);
   const bitacoras = getBitacorasFromState(student);
-  const sortedBitacoras = [...bitacoras].sort(
+  // Rango opcional (inclusivo). Vacío = todo el tiempo.
+  const fromTs = range?.from ? getTimestamp(range.from) : null;
+  const toTs = range?.to ? getTimestamp(range.to) + 24 * 60 * 60 * 1000 - 1 : null;
+  const rangeLabel = toStringSafe(range?.label);
+  const filteredBitacoras = bitacoras.filter((item) => {
+    if (fromTs === null && toTs === null) return true;
+    const ts = getTimestamp(item.fechaClase || item.createdAt);
+    if (!ts) return false;
+    if (fromTs !== null && ts < fromTs) return false;
+    if (toTs !== null && ts > toTs) return false;
+    return true;
+  });
+  const sortedBitacoras = [...filteredBitacoras].sort(
     (a, b) =>
       getTimestamp(a.fechaClase || a.createdAt) -
       getTimestamp(b.fechaClase || b.createdAt)
@@ -2078,13 +2094,18 @@ function buildStudentAiReport(student) {
   const firstBitacora = getFirstBitacora(sortedBitacoras);
   const generatedAt = formatDisplayDate(getTodayDate()) || getTodayDate();
 
+  const periodDescription = rangeLabel
+    ? ` correspondiente a: ${rangeLabel}`
+    : " de todo su proceso";
+
   const parts = [
     `# Informe de proceso musical — ${getStudentName(student)}`,
     "",
-    "> **Instrucción para la IA:** Con la información de este documento, redacta un informe pedagógico claro y bien escrito sobre el proceso musical del estudiante. Resume qué se ha trabajado clase a clase (sin listar cada clase una por una), destaca los avances y logros, el repertorio trabajado, y sugiere posibles siguientes pasos. Usa un tono cálido y profesional, dirigido a la familia del estudiante o al equipo académico.",
+    `> **Instrucción para la IA:** Con la información de este documento, redacta un informe pedagógico claro y bien escrito sobre el proceso musical del estudiante${periodDescription}. Resume qué se ha trabajado clase a clase (sin listar cada clase una por una), destaca los avances y logros, el repertorio trabajado, y sugiere posibles siguientes pasos. Usa un tono cálido y profesional, dirigido a la familia del estudiante o al equipo académico.`,
     "",
     buildAiReportSection("Datos generales", [
       `- **Nombre:** ${getStudentName(student)}`,
+      rangeLabel ? `- **Período del informe:** ${rangeLabel}` : "- **Período del informe:** Todo el proceso",
       student.edad || student.age ? `- **Edad:** ${getReadableValue(student.edad || student.age)}` : "",
       `- **Área / instrumento:** ${getReadableValue(student.area || student.instrumento || student.programa, "Sin registrar")}`,
       `- **Modalidad:** ${getReadableValue(student.modalidad, "Sin registrar")}`,
@@ -2121,27 +2142,38 @@ function buildStudentAiReport(student) {
       `Bitácoras de clase (${sortedBitacoras.length})`,
       sortedBitacoras.length
         ? sortedBitacoras.map((item) => buildAiReportBitacoraBlock(item, student) + "\n")
-        : ["No hay bitácoras registradas."]
+        : [
+            rangeLabel
+              ? "No hay bitácoras registradas en el período seleccionado."
+              : "No hay bitácoras registradas.",
+          ]
     ),
   ];
 
   return parts.filter(Boolean).join("\n");
 }
 
-function downloadStudentAiReport(student) {
-  try {
-    const content = buildStudentAiReport(student);
-    const safeName = toStringSafe(getStudentName(student))
+function slugifyForFilename(value = "", fallback = "estudiante") {
+  return (
+    toStringSafe(value)
       .toLowerCase()
       .normalize("NFD")
       .replace(/[̀-ͯ]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "estudiante";
+      .replace(/^-+|-+$/g, "") || fallback
+  );
+}
+
+function downloadStudentAiReport(student, range = {}) {
+  try {
+    const content = buildStudentAiReport(student, range);
+    const safeName = slugifyForFilename(getStudentName(student), "estudiante");
+    const safeSuffix = range?.slug ? `-${slugifyForFilename(range.slug, "periodo")}` : "";
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `informe-${safeName}.md`;
+    link.download = `informe-${safeName}${safeSuffix}.md`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -2150,6 +2182,176 @@ function downloadStudentAiReport(student) {
     console.error("No se pudo generar el informe del estudiante:", error);
     setAppError("No se pudo generar el informe del estudiante.");
   }
+}
+
+// Devuelve una fecha YYYY-MM-DD desplazada n meses hacia atrás desde hoy.
+function getDateMonthsAgo(months = 0) {
+  const now = new Date();
+  now.setMonth(now.getMonth() - months);
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function resolveAiReportRange(preset, customFrom = "", customTo = "") {
+  const today = getTodayDate();
+  if (preset === "last-month") {
+    return {
+      from: getDateMonthsAgo(1),
+      to: today,
+      label: "el último mes",
+      slug: "ultimo-mes",
+    };
+  }
+  if (preset === "last-3-months") {
+    return {
+      from: getDateMonthsAgo(3),
+      to: today,
+      label: "los últimos 3 meses",
+      slug: "ultimos-3-meses",
+    };
+  }
+  if (preset === "last-6-months") {
+    return {
+      from: getDateMonthsAgo(6),
+      to: today,
+      label: "los últimos 6 meses",
+      slug: "ultimos-6-meses",
+    };
+  }
+  if (preset === "custom") {
+    const from = normalizeLocalDateInput(customFrom);
+    const to = normalizeLocalDateInput(customTo);
+    if (!from && !to) return null;
+    const parts = [];
+    if (from) parts.push(`desde ${formatDisplayDate(from)}`);
+    if (to) parts.push(`hasta ${formatDisplayDate(to)}`);
+    return {
+      from,
+      to,
+      label: `el período ${parts.join(" ")}`.trim(),
+      slug: [from, to].filter(Boolean).join("_a_") || "personalizado",
+    };
+  }
+  return {}; // Todo el tiempo
+}
+
+function openAiReportModal(student) {
+  if (!isAdminUser(getState()?.auth?.user)) {
+    setAppError("Solo un administrador puede generar el informe para IA.");
+    return;
+  }
+
+  const existing = document.querySelector("[data-ai-report-modal]");
+  if (existing) existing.remove();
+
+  const modalRoot = document.createElement("div");
+  modalRoot.className = "text-bitacoras-modal-root";
+  modalRoot.setAttribute("data-ai-report-modal", "true");
+  modalRoot.innerHTML = renderAiReportModal();
+  document.body.appendChild(modalRoot);
+
+  const close = () => modalRoot.remove();
+  const customFields = modalRoot.querySelector("[data-ai-report-custom]");
+  const fromInput = modalRoot.querySelector("#ai-report-from");
+  const toInput = modalRoot.querySelector("#ai-report-to");
+  const status = modalRoot.querySelector("[data-ai-report-status]");
+
+  const getSelectedPreset = () =>
+    toStringSafe(
+      modalRoot.querySelector('input[name="ai-report-period"]:checked')?.value
+    ) || "all";
+
+  const syncCustomVisibility = () => {
+    if (customFields) customFields.hidden = getSelectedPreset() !== "custom";
+  };
+
+  modalRoot.querySelectorAll('input[name="ai-report-period"]').forEach((input) => {
+    input.addEventListener("change", syncCustomVisibility);
+  });
+  syncCustomVisibility();
+
+  modalRoot.querySelectorAll("[data-ai-report-cancel]").forEach((button) => {
+    button.addEventListener("click", close);
+  });
+  modalRoot.addEventListener("click", (event) => {
+    if (event.target === modalRoot.querySelector(".text-bitacoras-modal-backdrop")) {
+      close();
+    }
+  });
+
+  modalRoot.querySelector("[data-ai-report-download]")?.addEventListener("click", () => {
+    const preset = getSelectedPreset();
+    const range = resolveAiReportRange(preset, fromInput?.value, toInput?.value);
+    if (range === null) {
+      if (status) {
+        status.textContent = "Elige al menos una fecha para el período personalizado.";
+        status.dataset.type = "warning";
+      }
+      return;
+    }
+    downloadStudentAiReport(student, range);
+    close();
+  });
+}
+
+function renderAiReportModal() {
+  const periods = [
+    { value: "all", label: "Todo el proceso", hint: "Desde la primera bitácora hasta hoy." },
+    { value: "last-month", label: "Último mes", hint: "Las clases de los últimos 30 días." },
+    { value: "last-3-months", label: "Últimos 3 meses", hint: "" },
+    { value: "last-6-months", label: "Últimos 6 meses", hint: "" },
+    { value: "custom", label: "Período personalizado", hint: "Elige las fechas exactas." },
+  ];
+
+  return `
+    <div class="text-bitacoras-modal-backdrop"></div>
+    <section class="text-bitacoras-modal ai-report-modal" role="dialog" aria-modal="true" aria-labelledby="ai-report-title">
+      <header class="text-bitacoras-modal__header">
+        <div>
+          <p class="panel-header__eyebrow">Informe para IA</p>
+          <h2 class="panel-header__title" id="ai-report-title">Elige el período del informe</h2>
+          <p class="section-text">Se descargará un .md listo para pegar en cualquier IA con la información del período elegido.</p>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-ai-report-cancel>Cancelar</button>
+      </header>
+
+      <div class="ai-report-modal__periods" role="radiogroup" aria-label="Período del informe">
+        ${periods
+          .map(
+            (period, index) => `
+              <label class="choice-pill ai-report-modal__period">
+                <input type="radio" name="ai-report-period" value="${period.value}"${index === 0 ? " checked" : ""} />
+                <span class="ai-report-modal__period-text">
+                  <strong>${escapeHtml(period.label)}</strong>
+                  ${period.hint ? `<small>${escapeHtml(period.hint)}</small>` : ""}
+                </span>
+              </label>
+            `
+          )
+          .join("")}
+      </div>
+
+      <div class="ai-report-modal__custom" data-ai-report-custom hidden>
+        <label class="field field--compact">
+          <span class="field__label">Desde</span>
+          <input type="date" id="ai-report-from" class="field__input" />
+        </label>
+        <label class="field field--compact">
+          <span class="field__label">Hasta</span>
+          <input type="date" id="ai-report-to" class="field__input" />
+        </label>
+      </div>
+
+      <p class="text-bitacoras-modal__status" data-ai-report-status role="status"></p>
+
+      <div class="text-bitacoras-modal__actions">
+        <button type="button" class="btn btn--primary" data-ai-report-download>Descargar informe</button>
+        <button type="button" class="btn btn--ghost" data-ai-report-cancel>Cancelar</button>
+      </div>
+    </section>
+  `;
 }
 
 function getStudentRepertoire(student = {}) {
