@@ -1166,6 +1166,11 @@ function bindProfileEvents(student) {
       return;
     }
 
+    if (event.target.closest("[data-profile-report]")) {
+      downloadStudentAiReport(student);
+      return;
+    }
+
     const actionButton = event.target.closest("[data-route-action]");
     if (!actionButton) return;
 
@@ -1962,6 +1967,9 @@ function renderQuickActions(access = {}) {
       <button type="button" class="btn btn--ghost" data-profile-panel-target="student-info">
         Ver información del estudiante
       </button>
+      <button type="button" class="btn btn--ghost" data-profile-report>
+        Descargar informe para IA
+      </button>
       <button type="button" class="btn btn--ghost" data-profile-panel-target="bitacoras">
         Ver todas las bitácoras
       </button>
@@ -1977,6 +1985,171 @@ function renderQuickActions(access = {}) {
       }
     </div>
   `;
+}
+
+// --- Informe para IA -------------------------------------------------------
+// Compila toda la información visible del estudiante (perfil, repertorio,
+// ruta y bitácoras) en un .md pensado para pegarse en cualquier IA.
+// Excluye deliberadamente datos privados: observaciones internas, notas
+// legadas, acudiente, dirección y documento.
+
+function buildAiReportSection(title, lines = []) {
+  const safeLines = lines.filter(Boolean);
+  if (!safeLines.length) return "";
+  return `## ${title}\n\n${safeLines.join("\n")}\n`;
+}
+
+function formatAiReportList(label, items = []) {
+  const safeItems = normalizeTags(items);
+  if (!safeItems.length) return "";
+  return `- **${label}:** ${safeItems.join("; ")}`;
+}
+
+function buildAiReportBitacoraBlock(item, student) {
+  const structured = parseStructuredContent(item.contenido || item.content || "");
+  const override = getCurrentStudentOverride(item, student);
+  const mode = normalizeMode(item.mode) === CONFIG.modes.group ? "Grupal" : "Individual";
+  const teacher = firstNonEmpty(structured.docente, getHistoryTeacherName(item));
+  const date = formatDisplayDate(item.fechaClase || item.createdAt) || "Sin fecha";
+  const title = toStringSafe(item.titulo || item.title);
+  const tags = normalizeTags(item.etiquetas || item.tags || []);
+
+  const lines = [
+    `### ${date}${title ? ` — ${title}` : ""}`,
+    `- **Tipo de clase:** ${mode}`,
+    teacher ? `- **Docente:** ${teacher}` : "",
+    formatAiReportList("Etiquetas", tags),
+  ];
+
+  const tareas = toStringSafe(structured.tareas);
+  if (tareas) lines.push(`- **Tareas / observaciones:** ${tareas}`);
+  lines.push(
+    formatAiReportList("Componente corporal", structured.componenteCorporal),
+    formatAiReportList("Componente técnico", structured.componenteTecnico),
+    formatAiReportList("Componente teórico", structured.componenteTeorico),
+    formatAiReportList("Componente de obras", structured.componenteObras)
+  );
+
+  if (!tareas && !hasStructuredHistoryContent(structured)) {
+    const rawContent = toStringSafe(item.contenido || item.content);
+    if (rawContent) lines.push(`- **Contenido:** ${rawContent}`);
+  }
+
+  if (override && hasStudentOverrideContent(override)) {
+    lines.push("- **Ajustes específicos para este estudiante:**");
+    const overrideTareas = toStringSafe(override.tareas);
+    if (overrideTareas) lines.push(`  - Tareas / observaciones: ${overrideTareas}`);
+    [
+      ["Componente corporal", override.componenteCorporal],
+      ["Componente técnico", override.componenteTecnico],
+      ["Componente teórico", override.componenteTeorico],
+      ["Componente de obras", override.componenteObras],
+      ["Etiquetas", override.etiquetas],
+    ].forEach(([label, items]) => {
+      const safeItems = normalizeTags(items);
+      if (safeItems.length) lines.push(`  - ${label}: ${safeItems.join("; ")}`);
+    });
+  }
+
+  return lines.filter(Boolean).join("\n");
+}
+
+function buildStudentAiReport(student) {
+  const studentId = getStudentIdentity(student);
+  const bitacoras = getBitacorasFromState(student);
+  const sortedBitacoras = [...bitacoras].sort(
+    (a, b) =>
+      getTimestamp(a.fechaClase || a.createdAt) -
+      getTimestamp(b.fechaClase || b.createdAt)
+  );
+  const repertoire = getStudentRepertoire(student);
+  const route = buildDefaultRouteState(student, getStudentRoute(studentId));
+  const preset = resolveRoutePreset(student, route);
+  const completedIds = new Set(
+    Array.isArray(route?.completedGoalIds) ? route.completedGoalIds : []
+  );
+  const completedGoals = (preset?.goals || []).filter((goal) =>
+    completedIds.has(goal.id)
+  );
+  const pendingGoals = (preset?.goals || []).filter(
+    (goal) => !completedIds.has(goal.id)
+  );
+  const totalGoals = preset?.goals?.length || 0;
+  const firstBitacora = getFirstBitacora(sortedBitacoras);
+  const generatedAt = formatDisplayDate(getTodayDate()) || getTodayDate();
+
+  const parts = [
+    `# Informe de proceso musical — ${getStudentName(student)}`,
+    "",
+    "> **Instrucción para la IA:** Con la información de este documento, redacta un informe pedagógico claro y bien escrito sobre el proceso musical del estudiante. Resume qué se ha trabajado clase a clase (sin listar cada clase una por una), destaca los avances y logros, el repertorio trabajado, y sugiere posibles siguientes pasos. Usa un tono cálido y profesional, dirigido a la familia del estudiante o al equipo académico.",
+    "",
+    buildAiReportSection("Datos generales", [
+      `- **Nombre:** ${getStudentName(student)}`,
+      student.edad || student.age ? `- **Edad:** ${getReadableValue(student.edad || student.age)}` : "",
+      `- **Área / instrumento:** ${getReadableValue(student.area || student.instrumento || student.programa, "Sin registrar")}`,
+      `- **Modalidad:** ${getReadableValue(student.modalidad, "Sin registrar")}`,
+      `- **Estado:** ${getReadableValue(student.estado, "Sin registrar")}`,
+      `- **Docente asignado:** ${getReadableValue(student.docente || student.teacher, "Sin registrar")}`,
+      `- **Procesos:** ${getReadableValue(getStudentProcessesSummary(student), "Sin registrar")}`,
+      toStringSafe(student.interesesMusicales || student.intereses)
+        ? `- **Intereses musicales:** ${toStringSafe(student.interesesMusicales || student.intereses)}`
+        : "",
+      firstBitacora
+        ? `- **Primera clase registrada:** ${formatDisplayDate(firstBitacora.fechaClase || firstBitacora.createdAt)}`
+        : "",
+      `- **Total de bitácoras:** ${sortedBitacoras.length}`,
+      `- **Informe generado el:** ${generatedAt}`,
+    ]),
+    buildAiReportSection("Repertorio del proceso", [
+      repertoire.length
+        ? repertoire.map((item) => `- ${item}`).join("\n")
+        : "- Aún no hay repertorio registrado.",
+    ]),
+    buildAiReportSection("Ruta de aprendizaje", [
+      preset?.routeName ? `- **Ruta:** ${preset.routeName}` : "",
+      totalGoals
+        ? `- **Avance:** ${completedGoals.length}/${totalGoals} objetivos (${Math.round((completedGoals.length / totalGoals) * 100)}%)`
+        : "",
+      completedGoals.length
+        ? `\n### Objetivos completados\n${completedGoals.map((goal) => `- ${goal.title}`).join("\n")}`
+        : "",
+      pendingGoals.length && pendingGoals.length <= 40
+        ? `\n### Objetivos pendientes\n${pendingGoals.map((goal) => `- ${goal.title}`).join("\n")}`
+        : "",
+    ]),
+    buildAiReportSection(
+      `Bitácoras de clase (${sortedBitacoras.length})`,
+      sortedBitacoras.length
+        ? sortedBitacoras.map((item) => buildAiReportBitacoraBlock(item, student) + "\n")
+        : ["No hay bitácoras registradas."]
+    ),
+  ];
+
+  return parts.filter(Boolean).join("\n");
+}
+
+function downloadStudentAiReport(student) {
+  try {
+    const content = buildStudentAiReport(student);
+    const safeName = toStringSafe(getStudentName(student))
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "estudiante";
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `informe-${safeName}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("No se pudo generar el informe del estudiante:", error);
+    setAppError("No se pudo generar el informe del estudiante.");
+  }
 }
 
 function getStudentRepertoire(student = {}) {
