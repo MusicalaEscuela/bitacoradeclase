@@ -1676,6 +1676,12 @@ async function addProfileProcess(student) {
     return;
   }
 
+  // Usa siempre el estudiante mas reciente del estado. El `student` capturado en
+  // el listener queda obsoleto tras cada guardado, y usarlo hacia que un nuevo
+  // proceso se agregara sobre la lista original, borrando el ultimo agregado.
+  const currentStudent =
+    getStudentFromState(getState(), currentProfileStudentKey) || student;
+
   const container = viewRoot?.querySelector("#profile-processes-manager");
   const arteInput = container?.querySelector('[data-process-new="arte"]');
   const detalleInput = container?.querySelector('[data-process-new="detalle"]');
@@ -1694,12 +1700,12 @@ async function addProfileProcess(student) {
     return;
   }
 
-  const existing = normalizeStudentProcesses(student).filter(
+  const existing = normalizeStudentProcesses(currentStudent).filter(
     (process) => process.arte || process.detalle
   );
   const nextProcesses = [...existing, { arte, detalle, docente }];
 
-  await persistStudentProcesses(student, nextProcesses, "Area agregada.");
+  await persistStudentProcesses(currentStudent, nextProcesses, "Area agregada.");
 }
 
 async function removeProfileProcess(student, processKey) {
@@ -1708,12 +1714,15 @@ async function removeProfileProcess(student, processKey) {
     return;
   }
 
+  const currentStudent =
+    getStudentFromState(getState(), currentProfileStudentKey) || student;
+
   const safeKey = toStringSafe(processKey);
-  const nextProcesses = normalizeStudentProcesses(student)
+  const nextProcesses = normalizeStudentProcesses(currentStudent)
     .filter((process) => process.arte || process.detalle)
     .filter((process) => toStringSafe(process.processKey) !== safeKey);
 
-  await persistStudentProcesses(student, nextProcesses, "Area eliminada.");
+  await persistStudentProcesses(currentStudent, nextProcesses, "Area eliminada.");
 }
 
 function renderTeacherProfileItem(student = {}) {
