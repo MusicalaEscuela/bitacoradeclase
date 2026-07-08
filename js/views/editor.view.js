@@ -674,6 +674,19 @@ function bindEditorEvents(student) {
       renderGroupSelectionBlocks(student);
       renderDraftMetaBlock(student);
     });
+
+    selectedStudentsContainer.addEventListener("change", (event) => {
+      const processSelect = event.target.closest("[data-group-student-process]");
+      if (!processSelect) return;
+
+      updateGroupStudentProcess(
+        student,
+        processSelect.getAttribute("data-group-student-process"),
+        processSelect.value
+      );
+      renderGroupSelectionBlocks(student);
+      renderDraftMetaBlock(student);
+    });
   }
 
   if (processSelect) {
@@ -2474,6 +2487,7 @@ function renderPrintableOverridesSection(item = {}) {
         item.studentRefs?.find((student) => student.id === studentId)?.name ||
         studentId;
       const lines = [
+        override.processKey ? `Proceso: ${getProcessLabelForStudentOverride(item, studentId, override.processKey)}` : "",
         override.tareas ? `Observacion: ${override.tareas}` : "",
         joinListValues(override.etiquetas) ? `Categorias: ${joinListValues(override.etiquetas)}` : "",
         joinListValues(override.componenteCorporal)
@@ -2638,7 +2652,10 @@ function buildBitacoraPayload(student, draft) {
     docente: selectedTeacher,
     attachments: normalizeFiles(draft.archivos),
     archivos: normalizeFiles(draft.archivos),
-    studentOverrides: normalizeStudentOverrides(draft.studentOverrides, studentIds),
+    studentOverrides:
+      mode === CONFIG.modes.group
+        ? buildGroupStudentOverridesForPayload(draft, studentIds, allStudents)
+        : normalizeStudentOverrides(draft.studentOverrides, studentIds),
     processKey: activeProcess?.processKey || "",
     process: {
       processKey: activeProcess?.processKey || "",
@@ -3342,6 +3359,7 @@ function buildBitacoraSearchText(item = {}) {
     ...(structured.componenteObras || []),
     ...(item.studentRefs || []).flatMap((student) => [student.name, student.id]),
     ...Object.values(overrides).flatMap((override) => [
+      override.processKey,
       override.tareas,
       ...(override.etiquetas || []),
       ...(override.componenteCorporal || []),
@@ -3452,7 +3470,7 @@ function renderBitacoraCard(item, index = 0, total = 0) {
                   .map(
                     (student) => `
                       <span class="badge badge--soft">
-                        ${escapeHtml(student.name || student.id || "Estudiante")}
+                        ${escapeHtml(renderGroupStudentBadgeLabel(item, student))}
                       </span>
                     `
                   )
@@ -3510,6 +3528,8 @@ function renderGroupSelectionBlocks(student) {
   if (selectedContainer) {
     selectedContainer.innerHTML = renderSelectedStudentsChips(selected, {
       allowRemoveAll: isGroupPlaceholderStudent(student),
+      draft,
+      allStudents,
     });
   }
 
@@ -3713,7 +3733,57 @@ function removeStudentOverrideValue(descriptor, student) {
   renderDraftMetaBlock(student);
 }
 
-function renderSelectedStudentsChips(selectedStudents = [], { allowRemoveAll = false } = {}) {
+function updateGroupStudentProcess(student, studentId, processKey) {
+  const safeStudentId = toStringSafe(studentId);
+  if (!safeStudentId) return;
+
+  const currentDraft = getDraftForContext(student);
+  const currentOverride = getStudentOverrideForDraft(currentDraft, safeStudentId);
+  const safeProcessKey = toStringSafe(processKey);
+  const nextOverrides = {
+    ...normalizeStudentOverrides(currentDraft.studentOverrides, currentDraft.studentIds),
+  };
+
+  nextOverrides[safeStudentId] = {
+    ...currentOverride,
+    processKey: safeProcessKey,
+  };
+
+  updateDraft({
+    ...currentDraft,
+    studentOverrides: nextOverrides,
+  });
+}
+
+function buildGroupStudentOverridesForPayload(draft = {}, studentIds = [], allStudents = []) {
+  const normalizedIds = normalizeStudentIds(studentIds);
+  const overrides = normalizeStudentOverrides(draft.studentOverrides, normalizedIds);
+  const next = { ...overrides };
+
+  normalizedIds.forEach((studentId) => {
+    const student = findStudentById(allStudents, studentId);
+    const processes = normalizeStudentProcesses(student || {});
+    const existing = getStudentOverrideForDraft({ studentOverrides: next }, studentId);
+    const process =
+      resolveStudentProcess(student || {}, existing.processKey || draft.processKey) ||
+      processes[0] ||
+      null;
+    const processKey = toStringSafe(existing.processKey || process?.processKey);
+    if (!processKey) return;
+
+    next[studentId] = {
+      ...existing,
+      processKey,
+    };
+  });
+
+  return normalizeStudentOverrides(next, normalizedIds);
+}
+
+function renderSelectedStudentsChips(
+  selectedStudents = [],
+  { allowRemoveAll = false, draft = {}, allStudents = [] } = {}
+) {
   if (!selectedStudents.length) {
     return `
       <div class="empty-state empty-state--files">
@@ -3726,31 +3796,105 @@ function renderSelectedStudentsChips(selectedStudents = [], { allowRemoveAll = f
     <div class="selected-students-chips">
       ${selectedStudents
         .map(
-          (student, index) => `
-            <article class="selected-student-chip">
-              <div class="selected-student-chip__body">
-                <p class="selected-student-chip__name">${escapeHtml(student.name || "Estudiante")}</p>
-                <p class="selected-student-chip__meta">${escapeHtml(student.document || student.id || "")}</p>
-              </div>
-              ${
-                index === 0 && !allowRemoveAll
-                  ? `<span class="badge badge--soft">Principal</span>`
-                  : `
-                    <button
-                      type="button"
-                      class="btn btn--ghost btn--xs"
-                      data-group-remove-student="${escapeHtml(student.id)}"
-                    >
-                      Quitar
-                    </button>
-                  `
-              }
-            </article>
-          `
+          (student, index) =>
+            renderSelectedStudentChip(student, index, {
+              allowRemoveAll,
+              draft,
+              allStudents,
+            })
         )
         .join("")}
     </div>
   `;
+}
+
+function renderSelectedStudentChip(
+  student,
+  index,
+  { allowRemoveAll = false, draft = {}, allStudents = [] } = {}
+) {
+  const studentId = toStringSafe(student?.id);
+  const fullStudent = findStudentById(allStudents, studentId) || student;
+  const processes = normalizeStudentProcesses(fullStudent);
+  const override = getStudentOverrideForDraft(draft, studentId);
+  const selectedProcessKey =
+    toStringSafe(override.processKey) ||
+    toStringSafe(draft?.processKey) ||
+    processes[0]?.processKey ||
+    "";
+
+  return `
+    <article class="selected-student-chip">
+      <div class="selected-student-chip__body">
+        <p class="selected-student-chip__name">${escapeHtml(student?.name || "Estudiante")}</p>
+        <p class="selected-student-chip__meta">${escapeHtml(student?.document || studentId || "")}</p>
+        <label class="selected-student-chip__process">
+          <span>Proceso de esta bitácora</span>
+          <select
+            class="field__input field__input--compact"
+            data-group-student-process="${escapeHtml(studentId)}"
+          >
+            ${processes
+              .map((process) => {
+                const processKey = toStringSafe(process.processKey);
+                return `
+                  <option value="${escapeHtml(processKey)}" ${
+                    processKey === selectedProcessKey ? "selected" : ""
+                  }>
+                    ${escapeHtml(process.label || process.detalle || process.arte || "Proceso")}
+                  </option>
+                `;
+              })
+              .join("")}
+          </select>
+        </label>
+      </div>
+      ${
+        index === 0 && !allowRemoveAll
+          ? `<span class="badge badge--soft">Principal</span>`
+          : `
+            <button
+              type="button"
+              class="btn btn--ghost btn--xs"
+              data-group-remove-student="${escapeHtml(studentId)}"
+            >
+              Quitar
+            </button>
+          `
+      }
+    </article>
+  `;
+}
+
+function renderGroupStudentBadgeLabel(item = {}, studentRef = {}) {
+  const studentId = toStringSafe(studentRef?.id);
+  const override = normalizeStudentOverrides(item.studentOverrides, item.studentIds || [])[studentId];
+  const processLabel = override?.processKey
+    ? getProcessLabelForStudentOverride(item, studentId, override.processKey)
+    : "";
+  return [studentRef?.name || studentId || "Estudiante", processLabel]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function getProcessLabelForStudentOverride(item = {}, studentId = "", processKey = "") {
+  const safeProcessKey = toStringSafe(processKey);
+  if (!safeProcessKey) return "";
+
+  const allStudents = getAllStudentsFromState(getState());
+  const student = findStudentById(allStudents, studentId);
+  const process = student ? resolveStudentProcess(student, safeProcessKey) : null;
+  return (
+    toStringSafe(process?.label || process?.detalle || process?.arte) ||
+    toStringSafe(item?.process?.processLabel) ||
+    safeProcessKey
+  );
+}
+
+function findStudentById(students = [], studentId = "") {
+  const safeStudentId = toStringSafe(studentId);
+  if (!safeStudentId) return null;
+  return students.find((student) => getStudentIdentity(student) === safeStudentId) || null;
 }
 
 function renderGroupStudentsResults(
@@ -4643,7 +4787,11 @@ function buildMusicalaEditorMarkup({
                   <div id="group-selected-students" class="group-selected-students">
                     ${renderSelectedStudentsChips(
                       getSelectedStudentsForDraft(draft, student, allStudents),
-                      { allowRemoveAll: isGroupPlaceholderStudent(student) }
+                      {
+                        allowRemoveAll: isGroupPlaceholderStudent(student),
+                        draft,
+                        allStudents,
+                      }
                     )}
                   </div>
                   <div id="group-students-results" class="group-students-results ${isGroup ? "" : "is-hidden"}">
@@ -5949,6 +6097,7 @@ function normalizeListValues(values = []) {
 function buildEmptyStudentOverride() {
   return {
     enabled: false,
+    processKey: "",
     tareas: "",
     etiquetas: [],
     componenteCorporal: [],
@@ -5970,12 +6119,14 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       }
 
       const source = isPlainObject(value) ? value : {};
-      if (!source.enabled) {
+      const processKey = toStringSafe(source.processKey || source.processRef);
+      if (!source.enabled && !processKey) {
         return;
       }
 
       const normalized = {
-        enabled: true,
+        enabled: Boolean(source.enabled),
+        processKey,
         tareas: toStringSafe(source.tareas),
         etiquetas: normalizeListValues(source.etiquetas),
         componenteCorporal: normalizeListValues(source.componenteCorporal),
@@ -5986,6 +6137,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
 
       if (
         !normalized.enabled &&
+        !normalized.processKey &&
         !normalized.tareas &&
         !normalized.etiquetas.length &&
         !normalized.componenteCorporal.length &&

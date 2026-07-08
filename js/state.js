@@ -282,7 +282,8 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
 
       const normalizedValue = isPlainObject(value) ? value : {};
       const enabled = Boolean(normalizedValue.enabled);
-      if (!enabled) {
+      const processKey = toStringSafe(normalizedValue.processKey || normalizedValue.processRef);
+      if (!enabled && !processKey) {
         return;
       }
 
@@ -303,6 +304,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
 
       if (
         !enabled &&
+        !processKey &&
         !tareas &&
         !etiquetas.length &&
         !componenteCorporal.length &&
@@ -314,7 +316,8 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       }
 
       next[safeStudentId] = {
-        enabled: true,
+        enabled,
+        processKey,
         tareas,
         etiquetas,
         componenteCorporal,

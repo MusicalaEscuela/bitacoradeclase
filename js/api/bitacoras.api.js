@@ -202,6 +202,7 @@ function normalizeStudentOverridesFromPayload(payload = {}, studentIds = []) {
 
     const normalizedValue = isPlainObject(value) ? value : {};
     const enabled = Boolean(normalizedValue.enabled);
+    const processKey = safeString(normalizedValue.processKey || normalizedValue.processRef);
     const tareas = safeString(normalizedValue.tareas);
     const etiquetas = normalizeOverrideValues(normalizedValue.etiquetas);
     const componenteCorporal = normalizeOverrideValues(
@@ -219,6 +220,7 @@ function normalizeStudentOverridesFromPayload(payload = {}, studentIds = []) {
 
     if (
       !enabled &&
+      !processKey &&
       !tareas &&
       !etiquetas.length &&
       !componenteCorporal.length &&
@@ -231,6 +233,7 @@ function normalizeStudentOverridesFromPayload(payload = {}, studentIds = []) {
 
     next[safeStudentId] = {
       enabled,
+      processKey,
       tareas,
       etiquetas,
       componenteCorporal,

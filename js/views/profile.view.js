@@ -60,6 +60,7 @@ import {
   getStudentProcessesSummary,
   normalizeStudentProcesses,
   resolveStudentProcess,
+  slugifyProcessKey,
   getTimestamp,
   getTodayDate,
   isPlainObject,
@@ -1675,7 +1676,14 @@ async function persistStudentProcesses(student, nextProcesses, successMessage) {
     clearAppError();
     const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_processes";
     const updated = await updateStudentProcesses(studentId, nextProcesses, { updatedBy });
-    updateStudentProfile({ ...student, ...updated });
+    const refreshedProfile = await getStudentProfile(studentId).catch(() => null);
+    const nextStudent = {
+      ...student,
+      ...updated,
+      ...(refreshedProfile || {}),
+    };
+    updateStudentProfile(nextStudent);
+    setSelectedStudent(nextStudent);
     renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
     showProfileTeacherMessage(
       viewRoot?.querySelector("[data-process-message]") || message,
@@ -1719,9 +1727,7 @@ async function addProfileProcess(student) {
     return;
   }
 
-  const existing = normalizeStudentProcesses(currentStudent).filter(
-    (process) => process.arte || process.detalle
-  );
+  const existing = getPersistedStudentProcesses(currentStudent);
   const nextProcesses = [...existing, { arte, detalle, docente }];
 
   await persistStudentProcesses(currentStudent, nextProcesses, "Area agregada.");
@@ -1737,11 +1743,50 @@ async function removeProfileProcess(student, processKey) {
     getStudentFromState(getState(), currentProfileStudentKey) || student;
 
   const safeKey = toStringSafe(processKey);
-  const nextProcesses = normalizeStudentProcesses(currentStudent)
-    .filter((process) => process.arte || process.detalle)
+  const nextProcesses = getPersistedStudentProcesses(currentStudent)
     .filter((process) => toStringSafe(process.processKey) !== safeKey);
 
   await persistStudentProcesses(currentStudent, nextProcesses, "Area eliminada.");
+}
+
+function getPersistedStudentProcesses(student = {}) {
+  const persisted = (Array.isArray(student?.processes) ? student.processes : [])
+    .map((process, index) => {
+      if (!process || typeof process !== "object") return null;
+      const arte = toStringSafe(process.arte || process.area);
+      const detalle = toStringSafe(process.detalle || process.instrumento);
+      const docente = firstNonEmpty(
+        process.docente,
+        process.teacher,
+        process.profesor,
+        process.docenteNombre
+      );
+      const label =
+        toStringSafe(process.label) ||
+        [arte, detalle].filter(Boolean).join(" - ") ||
+        `Proceso ${index + 1}`;
+      const processKey =
+        toStringSafe(process.processKey) ||
+        `${slugifyProcessKey(arte || label)}_${slugifyProcessKey(detalle || label)}_${index + 1}`;
+
+      if (!arte && !detalle) return null;
+      return { processKey, arte, detalle, docente, label };
+    })
+    .filter(Boolean);
+
+  if (persisted.length) return persisted;
+
+  return normalizeStudentProcesses(student)
+    .filter((process) => process.arte || process.detalle)
+    .map((process) => ({
+      processKey: toStringSafe(process.processKey),
+      arte: toStringSafe(process.arte),
+      detalle: toStringSafe(process.detalle),
+      docente: firstNonEmpty(process.docente),
+      label:
+        toStringSafe(process.label) ||
+        [process.arte, process.detalle].filter(Boolean).join(" - "),
+    }));
 }
 
 function renderTeacherProfileItem(student = {}) {

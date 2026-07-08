@@ -755,6 +755,15 @@ body::before {
   flex: 1 1 auto;
 }
 
+.selected-student-chip {
+  grid-template-columns: 1fr;
+}
+
+.selected-student-chip .btn,
+.selected-student-chip .badge {
+  justify-self: start;
+}
+
 .bitacora-card,
 .history-preview-card {
   border-radius: 22px;
