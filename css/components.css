@@ -775,40 +775,166 @@
   gap: 0.85rem;
 }
 
-.profile-repertoire__chips {
+.profile-repertoire__board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.profile-repertoire-column {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(93, 52, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(248, 250, 255, 0.78);
+}
+
+.profile-repertoire-column__header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  min-height: 2.65rem;
+  justify-content: space-between;
+  gap: 0.65rem;
   align-items: center;
 }
 
-.profile-repertoire-chip {
+.profile-repertoire-column__header h3 {
+  margin: 0;
+  color: var(--color-ink-strong);
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.profile-repertoire-column__header span {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  max-width: 100%;
-  padding: 0.58rem 0.78rem;
-  border: 1px solid rgba(93, 52, 255, 0.18);
-  border-radius: 16px;
-  background: rgba(93, 52, 255, 0.08);
+  justify-content: center;
+  min-width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  background: rgba(93, 52, 255, 0.1);
   color: var(--color-ink-strong);
-  font-weight: 700;
-  line-height: 1.25;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
-.profile-repertoire-chip span {
+.profile-repertoire-column__items {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.profile-repertoire-item {
+  display: grid;
+  gap: 0.55rem;
   min-width: 0;
+  padding: 0.65rem 0.72rem;
+  border: 1px solid rgba(93, 52, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--color-ink-strong);
+  line-height: 1.25;
+  box-shadow: 0 8px 18px rgba(35, 22, 92, 0.05);
+}
+
+.profile-repertoire-item__main {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.profile-repertoire-item__main strong,
+.profile-repertoire-item__main span,
+.profile-repertoire-item__main p {
   overflow-wrap: anywhere;
+}
+
+.profile-repertoire-item__main strong {
+  font-size: 0.95rem;
+}
+
+.profile-repertoire-item__main span {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.profile-repertoire-item__main p {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 0.84rem;
+}
+
+.profile-repertoire-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.profile-repertoire-action,
+.profile-repertoire-edit summary {
+  min-height: 2rem;
+  padding: 0.35rem 0.62rem;
+  border: 1px solid rgba(93, 52, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(93, 52, 255, 0.06);
+  color: var(--color-ink-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.profile-repertoire-edit {
+  min-width: 100%;
+}
+
+.profile-repertoire-edit summary {
+  display: inline-flex;
+  align-items: center;
+  list-style: none;
+}
+
+.profile-repertoire-edit summary::-webkit-details-marker {
+  display: none;
+}
+
+.profile-repertoire-edit[open] summary {
+  margin-bottom: 0.55rem;
+}
+
+.profile-repertoire-item__controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 0.45rem;
+  align-items: start;
+}
+
+.profile-repertoire-item__controls textarea {
+  grid-column: 1 / -1;
+  resize: vertical;
+}
+
+.profile-repertoire-item__controls .btn {
+  min-height: 38px;
+}
+
+.profile-repertoire-edit__footer {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .profile-repertoire-chip__remove {
   flex: 0 0 auto;
-  width: 1.45rem;
-  height: 1.45rem;
+  width: 2.35rem;
+  height: 2.35rem;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(93, 52, 255, 0.08);
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -817,7 +943,7 @@
 
 .profile-repertoire__entry {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(9rem, auto) auto;
   gap: 0.65rem;
   align-items: center;
 }

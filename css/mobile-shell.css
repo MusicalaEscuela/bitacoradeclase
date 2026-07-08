@@ -722,6 +722,10 @@ body::before {
   overflow-wrap: anywhere;
 }
 
+.profile-repertoire__board {
+  grid-template-columns: 1fr;
+}
+
 .profile-repertoire__entry {
   grid-template-columns: 1fr;
 }
@@ -730,9 +734,25 @@ body::before {
   width: 100%;
 }
 
-.profile-repertoire-chip {
-  width: 100%;
-  justify-content: space-between;
+.profile-repertoire-item__controls {
+  grid-template-columns: 1fr;
+}
+
+.profile-repertoire-item__actions {
+  align-items: stretch;
+}
+
+.profile-repertoire-action,
+.profile-repertoire-edit summary {
+  justify-content: center;
+}
+
+.profile-repertoire-edit__footer {
+  align-items: stretch;
+}
+
+.profile-repertoire-edit__footer .btn {
+  flex: 1 1 auto;
 }
 
 .bitacora-card,

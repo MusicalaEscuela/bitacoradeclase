@@ -62,6 +62,7 @@ import {
   resolveStudentProcess,
   getTimestamp,
   getTodayDate,
+  isPlainObject,
   normalizeLocalDateInput,
   normalizeBitacorasResponse as normalizeBitacorasResponseShared,
   normalizeMode,
@@ -879,7 +880,7 @@ function buildProfileMarkup(student, state, config) {
                 <p class="panel-header__eyebrow">Proyecto final</p>
                 <h2 class="panel-header__title">Repertorio del proceso</h2>
                 <p class="panel__description">
-                  Canciones elegidas por docente y estudiante para trabajar como proyecto.
+                  Canciones que el estudiante quiere tocar, está sacando o ya logró.
                 </p>
               </div>
             </header>
@@ -1071,6 +1072,23 @@ function bindProfileEvents(student) {
           student,
           removeButton.getAttribute("data-repertoire-remove")
         );
+        return;
+      }
+
+      const quickStatusButton = event.target.closest("[data-repertoire-quick-status]");
+      if (quickStatusButton) {
+        await updateProfileRepertoireItem(student, quickStatusButton.getAttribute("data-repertoire-quick-status"), {
+          estado: quickStatusButton.getAttribute("data-repertoire-next-status"),
+        });
+        return;
+      }
+
+      const saveButton = event.target.closest("[data-repertoire-save]");
+      if (saveButton) {
+        await updateProfileRepertoireItem(
+          student,
+          saveButton.getAttribute("data-repertoire-save")
+        );
       }
     });
 
@@ -1083,6 +1101,7 @@ function bindProfileEvents(student) {
         await addProfileRepertoireItem(student);
       }
     });
+
   }
 
   if (refreshBtn) {
@@ -2101,7 +2120,7 @@ function buildStudentAiReport(student, range = {}, tone = "tecnico") {
       getTimestamp(a.fechaClase || a.createdAt) -
       getTimestamp(b.fechaClase || b.createdAt)
   );
-  const repertoire = getStudentRepertoire(student);
+  const repertoire = getStudentRepertoireItems(student);
   const route = buildDefaultRouteState(student, getStudentRoute(studentId));
   const preset = resolveRoutePreset(student, route);
   const completedIds = new Set(
@@ -2147,7 +2166,7 @@ function buildStudentAiReport(student, range = {}, tone = "tecnico") {
     ]),
     buildAiReportSection("Repertorio del proceso", [
       repertoire.length
-        ? repertoire.map((item) => `- ${item}`).join("\n")
+        ? formatRepertoireForAiReport(repertoire)
         : "- Aún no hay repertorio registrado.",
     ]),
     buildAiReportSection("Ruta de aprendizaje", [
@@ -2415,42 +2434,97 @@ function renderAiReportModal() {
   `;
 }
 
+const REPERTOIRE_STATUSES = [
+  { id: "quiere", label: "Quiere tocar", empty: "Sin canciones deseadas todavía." },
+  { id: "proceso", label: "Está sacando", empty: "Sin canciones en proceso." },
+  { id: "lograda", label: "Ya sacó", empty: "Sin canciones logradas todavía." },
+];
+
+const REPERTOIRE_PRIORITIES = [
+  { id: "baja", label: "Baja" },
+  { id: "media", label: "Media" },
+  { id: "alta", label: "Alta" },
+];
+
 function getStudentRepertoire(student = {}) {
-  return normalizeTags(
+  return getStudentRepertoireItems(student).map((item) => item.nombre);
+}
+
+function getStudentRepertoireItems(student = {}) {
+  const source =
+    student.repertorioProceso ||
+    student.repertoireProgress ||
     student.repertorioEscogido ||
-      student.repertoire ||
-      student.repertorio ||
-      student.proyectoFinal ||
-      []
-  );
+    student.repertoire ||
+    student.repertorio ||
+    student.proyectoFinal ||
+    [];
+
+  const items = Array.isArray(source) ? source : [source];
+  const byName = new Map();
+
+  items.forEach((item) => {
+    const normalizedItem = normalizeRepertoireItem(item);
+    if (!normalizedItem?.nombre) return;
+    const key = normalizeText(normalizedItem.nombre);
+    if (!key || byName.has(key)) return;
+    byName.set(key, normalizedItem);
+  });
+
+  return [...byName.values()];
+}
+
+function normalizeRepertoireItem(item) {
+  const nombre = isPlainObject(item)
+    ? toStringSafe(item.nombre || item.name || item.title || item.cancion)
+    : toStringSafe(item);
+  if (!nombre) return null;
+
+  return {
+    nombre,
+    estado: normalizeRepertoireStatus(item?.estado || item?.status),
+    prioridad: normalizeRepertoirePriority(item?.prioridad || item?.priority),
+    notas: isPlainObject(item)
+      ? toStringSafe(item.notas || item.notes || item.observacion || item.observaciones)
+      : "",
+    fechaInicio: normalizeLocalDateInput(
+      isPlainObject(item) ? item.fechaInicio || item.startedAt || item.startDate : ""
+    ),
+    fechaLogro: normalizeLocalDateInput(
+      isPlainObject(item) ? item.fechaLogro || item.completedAt || item.endDate : ""
+    ),
+  };
+}
+
+function normalizeRepertoireStatus(value) {
+  const normalized = normalizeText(value);
+  if (["quiere", "deseada", "deseado", "wishlist", "por trabajar"].includes(normalized)) {
+    return "quiere";
+  }
+  if (["lograda", "logrado", "sacada", "sacado", "completada", "completado"].includes(normalized)) {
+    return "lograda";
+  }
+  return "proceso";
+}
+
+function normalizeRepertoirePriority(value) {
+  const normalized = normalizeText(value);
+  if (["alta", "high"].includes(normalized)) return "alta";
+  if (["baja", "low"].includes(normalized)) return "baja";
+  return "media";
 }
 
 function renderStudentRepertoireCard(student = {}, access = {}) {
   const canEdit = Boolean(access.canEditBitacoras || access.canManageSettings);
-  const items = getStudentRepertoire(student);
+  const items = getStudentRepertoireItems(student);
   const options = normalizeTags(cachedCatalogs?.componenteObras || []);
 
   return `
     <div class="profile-repertoire">
-      <div class="profile-repertoire__chips" data-repertoire-list>
-        ${
-          items.length
-            ? items
-                .map(
-                  (item) => `
-                    <span class="profile-repertoire-chip" data-repertoire-item="${escapeHtml(item)}">
-                      <span>${escapeHtml(item)}</span>
-                      ${
-                        canEdit
-                          ? `<button type="button" class="profile-repertoire-chip__remove" data-repertoire-remove="${escapeHtml(item)}" aria-label="Quitar ${escapeHtml(item)}">x</button>`
-                          : ""
-                      }
-                    </span>
-                  `
-                )
-                .join("")
-            : `<p class="field__hint">Aún no hay canciones elegidas para este proceso.</p>`
-        }
+      <div class="profile-repertoire__board" data-repertoire-list>
+        ${REPERTOIRE_STATUSES.map((status) =>
+          renderRepertoireColumn(status, items, canEdit)
+        ).join("")}
       </div>
       ${
         canEdit
@@ -2464,6 +2538,11 @@ function renderStudentRepertoireCard(student = {}, access = {}) {
                 placeholder="Escribe o elige una canción..."
                 autocomplete="off"
               />
+              <select class="field__input" data-repertoire-status-new aria-label="Estado inicial de la canción">
+                ${REPERTOIRE_STATUSES.map(
+                  (status) => `<option value="${status.id}" ${status.id === "quiere" ? "selected" : ""}>${escapeHtml(status.label)}</option>`
+                ).join("")}
+              </select>
               <button type="button" class="btn btn--secondary btn--sm" data-repertoire-add>
                 Agregar
               </button>
@@ -2476,6 +2555,133 @@ function renderStudentRepertoireCard(student = {}, access = {}) {
   `;
 }
 
+function renderRepertoireColumn(status, items = [], canEdit = false) {
+  const statusItems = items.filter((item) => item.estado === status.id);
+  return `
+    <section class="profile-repertoire-column" data-repertoire-column-status="${status.id}">
+      <header class="profile-repertoire-column__header">
+        <h3>${escapeHtml(status.label)}</h3>
+        <span>${statusItems.length}</span>
+      </header>
+      <div class="profile-repertoire-column__items">
+        ${
+          statusItems.length
+            ? statusItems.map((item) => renderRepertoireItemCard(item, canEdit)).join("")
+            : `<p class="field__hint">${escapeHtml(status.empty)}</p>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderRepertoireItemCard(item, canEdit = false) {
+  const safeName = escapeHtml(item.nombre);
+  const priorityLabel =
+    REPERTOIRE_PRIORITIES.find((priority) => priority.id === item.prioridad)?.label || "Media";
+  const dateLabel = item.fechaLogro
+    ? `Lograda: ${formatDisplayDate(item.fechaLogro)}`
+    : item.fechaInicio
+      ? `Inicio: ${formatDisplayDate(item.fechaInicio)}`
+      : "";
+
+  return `
+    <article class="profile-repertoire-item" data-repertoire-item="${safeName}">
+      <div class="profile-repertoire-item__main">
+        <strong>${safeName}</strong>
+        <span>${renderRepertoireMeta(priorityLabel, dateLabel)}</span>
+        ${item.notas ? `<p>${escapeHtml(item.notas)}</p>` : ""}
+      </div>
+      ${
+        canEdit
+          ? `
+            <div class="profile-repertoire-item__actions">
+              ${renderRepertoireQuickActions(item)}
+              <details class="profile-repertoire-edit">
+                <summary>Editar</summary>
+                <div class="profile-repertoire-item__controls">
+                  <select class="field__input" data-repertoire-status="${safeName}" aria-label="Estado de ${safeName}">
+                    ${REPERTOIRE_STATUSES.map(
+                      (status) => `<option value="${status.id}" ${status.id === item.estado ? "selected" : ""}>${escapeHtml(status.label)}</option>`
+                    ).join("")}
+                  </select>
+                  <select class="field__input" data-repertoire-priority="${safeName}" aria-label="Prioridad de ${safeName}">
+                    ${REPERTOIRE_PRIORITIES.map(
+                      (priority) => `<option value="${priority.id}" ${priority.id === item.prioridad ? "selected" : ""}>${escapeHtml(priority.label)}</option>`
+                    ).join("")}
+                  </select>
+                  <input
+                    type="date"
+                    class="field__input"
+                    data-repertoire-start="${safeName}"
+                    value="${escapeHtml(item.fechaInicio)}"
+                    aria-label="Fecha de inicio de ${safeName}"
+                  />
+                  <input
+                    type="date"
+                    class="field__input"
+                    data-repertoire-completed="${safeName}"
+                    value="${escapeHtml(item.fechaLogro)}"
+                    aria-label="Fecha de logro de ${safeName}"
+                  />
+                  <textarea
+                    class="field__input"
+                    data-repertoire-notes="${safeName}"
+                    rows="2"
+                    placeholder="Observación breve..."
+                    aria-label="Observación de ${safeName}"
+                  >${escapeHtml(item.notas)}</textarea>
+                  <div class="profile-repertoire-edit__footer">
+                    <button type="button" class="btn btn--ghost btn--sm" data-repertoire-save="${safeName}">
+                      Guardar
+                    </button>
+                    <button type="button" class="profile-repertoire-chip__remove" data-repertoire-remove="${safeName}" aria-label="Quitar ${safeName}">x</button>
+                  </div>
+                </div>
+              </details>
+            </div>
+          `
+          : ""
+      }
+    </article>
+  `;
+}
+
+function renderRepertoireMeta(priorityLabel, dateLabel) {
+  return [priorityLabel ? `Prioridad ${priorityLabel.toLowerCase()}` : "", dateLabel]
+    .filter(Boolean)
+    .map((item) => escapeHtml(item))
+    .join(" · ");
+}
+
+function renderRepertoireQuickActions(item) {
+  const actions = [];
+  if (item.estado !== "proceso") {
+    actions.push({ status: "proceso", label: "A proceso" });
+  }
+  if (item.estado !== "lograda") {
+    actions.push({ status: "lograda", label: "Lograda" });
+  }
+  if (item.estado !== "quiere") {
+    actions.push({ status: "quiere", label: "Deseada" });
+  }
+
+  return actions
+    .slice(0, 2)
+    .map(
+      (action) => `
+        <button
+          type="button"
+          class="profile-repertoire-action"
+          data-repertoire-quick-status="${escapeHtml(item.nombre)}"
+          data-repertoire-next-status="${action.status}"
+        >
+          ${escapeHtml(action.label)}
+        </button>
+      `
+    )
+    .join("");
+}
+
 function renderRepertoireDatalist(options = []) {
   if (!options.length) return "";
   return `
@@ -2483,6 +2689,30 @@ function renderRepertoireDatalist(options = []) {
       ${options.map((option) => `<option value="${escapeHtml(option)}"></option>`).join("")}
     </datalist>
   `;
+}
+
+function formatRepertoireForAiReport(items = []) {
+  return REPERTOIRE_STATUSES.map((status) => {
+    const statusItems = items.filter((item) => item.estado === status.id);
+    if (!statusItems.length) return "";
+
+    return [
+      `### ${status.label}`,
+      statusItems
+        .map((item) => {
+          const details = [
+            item.prioridad ? `prioridad ${item.prioridad}` : "",
+            item.fechaInicio ? `inicio ${formatDisplayDate(item.fechaInicio)}` : "",
+            item.fechaLogro ? `logro ${formatDisplayDate(item.fechaLogro)}` : "",
+            item.notas ? `observación: ${item.notas}` : "",
+          ].filter(Boolean);
+          return `- ${item.nombre}${details.length ? ` (${details.join("; ")})` : ""}`;
+        })
+        .join("\n"),
+    ].join("\n");
+  })
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 async function saveProfileRepertoire(student, values = []) {
@@ -2509,10 +2739,21 @@ async function addProfileRepertoireItem(student) {
   const currentStudent =
     getStudentFromState(getState(), getStudentIdentity(student)) || student;
   const input = viewRoot?.querySelector("[data-repertoire-input]");
+  const statusSelect = viewRoot?.querySelector("[data-repertoire-status-new]");
   const value = toStringSafe(input?.value);
   if (!value) return;
 
-  const nextValues = normalizeTags([...getStudentRepertoire(currentStudent), value]);
+  const nextValues = [
+    ...getStudentRepertoireItems(currentStudent),
+    {
+      nombre: value,
+      estado: normalizeRepertoireStatus(statusSelect?.value || "quiere"),
+      prioridad: "media",
+      notas: "",
+      fechaInicio: "",
+      fechaLogro: "",
+    },
+  ];
   if (input) input.value = "";
   await saveProfileRepertoire(currentStudent, nextValues);
 }
@@ -2523,9 +2764,46 @@ async function removeProfileRepertoireItem(student, value) {
   const safeValue = toStringSafe(value);
   if (!safeValue) return;
 
-  const nextValues = getStudentRepertoire(currentStudent).filter(
-    (item) => normalizeText(item) !== normalizeText(safeValue)
+  const nextValues = getStudentRepertoireItems(currentStudent).filter(
+    (item) => normalizeText(item.nombre) !== normalizeText(safeValue)
   );
+  await saveProfileRepertoire(currentStudent, nextValues);
+}
+
+async function updateProfileRepertoireItem(student, value, overrides = {}) {
+  const currentStudent =
+    getStudentFromState(getState(), getStudentIdentity(student)) || student;
+  const safeValue = toStringSafe(value);
+  if (!safeValue) return;
+
+  const card = [...(viewRoot?.querySelectorAll("[data-repertoire-item]") || [])].find(
+    (node) => normalizeText(node.getAttribute("data-repertoire-item")) === normalizeText(safeValue)
+  );
+  const nextValues = getStudentRepertoireItems(currentStudent).map((item) => {
+    if (normalizeText(item.nombre) !== normalizeText(safeValue)) return item;
+
+    return {
+      ...item,
+      estado: normalizeRepertoireStatus(
+        overrides.estado || card?.querySelector("[data-repertoire-status]")?.value || item.estado
+      ),
+      prioridad: normalizeRepertoirePriority(
+        overrides.prioridad ||
+          card?.querySelector("[data-repertoire-priority]")?.value ||
+          item.prioridad
+      ),
+      fechaInicio: normalizeLocalDateInput(
+        overrides.fechaInicio ?? card?.querySelector("[data-repertoire-start]")?.value ?? item.fechaInicio
+      ),
+      fechaLogro: normalizeLocalDateInput(
+        overrides.fechaLogro ?? card?.querySelector("[data-repertoire-completed]")?.value ?? item.fechaLogro
+      ),
+      notas: toStringSafe(
+        overrides.notas ?? card?.querySelector("[data-repertoire-notes]")?.value ?? item.notas
+      ),
+    };
+  });
+
   await saveProfileRepertoire(currentStudent, nextValues);
 }
 

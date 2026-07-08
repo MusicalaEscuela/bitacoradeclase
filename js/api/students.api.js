@@ -139,12 +139,9 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
     });
   }
 
+  const repertorioProceso = normalizeRepertoireForWrite(repertoire);
   const repertorioEscogido = [
-    ...new Set(
-      (Array.isArray(repertoire) ? repertoire : [repertoire])
-        .map((item) => normalizeScalar(item))
-        .filter(Boolean)
-    ),
+    ...new Set(repertorioProceso.map((item) => item.nombre).filter(Boolean)),
   ];
   const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
   const snapshot = await getDoc(ref);
@@ -159,6 +156,8 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
   await updateDoc(ref, {
     repertorioEscogido,
     repertoire: repertorioEscogido,
+    repertorioProceso,
+    repertoireProgress: repertorioProceso,
     updatedAt: serverTimestamp(),
     updatedBy: "profile_repertoire",
   });
@@ -169,7 +168,65 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
     studentKey: safeStudentId,
     repertorioEscogido,
     repertoire: repertorioEscogido,
+    repertorioProceso,
+    repertoireProgress: repertorioProceso,
   };
+}
+
+function normalizeRepertoireForWrite(repertoire = []) {
+  const items = Array.isArray(repertoire) ? repertoire : [repertoire];
+  const byName = new Map();
+
+  items.forEach((item) => {
+    const rawName = isPlainObject(item)
+      ? normalizeScalar(item.nombre || item.name || item.title || item.cancion)
+      : normalizeScalar(item);
+    if (!rawName) return;
+
+    const key = normalizeText(rawName);
+    if (byName.has(key)) return;
+
+    const status = normalizeRepertoireStatus(item?.estado || item?.status);
+    const priority = normalizeRepertoirePriority(item?.prioridad || item?.priority);
+    const notes = isPlainObject(item)
+      ? normalizeScalar(item.notas || item.notes || item.observacion || item.observaciones)
+      : "";
+    const fechaInicio = isPlainObject(item)
+      ? normalizeScalar(item.fechaInicio || item.startedAt || item.startDate)
+      : "";
+    const fechaLogro = isPlainObject(item)
+      ? normalizeScalar(item.fechaLogro || item.completedAt || item.endDate)
+      : "";
+
+    byName.set(key, {
+      nombre: rawName,
+      estado: status,
+      prioridad: priority,
+      notas: notes,
+      fechaInicio,
+      fechaLogro,
+    });
+  });
+
+  return [...byName.values()];
+}
+
+function normalizeRepertoireStatus(value) {
+  const normalized = normalizeText(value);
+  if (["quiere", "deseada", "deseado", "wishlist", "por trabajar"].includes(normalized)) {
+    return "quiere";
+  }
+  if (["lograda", "logrado", "sacada", "sacado", "completada", "completado"].includes(normalized)) {
+    return "lograda";
+  }
+  return "proceso";
+}
+
+function normalizeRepertoirePriority(value) {
+  const normalized = normalizeText(value);
+  if (["alta", "high"].includes(normalized)) return "alta";
+  if (["baja", "low"].includes(normalized)) return "baja";
+  return "media";
 }
 
 /**
