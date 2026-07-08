@@ -2879,6 +2879,11 @@
   min-width: 0;
 }
 
+.selected-student-chip__body {
+  display: grid;
+  gap: 0.28rem;
+}
+
 .selected-student-chip__name,
 .group-student-row__name {
   margin: 0;
@@ -2892,6 +2897,26 @@
   margin: 0.18rem 0 0;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.selected-student-chip__process {
+  display: grid;
+  gap: 0.25rem;
+  min-width: min(18rem, 100%);
+  margin-top: 0.18rem;
+}
+
+.selected-student-chip__process span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.field__input--compact {
+  min-height: 38px;
+  padding: 0.48rem 0.65rem;
+  font-size: 0.86rem;
 }
 
 .choice-pill {
