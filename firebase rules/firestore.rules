@@ -165,10 +165,298 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    function changedStudentFieldsAreOnly(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    function changedStudentFieldsInclude(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function boundedString(value, maxLength) {
+      return value is string && value.size() <= maxLength;
+    }
+
+    function validFixedPedagogicalAudit(marker) {
+      return request.resource.data.updatedAt == request.time &&
+        request.resource.data.updatedBy == marker;
+    }
+
+    function validActorPedagogicalAudit() {
+      return request.resource.data.updatedAt == request.time &&
+        boundedString(request.resource.data.updatedBy, 320) &&
+        request.resource.data.updatedBy.lower() == authEmail();
+    }
+
+    /*
+      El modelo actual no publica una asignacion docente canonica por email o
+      UID. La autorizacion docente sigue por eso el mismo limite operativo de
+      la app: solo estudiantes visibles en sus listas. Un permiso publicado
+      por RIP prevalece sobre los fallbacks historicos.
+    */
+    function hasPublishedRipTeacherVisibility() {
+      return resource.data.keys().hasAny(['rip']) &&
+        resource.data.rip is map &&
+        resource.data.rip.keys().hasAny(['showInTeacherLists']);
+    }
+
+    function hasPublishedTopTeacherVisibility() {
+      return resource.data.keys().hasAny(['showInTeacherLists']);
+    }
+
+    function legacyTeacherVisibleStatus() {
+      let status = resource.data.get('estado',
+          resource.data.get('status',
+            resource.data.get('estadoActual',
+              resource.data.get('studentStatus', ''))));
+      return status is string &&
+        (
+          status.lower() == 'activo' ||
+          status.lower().matches('^activo no registro.*') ||
+          status.lower().matches('^activo en pausa.*') ||
+          status.lower().matches('^inactivo en pausa.*1.*3.*')
+        );
+    }
+
+    function teacherCanEditStudent() {
+      return isTeacher() &&
+        (
+          (
+            hasPublishedRipTeacherVisibility() &&
+            resource.data.rip.showInTeacherLists == true
+          ) ||
+          (
+            !hasPublishedRipTeacherVisibility() &&
+            hasPublishedTopTeacherVisibility() &&
+            resource.data.showInTeacherLists == true
+          ) ||
+          (
+            !hasPublishedRipTeacherVisibility() &&
+            !hasPublishedTopTeacherVisibility() &&
+            legacyTeacherVisibleStatus()
+          )
+        );
+    }
+
+    function validTeacherAssignmentUpdate() {
+      return changedStudentFieldsAreOnly([
+          'docente', 'teacher', 'updatedAt', 'updatedBy'
+        ]) &&
+        changedStudentFieldsInclude(['docente', 'teacher']) &&
+        boundedString(request.resource.data.docente, 160) &&
+        request.resource.data.teacher == request.resource.data.docente &&
+        validFixedPedagogicalAudit('profile_teacher_assignment');
+    }
+
+    function validProcessItem(item) {
+      return item is map &&
+        item.keys().hasAll([
+          'processKey', 'arte', 'detalle', 'docente', 'label'
+        ]) &&
+        item.keys().hasOnly([
+          'processKey', 'arte', 'detalle', 'docente', 'label'
+        ]) &&
+        boundedString(item.processKey, 256) &&
+        item.processKey != '' &&
+        boundedString(item.arte, 160) &&
+        boundedString(item.detalle, 256) &&
+        (item.arte != '' || item.detalle != '') &&
+        boundedString(item.docente, 160) &&
+        boundedString(item.label, 256) &&
+        item.label != '';
+    }
+
+    function validProcessAt(items, index) {
+      return items.size() <= index || validProcessItem(items[index]);
+    }
+
+    function validProcessList(items) {
+      return items is list &&
+        items.size() <= 12 &&
+        validProcessAt(items, 0) &&
+        validProcessAt(items, 1) &&
+        validProcessAt(items, 2) &&
+        validProcessAt(items, 3) &&
+        validProcessAt(items, 4) &&
+        validProcessAt(items, 5) &&
+        validProcessAt(items, 6) &&
+        validProcessAt(items, 7) &&
+        validProcessAt(items, 8) &&
+        validProcessAt(items, 9) &&
+        validProcessAt(items, 10) &&
+        validProcessAt(items, 11);
+    }
+
+    function validProcessesUpdate() {
+      return changedStudentFieldsAreOnly([
+          'processes', 'area', 'instrumento', 'programa',
+          'updatedAt', 'updatedBy'
+        ]) &&
+        changedStudentFieldsInclude([
+          'processes', 'area', 'instrumento', 'programa'
+        ]) &&
+        validProcessList(request.resource.data.processes) &&
+        boundedString(request.resource.data.area, 160) &&
+        boundedString(request.resource.data.instrumento, 256) &&
+        boundedString(request.resource.data.programa, 256) &&
+        (
+          (
+            request.resource.data.processes.size() == 0 &&
+            request.resource.data.area == '' &&
+            request.resource.data.instrumento == '' &&
+            request.resource.data.programa == ''
+          ) ||
+          (
+            request.resource.data.processes.size() > 0 &&
+            request.resource.data.area ==
+              request.resource.data.processes[0].arte &&
+            request.resource.data.instrumento ==
+              request.resource.data.processes[0].detalle &&
+            request.resource.data.programa ==
+              request.resource.data.processes[0].label
+          )
+        ) &&
+        validActorPedagogicalAudit();
+    }
+
+    function validProfileFieldsUpdate() {
+      return changedStudentFieldsAreOnly([
+          'interesesMusicales', 'modalidad', 'modality',
+          'updatedAt', 'updatedBy'
+        ]) &&
+        changedStudentFieldsInclude([
+          'interesesMusicales', 'modalidad', 'modality'
+        ]) &&
+        (
+          !changedStudentFieldsInclude(['interesesMusicales']) ||
+          boundedString(request.resource.data.interesesMusicales, 2000)
+        ) &&
+        (
+          !changedStudentFieldsInclude(['modalidad', 'modality']) ||
+          (
+            boundedString(request.resource.data.modalidad, 80) &&
+            request.resource.data.modality == request.resource.data.modalidad
+          )
+        ) &&
+        validActorPedagogicalAudit();
+    }
+
+    function validRepertoireItem(item) {
+      return item is map &&
+        item.keys().hasAll([
+          'nombre', 'estado', 'prioridad', 'notas',
+          'fechaInicio', 'fechaLogro'
+        ]) &&
+        item.keys().hasOnly([
+          'nombre', 'estado', 'prioridad', 'notas',
+          'fechaInicio', 'fechaLogro'
+        ]) &&
+        boundedString(item.nombre, 300) &&
+        item.nombre != '' &&
+        item.estado in ['quiere', 'proceso', 'lograda'] &&
+        item.prioridad in ['alta', 'media', 'baja'] &&
+        boundedString(item.notas, 4000) &&
+        boundedString(item.fechaInicio, 10) &&
+        boundedString(item.fechaLogro, 10) &&
+        (
+          item.fechaInicio == '' ||
+          item.fechaInicio.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        ) &&
+        (
+          item.fechaLogro == '' ||
+          item.fechaLogro.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        );
+    }
+
+    function validRepertoireAt(names, items, index) {
+      return items.size() <= index ||
+        (
+          names.size() > index &&
+          validRepertoireItem(items[index]) &&
+          names[index] == items[index].nombre
+        );
+    }
+
+    function validRepertoirePayload(names, items) {
+      return names is list &&
+        items is list &&
+        names.size() == items.size() &&
+        items.size() <= 12 &&
+        names.toSet().size() == names.size() &&
+        validRepertoireAt(names, items, 0) &&
+        validRepertoireAt(names, items, 1) &&
+        validRepertoireAt(names, items, 2) &&
+        validRepertoireAt(names, items, 3) &&
+        validRepertoireAt(names, items, 4) &&
+        validRepertoireAt(names, items, 5) &&
+        validRepertoireAt(names, items, 6) &&
+        validRepertoireAt(names, items, 7) &&
+        validRepertoireAt(names, items, 8) &&
+        validRepertoireAt(names, items, 9) &&
+        validRepertoireAt(names, items, 10) &&
+        validRepertoireAt(names, items, 11);
+    }
+
+    function validRepertoireUpdate() {
+      return changedStudentFieldsAreOnly([
+          'repertorioEscogido', 'repertoire',
+          'repertorioProceso', 'repertoireProgress',
+          'updatedAt', 'updatedBy'
+        ]) &&
+        changedStudentFieldsInclude([
+          'repertorioEscogido', 'repertoire',
+          'repertorioProceso', 'repertoireProgress'
+        ]) &&
+        request.resource.data.repertorioEscogido ==
+          request.resource.data.repertoire &&
+        request.resource.data.repertorioProceso ==
+          request.resource.data.repertoireProgress &&
+        validRepertoirePayload(
+          request.resource.data.repertorioEscogido,
+          request.resource.data.repertorioProceso
+        ) &&
+        validFixedPedagogicalAudit('profile_repertoire');
+    }
+
+    /*
+      Enruta cada request a un solo validador. Ademas de impedir payloads que
+      mezclen operaciones, evita evaluar las dos listas anidadas cuando el
+      cambio pertenece a otro flujo.
+    */
+    function validAdminPedagogicalUpdate() {
+      return request.resource.data.updatedBy is string &&
+        (
+          request.resource.data.updatedBy == 'profile_teacher_assignment'
+            ? validTeacherAssignmentUpdate()
+            : request.resource.data.updatedBy == 'profile_repertoire'
+              ? validRepertoireUpdate()
+              : changedStudentFieldsInclude([
+                    'processes', 'area', 'instrumento', 'programa'
+                  ])
+                ? validProcessesUpdate()
+                : validProfileFieldsUpdate()
+        );
+    }
+
+    function validTeacherPedagogicalUpdate() {
+      return request.resource.data.updatedBy is string &&
+        (
+          request.resource.data.updatedBy == 'profile_repertoire'
+            ? validRepertoireUpdate()
+            : validProfileFieldsUpdate()
+        );
+    }
+
     match /students/{studentId} {
       allow read: if isAdmin() || isTeacher() || studentOwnsStudentDoc();
-      // Identidad y estado son exclusivos de los sincronizadores con Admin SDK.
-      allow create, update, delete: if false;
+
+      // Solo mutaciones pedagogicas exactas; identidad, estado y finanzas no
+      // aparecen en ninguna allowlist y permanecen exclusivas del backend.
+      allow update: if
+        (isAdmin() && validAdminPedagogicalUpdate()) ||
+        (teacherCanEditStudent() && validTeacherPedagogicalUpdate());
+
+      allow create, delete: if false;
     }
 
     // Bitácora de sincronizaciones entre proyectos (escrita solo por los
