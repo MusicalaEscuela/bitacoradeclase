@@ -9,7 +9,7 @@
   },
   "scripts": {
     "lint": "node --check index.js",
-    "test": "node test/identity.test.js && node test/registration.test.js && node test/backfill.test.js && node test/client-config.test.js",
+    "test": "node test/identity.test.js && node test/registration.test.js && node test/backfill.test.js && node test/client-config.test.js && node --test test/historical-directory.test.js",
     "deploy": "firebase deploy --only functions --project estudiantes-musicala"
   },
   "dependencies": {

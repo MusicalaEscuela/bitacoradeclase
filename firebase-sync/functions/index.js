@@ -29,6 +29,7 @@ const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/
 const { HttpsError, onCall, onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
+const { buildHistoricalDirectory } = require("./historical-directory");
 
 /*
   Secreto para la huella HMAC del documento de identidad.
@@ -54,6 +55,15 @@ const SYNC_LOGS_COLLECTION = "sync_logs";
 const INTEGRATION_JOBS_COLLECTION = "integration_jobs";
 const REGISTRATION_EVENTS_COLLECTION = "registration_events";
 const RATE_LIMIT_COLLECTION = "registration_rate_limits";
+
+const STUDENT_DIRECTORY_EMAILS = new Set([
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com",
+  "adminmusicala@gmail.com",
+  "musicalaasesor@gmail.com",
+]);
+const HISTORICAL_DIRECTORY_CACHE_MS = 5 * 60 * 1000;
+let historicalDirectoryCache = { expiresAt: 0, payload: null };
 
 const SCHEMA_VERSION = 2;
 
@@ -1071,6 +1081,7 @@ async function mirrorStudentDoc(raw, sourceDocId) {
 
 const BACKFILL_MAX_STUDENTS = 10;
 const BACKFILL_APPLY_CONFIRMATION = "APPLY_EXPLICIT_STUDENT_IDS";
+const BACKFILL_APPLY_ENABLED = process.env.BACKFILL_APPLY_ENABLED === "true";
 const BACKFILL_PILOT_ID = "msQWTSLw0PZwR6JtZOBz";
 const BACKFILL_CREATED_CUTOFF_MS = Date.parse("2026-07-12T05:00:00.000Z");
 const BACKFILL_PLAN_VERSION = 2;
@@ -1165,6 +1176,9 @@ function validateBackfillRequestBody(body, query = {}) {
   }
 
   if (mode === "apply") {
+    if (!BACKFILL_APPLY_ENABLED) {
+      throw new BackfillRequestError("APPLY_DISABLED");
+    }
     if (body.confirmApply !== BACKFILL_APPLY_CONFIRMATION) {
       throw new BackfillRequestError("APPLY_CONFIRMATION_REQUIRED");
     }
@@ -2394,6 +2408,76 @@ exports.diagnoseStudentAccess = onRequest(
         ok: false,
         code: "DIAGNOSTIC_FAILED",
       });
+    }
+  }
+);
+
+/*
+  Complemento histórico para la Lista de Estudiantes.
+
+  Es callable para que Firebase valide el ID token del proyecto
+  estudiantes-musicala. Solo las cuatro cuentas operativas reciben datos. La
+  función consulta ambas fuentes, resuelve duplicados con evidencia y devuelve
+  exclusivamente filas resumidas de solo lectura. No realiza escrituras.
+*/
+exports.listHistoricalStudents = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 120,
+    memory: "512MiB",
+  },
+  async (request) => {
+    const email = toText(request.auth && request.auth.token && request.auth.token.email).toLowerCase();
+    if (!request.auth || !STUDENT_DIRECTORY_EMAILS.has(email)) {
+      throw new HttpsError("permission-denied", "Cuenta no autorizada para consultar el directorio.");
+    }
+
+    if (historicalDirectoryCache.payload && historicalDirectoryCache.expiresAt > Date.now()) {
+      return historicalDirectoryCache.payload;
+    }
+
+    try {
+      const [sourceSnapshot, bitacorasSnapshot] = await Promise.all([
+        sourceDb.collection(SOURCE_STUDENTS_COLLECTION).get(),
+        bitacorasDb.collection(TARGET_STUDENTS_COLLECTION).get(),
+      ]);
+      const sourceRecords = sourceSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      const bitacorasRecords = bitacorasSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      const result = buildHistoricalDirectory(sourceRecords, bitacorasRecords);
+
+      logger.info("Directorio historico consultado.", buildTechnicalLog({
+        eventId: request.rawRequest && request.rawRequest.id,
+        status: "ok",
+        operations: ["read_only_historical_directory"],
+        counts: {
+          writes: 0,
+          sourceDocuments: result.counts.sourceDocuments,
+          historicalStudents: result.counts.historicalStudents,
+        },
+      }));
+
+      const payload = {
+        ok: true,
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        students: result.students,
+        counts: result.counts,
+        writes: 0,
+      };
+      historicalDirectoryCache = {
+        expiresAt: Date.now() + HISTORICAL_DIRECTORY_CACHE_MS,
+        payload,
+      };
+      return payload;
+    } catch (error) {
+      logger.error("Fallo el directorio historico.", buildTechnicalLog({
+        eventId: request.rawRequest && request.rawRequest.id,
+        status: "failed",
+        operations: ["read_only_historical_directory"],
+        code: safeTechnicalCode(error),
+        counts: { writes: 0 },
+      }));
+      throw new HttpsError("internal", "No se pudo consultar el directorio historico.");
     }
   }
 );
