@@ -26,6 +26,12 @@ const CONFIG = {
   // Evita que cada apertura de la app dispare una corrida completa.
   SYNC_MIN_INTERVAL_MINUTES: 5,
 
+  // El trigger horario procesa una porcion estable de la hoja. El presupuesto
+  // deja 30 segundos para persistir cursor y reporte antes del limite duro.
+  SYNC_BATCH_MAX_ROWS: 40,
+  SYNC_BUDGET_MS: 240000,
+  SYNC_SAFETY_MARGIN_MS: 30000,
+
   COLS: {
     NOMBRE: 1,
     ESTADO: 2,
@@ -656,49 +662,534 @@ function toBoolean_(value, defaultValue) {
 
 function syncAllSheetsToFirestore() {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    throw new Error("Ya hay una sincronizacion de estudiantes en curso.");
+  const startedAtMs = Date.now();
+  let cursorBefore = emptySyncCursor_("idle");
+  let report = createBatchSyncReport_("", cursorBefore, startedAtMs);
+
+  if (!lock.tryLock(1000)) {
+    report.status = "failed";
+    report.errors = 1;
+    report.errorCode = "LOCK_BUSY";
+    report.durationMs = Date.now() - startedAtMs;
+    saveSyncBatchReport_(report);
+    return report;
   }
 
-  const startedAt = new Date();
-  const report = createSyncReport_(startedAt);
-
   try {
-    const studentsReport = syncStudentsSheetToFirestore({ report: report });
-    const usersReport = syncStudentAccessUsersToFirestore({
-      report: report,
-      students: studentsReport.students,
-    });
+    const cursorStartedAt = Date.now();
+    cursorBefore = normalizeSyncCursor_(loadSyncCursor_());
+    if (cursorBefore.cycleState !== "running") {
+      cursorBefore = createRunningSyncCursor_();
+    }
+    report = createBatchSyncReport_(cursorBefore.runId, cursorBefore, startedAtMs);
+    report.stages.cursorReadMs = Date.now() - cursorStartedAt;
+    report.metrics.firestoreCalls.reads += 1;
 
-    report.students = stripInternalSyncReport_(studentsReport);
-    report.users = stripInternalSyncReport_(usersReport);
-    report.synced = report.created + report.updated;
-    report.finishedAt = new Date().toISOString();
-    report.ok = true;
+    const controlStartedAt = Date.now();
+    const control = loadSyncControl_();
+    report.stages.controlReadMs = Date.now() - controlStartedAt;
+    report.metrics.firestoreCalls.reads += 1;
+    const maxRows = effectiveSyncBatchSize_(control, cursorBefore.runId);
 
-    saveSyncReportToFirestore_(report);
+    const sheetStartedAt = Date.now();
+    const sheet = getStudentSheetForSync_();
+    const page = readStudentRowsBatch_(sheet, cursorBefore.nextRow, maxRows);
+    report.stages.sheetReadMs = Date.now() - sheetStartedAt;
+    report.metrics.sheetReads = page.rows.length ? 1 : 0;
+
+    if (isSyncBudgetReached_(startedAtMs, Date.now(), CONFIG.SYNC_BUDGET_MS, CONFIG.SYNC_SAFETY_MARGIN_MS)) {
+      const pausedCursor = runningSyncCursor_(cursorBefore, cursorBefore.sheet, cursorBefore.nextRow);
+      saveSyncCursor_(pausedCursor);
+      report.metrics.firestoreCalls.writes += 1;
+      report.status = "partial";
+      report.errorCode = "BUDGET_REACHED_BEFORE_BATCH";
+      report.cursorAfter = sanitizeSyncCursor_(pausedCursor);
+    } else if (!page.rows.length) {
+      const completedCursor = completedSyncCursor_(cursorBefore, page.sheetName);
+      saveSyncCursor_(completedCursor);
+      report.metrics.firestoreCalls.writes += 1;
+      report.status = "completed";
+      report.cursorAfter = sanitizeSyncCursor_(completedCursor);
+    } else {
+      const result = processStudentRowsBatch_(page.rows, startedAtMs);
+      report.processed = result.processed;
+      report.created = result.created;
+      report.updated = result.updated;
+      report.noOp = result.noOp;
+      report.errors = result.errors;
+      report.students = result.students;
+      report.users = result.users;
+      report.stages.firestoreReadMs = result.firestoreReadMs;
+      report.stages.buildMs = result.buildMs;
+      report.stages.writeMs = result.writeMs;
+      report.metrics.firestoreCalls.reads += result.firestoreReadCalls;
+      report.metrics.firestoreCalls.writes += result.firestoreWriteCalls;
+
+      if (result.budgetReached) {
+        const pausedCursor = runningSyncCursor_(cursorBefore, cursorBefore.sheet, cursorBefore.nextRow);
+        saveSyncCursor_(pausedCursor);
+        report.metrics.firestoreCalls.writes += 1;
+        report.status = "partial";
+        report.errorCode = "BUDGET_REACHED_BEFORE_WRITE";
+        report.cursorAfter = sanitizeSyncCursor_(pausedCursor);
+      } else {
+        const nextRow = page.rows[page.rows.length - 1].rowNumber + 1;
+        const cycleCompleted = nextRow > page.lastRow;
+        const cursorAfter = cycleCompleted
+          ? completedSyncCursor_(cursorBefore, page.sheetName)
+          : runningSyncCursor_(cursorBefore, page.sheetName, nextRow);
+        const cursorWriteStartedAt = Date.now();
+        saveSyncCursor_(cursorAfter);
+        report.stages.cursorWriteMs = Date.now() - cursorWriteStartedAt;
+        report.metrics.firestoreCalls.writes += 1;
+        report.status = cycleCompleted ? "completed" : "partial";
+        report.cursorAfter = sanitizeSyncCursor_(cursorAfter);
+      }
+    }
+
+    if (control && control.once === true &&
+        (!control.runId || String(control.runId) === String(cursorBefore.runId))) {
+      clearSyncControl_();
+      report.metrics.firestoreCalls.writes += 1;
+    }
+
+    report.durationMs = Date.now() - startedAtMs;
+    // La escritura del propio reporte tambien es una llamada Firestore.
+    report.metrics.firestoreCalls.writes += 1;
+    saveSyncBatchReport_(report);
     return report;
   } catch (error) {
-    report.ok = false;
-    report.error = error && error.message ? error.message : String(error);
-    report.finishedAt = new Date().toISOString();
-
+    report.status = "failed";
+    report.errors = Math.max(1, Number(report.errors || 0));
+    report.errorCode = safeSyncErrorCode_(error);
+    report.cursorAfter = sanitizeSyncCursor_(cursorBefore);
+    report.durationMs = Date.now() - startedAtMs;
+    report.metrics.firestoreCalls.writes += 1;
     try {
-      saveSyncReportToFirestore_(report);
-    } catch (saveError) {
-      console.error("No se pudo guardar el reporte de sincronizacion:", saveError);
+      saveSyncBatchReport_(report);
+    } catch (reportError) {
+      console.error("SYNC_REPORT_PERSIST_FAILED", safeSyncErrorCode_(reportError));
     }
-
-    try {
-      sendSyncFailureAlert_(report);
-    } catch (mailError) {
-      console.error("No se pudo enviar la alerta de fallo:", mailError);
-    }
-
-    throw error;
+    throw new Error(report.errorCode);
   } finally {
     lock.releaseLock();
   }
+}
+
+function emptySyncCursor_(cycleState) {
+  return {
+    sheet: CONFIG.STUDENTS_SHEET_NAME,
+    nextRow: CONFIG.DATA_START_ROW,
+    runId: "",
+    updatedAt: new Date().toISOString(),
+    cycleState: String(cycleState || "idle"),
+  };
+}
+
+function normalizeSyncCursor_(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const nextRow = Math.max(CONFIG.DATA_START_ROW, Number(source.nextRow || CONFIG.DATA_START_ROW));
+  return {
+    sheet: String(source.sheet || CONFIG.STUDENTS_SHEET_NAME),
+    nextRow: Number.isFinite(nextRow) ? Math.floor(nextRow) : CONFIG.DATA_START_ROW,
+    runId: String(source.runId || ""),
+    updatedAt: String(source.updatedAt || new Date().toISOString()),
+    cycleState: String(source.cycleState || "idle"),
+  };
+}
+
+function sanitizeSyncCursor_(value) {
+  const cursor = normalizeSyncCursor_(value);
+  return {
+    sheet: cursor.sheet,
+    nextRow: cursor.nextRow,
+    runId: cursor.runId,
+    updatedAt: cursor.updatedAt,
+    cycleState: cursor.cycleState,
+  };
+}
+
+function createSyncRunId_() {
+  return "students-sync-" + new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) + "-" +
+    Utilities.getUuid().replace(/-/g, "").slice(0, 10);
+}
+
+function createRunningSyncCursor_() {
+  return {
+    sheet: CONFIG.STUDENTS_SHEET_NAME,
+    nextRow: CONFIG.DATA_START_ROW,
+    runId: createSyncRunId_(),
+    updatedAt: new Date().toISOString(),
+    cycleState: "running",
+  };
+}
+
+function runningSyncCursor_(before, sheetName, nextRow) {
+  return {
+    sheet: String(sheetName || before.sheet || CONFIG.STUDENTS_SHEET_NAME),
+    nextRow: Math.max(CONFIG.DATA_START_ROW, Math.floor(Number(nextRow))),
+    runId: String(before.runId || createSyncRunId_()),
+    updatedAt: new Date().toISOString(),
+    cycleState: "running",
+  };
+}
+
+function completedSyncCursor_(before, sheetName) {
+  return {
+    sheet: String(sheetName || before.sheet || CONFIG.STUDENTS_SHEET_NAME),
+    nextRow: CONFIG.DATA_START_ROW,
+    runId: String(before.runId || createSyncRunId_()),
+    updatedAt: new Date().toISOString(),
+    cycleState: "completed",
+  };
+}
+
+function loadSyncCursor_() {
+  return getFirestoreDocument_("app_config", "sync_students_cursor");
+}
+
+function saveSyncCursor_(cursor) {
+  replaceFirestoreDocument_("app_config", "sync_students_cursor", sanitizeSyncCursor_(cursor));
+}
+
+function loadSyncControl_() {
+  return getFirestoreDocument_("app_config", "sync_students_control");
+}
+
+function clearSyncControl_() {
+  deleteFirestoreDocument_("app_config", "sync_students_control");
+}
+
+function effectiveSyncBatchSize_(control, runId) {
+  const matchesRun = !control || !control.runId || String(control.runId) === String(runId || "");
+  const requested = matchesRun && control ? Number(control.maxRows || 0) : 0;
+  if (Number.isFinite(requested) && requested >= 1) {
+    return Math.min(CONFIG.SYNC_BATCH_MAX_ROWS, Math.floor(requested));
+  }
+  return CONFIG.SYNC_BATCH_MAX_ROWS;
+}
+
+function createBatchSyncReport_(runId, cursorBefore, startedAtMs) {
+  return {
+    status: "partial",
+    runId: String(runId || ""),
+    processed: 0,
+    created: 0,
+    updated: 0,
+    noOp: 0,
+    errors: 0,
+    cursorBefore: sanitizeSyncCursor_(cursorBefore),
+    cursorAfter: sanitizeSyncCursor_(cursorBefore),
+    durationMs: Math.max(0, Date.now() - Number(startedAtMs || Date.now())),
+    errorCode: null,
+    students: { created: 0, updated: 0, noOp: 0, errors: 0 },
+    users: { created: 0, updated: 0, noOp: 0, errors: 0 },
+    stages: {
+      cursorReadMs: 0,
+      controlReadMs: 0,
+      sheetReadMs: 0,
+      firestoreReadMs: 0,
+      buildMs: 0,
+      writeMs: 0,
+      cursorWriteMs: 0,
+    },
+    metrics: {
+      sheetReads: 0,
+      firestoreCalls: { reads: 0, writes: 0 },
+    },
+  };
+}
+
+function assertSyncReportHasNoPii_(report) {
+  const serialized = JSON.stringify(report || {});
+  if (/@/.test(serialized) || /\b(?:CC|TI|RC|CE|PAS|PPT)\s*\d{4,}\b/i.test(serialized)) {
+    throw new Error("SYNC_REPORT_PII_DETECTED");
+  }
+  const forbiddenKeys = ["email", "correo", "document", "payload", "message", "studentId", "name"];
+  const stack = [report || {}];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object") continue;
+    Object.keys(current).forEach(function (key) {
+      const normalized = String(key).toLowerCase();
+      if (forbiddenKeys.some(function (forbidden) { return normalized.indexOf(forbidden.toLowerCase()) !== -1; })) {
+        throw new Error("SYNC_REPORT_PII_KEY_DETECTED");
+      }
+      stack.push(current[key]);
+    });
+  }
+}
+
+function saveSyncBatchReport_(report) {
+  assertSyncReportHasNoPii_(report);
+  replaceFirestoreDocument_("app_config", "sync_students_last_report", report);
+}
+
+function isSyncBudgetReached_(startedAtMs, nowMs, budgetMs, safetyMarginMs) {
+  return Number(nowMs) - Number(startedAtMs) >= Number(budgetMs) - Number(safetyMarginMs || 0);
+}
+
+function safeSyncErrorCode_(error) {
+  const text = String(error && error.message ? error.message : error || "").toUpperCase();
+  if (text.indexOf("LOCK_BUSY") !== -1) return "LOCK_BUSY";
+  if (text.indexOf("PERMISSION") !== -1 || text.indexOf("403") !== -1) return "FIRESTORE_PERMISSION_DENIED";
+  if (text.indexOf("RESOURCE_EXHAUSTED") !== -1 || text.indexOf("429") !== -1) return "FIRESTORE_RESOURCE_EXHAUSTED";
+  if (text.indexOf("DEADLINE") !== -1 || text.indexOf("TIME") !== -1) return "UPSTREAM_DEADLINE";
+  if (text.indexOf("SYNC_REPORT_PII") !== -1) return "SYNC_REPORT_PII_REJECTED";
+  return "SYNC_FAILED";
+}
+
+function getStudentSheetForSync_() {
+  return getSheetByCandidates_(CONFIG.STUDENTS_SHEET_NAME, CONFIG.STUDENTS_SHEET_CANDIDATES);
+}
+
+function readStudentRowsBatch_(sheet, startRow, maxRows) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  const safeStart = Math.max(CONFIG.DATA_START_ROW, Math.floor(Number(startRow || CONFIG.DATA_START_ROW)));
+  if (lastRow < safeStart || lastCol < 1) {
+    return { sheetName: sheet.getName(), lastRow: lastRow, rows: [] };
+  }
+  const count = Math.min(Math.max(1, Math.floor(Number(maxRows || 1))), lastRow - safeStart + 1);
+  const values = sheet.getRange(safeStart, 1, count, lastCol).getValues();
+  return {
+    sheetName: sheet.getName(),
+    lastRow: lastRow,
+    rows: values.map(function (row, index) {
+      return { rowNumber: safeStart + index, values: row };
+    }),
+  };
+}
+
+function parseBatchGetResponse_(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch (error) {
+    return raw.split(/\r?\n/).filter(Boolean).map(function (line) { return JSON.parse(line); });
+  }
+}
+
+function batchGetFirestoreDocuments_(collectionName, docIds) {
+  const uniqueIds = Array.from(new Set((docIds || []).map(function (id) {
+    return String(id || "").trim();
+  }).filter(Boolean)));
+  if (!uniqueIds.length) return {};
+  const names = uniqueIds.map(function (docId) {
+    return firestoreDocumentName_(collectionName, docId);
+  });
+  const response = UrlFetchApp.fetch(firestoreBaseUrl_() + "/documents:batchGet", {
+    method: "post",
+    contentType: "application/json",
+    headers: { Authorization: "Bearer " + getFirestoreAccessToken_() },
+    payload: JSON.stringify({ documents: names }),
+    muteHttpExceptions: true,
+  });
+  assertFirestoreResponse_(response, "batchGet " + collectionName);
+  const result = {};
+  parseBatchGetResponse_(response.getContentText()).forEach(function (item) {
+    if (!item || !item.found) return;
+    const parts = String(item.found.name || "").split("/");
+    const docId = decodeURIComponent(parts[parts.length - 1]);
+    result[docId] = decodeFirestoreFields_(item.found.fields || {});
+  });
+  return result;
+}
+
+function normalizedSyncIds_(values) {
+  const seen = {};
+  (values || []).forEach(function (value) {
+    const text = String(value || "").trim();
+    if (text) seen[text] = true;
+  });
+  return Object.keys(seen).sort();
+}
+
+function managedSyncValuesEqual_(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return JSON.stringify(normalizedSyncIds_(Array.isArray(left) ? left : [])) ===
+      JSON.stringify(normalizedSyncIds_(Array.isArray(right) ? right : []));
+  }
+  if (left && typeof left === "object" || right && typeof right === "object") {
+    return JSON.stringify(left || null) === JSON.stringify(right || null);
+  }
+  const leftValue = left === undefined || left === null ? "" : left;
+  const rightValue = right === undefined || right === null ? "" : right;
+  return String(leftValue) === String(rightValue);
+}
+
+function hasManagedSyncChanges_(existing, payload) {
+  if (!existing) return true;
+  return Object.keys(payload || {}).some(function (key) {
+    if (key === "createdAt" || key === "updatedAt") return false;
+    return !managedSyncValuesEqual_(existing[key], payload[key]);
+  });
+}
+
+function buildManagedStudentSyncPayload_(student, existing) {
+  const normalized = normalizeStudentForFirestore_(student);
+  normalized.processes = mergeProcessesWithExisting_(existing ? existing.processes : [], normalized.processes);
+  normalized.source = "students_sheet_sync";
+  normalized.syncOrigin = "apps_script_trigger";
+  return normalized;
+}
+
+function studentAliasesForUserSync_(student) {
+  return normalizedSyncIds_([
+    student && student.studentKey,
+    student && student.id,
+    student && student.studentId,
+    student && student.estudianteId,
+    student && student.documento,
+    student && student.identificacion,
+    student && student.numeroDocumento,
+    student && student.sourceRow,
+  ].concat(Array.isArray(student && student.studentIds) ? student.studentIds : []));
+}
+
+function buildManagedUserSyncPayload_(existing, email, group) {
+  const members = Array.isArray(group) ? group : [];
+  const primary = members[0] || {};
+  const ids = normalizedSyncIds_((existing && existing.studentIds || [])
+    .concat(existing && existing.studentId || [])
+    .concat(members.reduce(function (all, member) {
+      return all.concat(studentAliasesForUserSync_(member));
+    }, [])));
+  const sheetStudentKey = String(primary.studentKey || primary.id || primary.studentId || "").trim();
+  const studentKey = String(existing && existing.studentKey || sheetStudentKey).trim();
+  const payload = {
+    email: String(existing && existing.email || email).trim().toLowerCase(),
+    studentId: selectCanonicalUserStudentId_(existing || null, ids, sheetStudentKey),
+    studentKey: studentKey,
+    studentIds: ids,
+    displayName: String(existing && existing.displayName || primary.nombre || primary.name || "").trim(),
+    source: String(existing && existing.source || "students_sheet_sync"),
+    sourceRow: existing && existing.sourceRow !== undefined && existing.sourceRow !== null
+      ? existing.sourceRow
+      : primary.sourceRow || null,
+    syncOrigin: String(existing && existing.syncOrigin || "apps_script_trigger"),
+  };
+  if (!existing) {
+    payload.emailNormalized = String(email || "").trim().toLowerCase();
+    payload.role = "student";
+    payload.studentStatus = String(primary.estado || primary.status || primary.estadoActual || "").trim();
+    payload.active = isStudentAllowedToLogInForSync_(primary);
+  }
+  return payload;
+}
+
+function buildManagedSyncOperation_(collectionName, docId, existing, payload, nowIso) {
+  if (!hasManagedSyncChanges_(existing, payload)) return null;
+  const writePayload = Object.assign({}, payload, { updatedAt: nowIso });
+  if (!existing) writePayload.createdAt = nowIso;
+  return { collectionName: collectionName, docId: docId, payload: writePayload };
+}
+
+function processStudentRowsBatch_(rowRecords, startedAtMs) {
+  const mapped = (rowRecords || []).map(mapRowToStudent_).filter(Boolean);
+  const studentIds = [];
+  const groupsByEmail = {};
+  const emailOrder = [];
+  let invalidRows = (rowRecords || []).length - mapped.length;
+
+  mapped.forEach(function (student) {
+    const studentKey = String(student.studentKey || student.id || student.studentId || "").trim();
+    if (studentKey) studentIds.push(studentKey);
+    else invalidRows += 1;
+    const emails = (Array.isArray(student.emails) && student.emails.length
+      ? student.emails
+      : [student.email || student.correo || student.correoElectronico]
+    ).map(normalizeEmail_).filter(Boolean);
+    emails.forEach(function (email) {
+      if (!groupsByEmail[email]) {
+        groupsByEmail[email] = [];
+        emailOrder.push(email);
+      }
+      groupsByEmail[email].push(student);
+    });
+  });
+
+  const firestoreReadStartedAt = Date.now();
+  const existingStudents = batchGetFirestoreDocuments_("students", studentIds);
+  const existingUsers = batchGetFirestoreDocuments_("users", emailOrder);
+  const firestoreReadMs = Date.now() - firestoreReadStartedAt;
+
+  const buildStartedAt = Date.now();
+  const operations = [];
+  const students = { created: 0, updated: 0, noOp: 0, errors: invalidRows };
+  const users = { created: 0, updated: 0, noOp: 0, errors: 0 };
+  const nowIso = new Date().toISOString();
+
+  mapped.forEach(function (student) {
+    const studentKey = String(student.studentKey || student.id || student.studentId || "").trim();
+    if (!studentKey) return;
+    const existing = existingStudents[studentKey] || null;
+    const payload = buildManagedStudentSyncPayload_(student, existing);
+    const operation = buildManagedSyncOperation_("students", studentKey, existing, payload, nowIso);
+    if (!operation) students.noOp += 1;
+    else {
+      operations.push(operation);
+      if (existing) students.updated += 1;
+      else students.created += 1;
+    }
+  });
+
+  emailOrder.forEach(function (email) {
+    const existing = existingUsers[email] || null;
+    const role = normalizeText_(existing && (existing.role || existing.rol));
+    if (existing && role && role !== "student" && role !== "estudiante") {
+      users.errors += 1;
+      return;
+    }
+    const payload = buildManagedUserSyncPayload_(existing, email, groupsByEmail[email]);
+    const operation = buildManagedSyncOperation_("users", email, existing, payload, nowIso);
+    if (!operation) users.noOp += 1;
+    else {
+      operations.push(operation);
+      if (existing) users.updated += 1;
+      else users.created += 1;
+    }
+  });
+  const buildMs = Date.now() - buildStartedAt;
+
+  if (isSyncBudgetReached_(startedAtMs, Date.now(), CONFIG.SYNC_BUDGET_MS, CONFIG.SYNC_SAFETY_MARGIN_MS)) {
+    return {
+      processed: 0,
+      created: 0,
+      updated: 0,
+      noOp: 0,
+      errors: invalidRows,
+      students: { created: 0, updated: 0, noOp: 0, errors: invalidRows },
+      users: { created: 0, updated: 0, noOp: 0, errors: 0 },
+      firestoreReadMs: firestoreReadMs,
+      buildMs: buildMs,
+      writeMs: 0,
+      firestoreReadCalls: 2,
+      firestoreWriteCalls: 0,
+      budgetReached: true,
+    };
+  }
+
+  const writeStartedAt = Date.now();
+  if (operations.length) commitFirestoreOperations_(operations);
+  const writeMs = Date.now() - writeStartedAt;
+  return {
+    processed: (rowRecords || []).length,
+    created: students.created + users.created,
+    updated: students.updated + users.updated,
+    noOp: students.noOp + users.noOp,
+    errors: students.errors + users.errors,
+    students: students,
+    users: users,
+    firestoreReadMs: firestoreReadMs,
+    buildMs: buildMs,
+    writeMs: writeMs,
+    firestoreReadCalls: 2,
+    firestoreWriteCalls: operations.length ? 1 : 0,
+    budgetReached: false,
+  };
 }
 
 function syncStudentsSheetToFirestore(options) {
@@ -740,6 +1231,12 @@ function syncStudentsSheetToFirestore(options) {
     seenStudentKeys[normalized.studentKey] = true;
 
     const existing = existingById[normalized.studentKey] || null;
+    // Conserva las areas agregadas a mano desde Bitácoras: la hoja no las
+    // conoce y sin este merge cada sync las borraria del doc de Firestore.
+    normalized.processes = mergeProcessesWithExisting_(
+      existing ? existing.processes : [],
+      normalized.processes
+    );
     if (!hasStudentFirestoreChanges_(existing, normalized)) {
       report.unchanged += 1;
       ownReport.unchanged += 1;
@@ -935,12 +1432,13 @@ function syncStudentAccessUsersToFirestore(options) {
     });
     const studentIds = Object.keys(idsMap).sort();
     const studentKey = String(primary.studentKey || primary.id || primary.studentId || "").trim();
+    const studentId = selectCanonicalUserStudentId_(canonical, studentIds, studentKey);
 
     const now = new Date().toISOString();
     const payload = {
       email: email,
       role: "student",
-      studentId: studentKey,
+      studentId: studentId,
       studentKey: studentKey,
       studentIds: studentIds,
       displayName: String(primary.nombre || primary.name || primary.nombreCompleto || "").trim(),
@@ -1225,6 +1723,29 @@ function stripInternalSyncReport_(report) {
   return copy;
 }
 
+function processIdentity_(process) {
+  if (!process || typeof process !== "object") return "";
+  const area = String(process.arte || process.area || "").trim().toLowerCase();
+  const detail = String(process.detalle || process.instrumento || "").trim().toLowerCase();
+  if (!area && !detail) return "";
+  return area + "|" + detail;
+}
+
+function mergeProcessesWithExisting_(existingProcesses, syncedProcesses) {
+  const synced = Array.isArray(syncedProcesses) ? syncedProcesses : [];
+  const existing = Array.isArray(existingProcesses) ? existingProcesses : [];
+  const syncedIdentities = {};
+  synced.forEach(function (process) {
+    const identity = processIdentity_(process);
+    if (identity) syncedIdentities[identity] = true;
+  });
+  const kept = existing.filter(function (process) {
+    const identity = processIdentity_(process);
+    return identity && !syncedIdentities[identity];
+  });
+  return synced.concat(kept);
+}
+
 function normalizeStudentForFirestore_(student) {
   const studentKey = String(student.studentKey || student.id || student.studentId || "").trim();
   return {
@@ -1309,6 +1830,20 @@ function hasUserAccessChanges_(existing, next) {
     .sort();
 
   return JSON.stringify(currentIds) !== JSON.stringify(nextIds);
+}
+
+/*
+ * El sync de la hoja conserva el studentId escalar ya canonizado por el
+ * backfill cuando sigue vinculado en studentIds. La hoja continúa aportando
+ * studentKey como alias legado, pero no puede degradar el ID canónico.
+ */
+function selectCanonicalUserStudentId_(existing, studentIds, sheetStudentKey) {
+  const currentStudentId = String(existing && existing.studentId || "").trim();
+  const linkedIds = Array.isArray(studentIds) ? studentIds : [];
+  if (currentStudentId && linkedIds.indexOf(currentStudentId) !== -1) {
+    return currentStudentId;
+  }
+  return String(sheetStudentKey || "").trim();
 }
 
 function isStudentAllowedToLogInForSync_(student) {
@@ -1630,6 +2165,21 @@ function setFirestoreDocument_(collectionName, docId, payload) {
   });
 
   assertFirestoreResponse_(response, "guardar " + collectionName + "/" + docId);
+}
+
+function replaceFirestoreDocument_(collectionName, docId, payload) {
+  const url = firestoreDocumentUrl_(collectionName, docId, []);
+  const response = UrlFetchApp.fetch(url, {
+    method: "patch",
+    contentType: "application/json",
+    headers: {
+      Authorization: "Bearer " + getFirestoreAccessToken_(),
+      "Content-Type": "application/json",
+    },
+    payload: JSON.stringify({ fields: encodeFirestoreFields_(payload || {}) }),
+    muteHttpExceptions: true,
+  });
+  assertFirestoreResponse_(response, "reemplazar " + collectionName + "/" + docId);
 }
 
 function deleteFirestoreDocument_(collectionName, docId) {

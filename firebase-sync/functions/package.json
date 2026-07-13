@@ -1,0 +1,19 @@
+{
+  "name": "musicala-student-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Identidad y backend transitorio de registro para estudiantes-musicala.",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "lint": "node --check index.js",
+    "test": "node test/identity.test.js && node test/registration.test.js && node test/backfill.test.js && node test/client-config.test.js",
+    "deploy": "firebase deploy --only functions --project estudiantes-musicala"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.0.1"
+  }
+}

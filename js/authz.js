@@ -1,12 +1,31 @@
 import { CONFIG } from "./config.js";
 import { toStringSafe } from "./utils/shared.js";
 
+const ADMIN_ROLE_ALIASES = new Set([
+  "admin",
+  "administrator",
+  "administrador",
+  "administradora",
+  "administrative",
+  "administrativo",
+  "administrativa",
+  "direction",
+  "direccion",
+  "dirección",
+]);
+
+const TEACHER_ROLE_ALIASES = new Set([
+  "teacher",
+  "docente",
+  "profesor",
+  "profesora",
+]);
+
 export function normalizeRole(role) {
   const safeRole = toStringSafe(role).toLowerCase();
 
-  if (safeRole === CONFIG.roles.admin) return CONFIG.roles.admin;
-  if (safeRole === CONFIG.roles.teacher) return CONFIG.roles.teacher;
-  if (safeRole === "docente") return CONFIG.roles.teacher;
+  if (ADMIN_ROLE_ALIASES.has(safeRole)) return CONFIG.roles.admin;
+  if (TEACHER_ROLE_ALIASES.has(safeRole)) return CONFIG.roles.teacher;
   return "unauthorized";
 }
 
@@ -25,22 +44,12 @@ export function resolveUserAccess(user = null) {
     };
   }
 
-  const email = toStringSafe(user.email).toLowerCase();
-  const bootstrapAdmins = Array.isArray(CONFIG.access?.bootstrapAdminEmails)
-    ? CONFIG.access.bootstrapAdminEmails.map((item) => toStringSafe(item).toLowerCase())
-    : [];
-
   const explicitRole = normalizeRole(user.role);
   const isActive = user?.active !== false;
 
-  const role =
-    bootstrapAdmins.includes(email)
-      ? CONFIG.roles.admin
-      : explicitRole;
-
-  if (role === CONFIG.roles.admin && (bootstrapAdmins.includes(email) || isActive)) {
+  if (explicitRole === CONFIG.roles.admin && isActive) {
     return {
-      role,
+      role: CONFIG.roles.admin,
       linkedStudentId: "",
       canManageSettings: true,
       canEditBitacoras: true,
@@ -52,7 +61,7 @@ export function resolveUserAccess(user = null) {
     };
   }
 
-  if (role === CONFIG.roles.teacher && isActive) {
+  if (explicitRole === CONFIG.roles.teacher && isActive) {
     return {
       role: CONFIG.roles.teacher,
       linkedStudentId: "",

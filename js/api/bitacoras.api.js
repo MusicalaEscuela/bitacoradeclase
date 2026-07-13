@@ -348,16 +348,29 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
     });
   }
 
+  // Contrato de identidad v2: toda bitácora nueva referencia al estudiante
+  // por su studentId canónico (primaryStudentId) además del array studentIds,
+  // y congela un snapshot del nombre para que un cambio de nombre posterior
+  // no rompa ni reescriba el historial.
+  const primaryRef = studentRefs.find((ref) => ref.id === primaryStudentId);
+  const studentNameSnapshot =
+    safeString(input.studentNameSnapshot) || safeString(primaryRef?.name);
+
   return {
     mode,
     title,
     content,
     fechaClase,
+    date: fechaClase,
     studentIds,
     studentRefs,
     studentOverrides,
     primaryStudentId,
+    studentId: primaryStudentId,
+    studentNameSnapshot,
     author,
+    teacherId: author.uid,
+    teacherEmail: author.email,
     process,
     docentes,
     docente: docentes[0] || "",
@@ -366,6 +379,7 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
     status: safeString(input.status || "active"),
     source: safeString(input.source || "app"),
     metadata: isPlainObject(input.metadata) ? input.metadata : {},
+    schemaVersion: 2,
   };
 }
 
@@ -390,6 +404,10 @@ function normalizeBitacoraRecord(docSnap) {
       uniqueStrings(normalized.studentIds)
     ),
     primaryStudentId: safeString(normalized.primaryStudentId),
+    studentId: safeString(normalized.studentId || normalized.primaryStudentId),
+    studentNameSnapshot: safeString(normalized.studentNameSnapshot),
+    teacherId: safeString(normalized.teacherId || normalized.author?.uid),
+    teacherEmail: safeString(normalized.teacherEmail || normalized.author?.email),
     author: normalizeAuthor(normalized.author),
     process: normalizeProcess(normalized.process),
     docentes: normalizeTeachers(normalized.docentes, normalized.docente || normalized.process?.docente),

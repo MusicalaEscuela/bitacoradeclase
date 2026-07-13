@@ -1,0 +1,45 @@
+{
+  "firestore": {
+    "rules": "firebase rules/firestore.rules"
+  },
+  "storage": {
+    "rules": "firebase rules/storage.rules"
+  },
+  "hosting": {
+    "site": "bitacoras-de-clase",
+    "public": ".firebase-hosting",
+    "predeploy": [
+      "node scripts/prepare-hosting.mjs"
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          }
+        ]
+      }
+    ]
+  }
+}

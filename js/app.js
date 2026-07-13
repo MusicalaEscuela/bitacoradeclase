@@ -5,6 +5,7 @@ import {
   canAccessRoute,
   getDefaultViewForUser,
   getRoleLabel,
+  normalizeRole,
   resolveUserAccess,
 } from "./authz.js";
 import {
@@ -24,7 +25,6 @@ import {
   logoutUser,
   observeAuth,
 } from "./firebase.client.js";
-import { getCatalogs } from "./api/catalogs.api.js";
 import { getUserAccessProfile } from "./api/users.api.js";
 
 // ============================================================
@@ -381,39 +381,14 @@ async function handleObservedAuthUser(user) {
           error
         );
       }
-      const bootstrapAdmins = Array.isArray(CONFIG.access?.bootstrapAdminEmails)
-        ? CONFIG.access.bootstrapAdminEmails.map((item) =>
-            String(item || "").trim().toLowerCase()
-          )
-        : [];
-      const email = String(user?.email || "").trim().toLowerCase();
-      const isBootstrapAdmin = bootstrapAdmins.includes(email);
       const explicitRole = String(accessProfile?.role || "").trim().toLowerCase();
-      const allowedTeacherAccessProfile =
-        isAllowedTeacherAccessProfile(accessProfile);
       const isStudentAccessProfile = isStudentPortalAccessProfile(accessProfile);
-      const shouldCheckTeacher =
-        !isBootstrapAdmin &&
-        explicitRole !== CONFIG.roles.admin &&
-        !allowedTeacherAccessProfile;
-      const matchedTeacher = shouldCheckTeacher
-        ? await findTeacherByEmail(email)
-        : null;
+      const resolvedRole = normalizeRole(explicitRole);
       const mergedUser = {
         ...user,
-        role: isBootstrapAdmin
-          ? CONFIG.roles.admin
-          : explicitRole === CONFIG.roles.admin
-          ? CONFIG.roles.admin
-          : allowedTeacherAccessProfile || matchedTeacher
-          ? CONFIG.roles.teacher
-          : "unauthorized",
+        role: resolvedRole,
         linkedStudentId: "",
-        active:
-          isBootstrapAdmin ||
-          accessProfile?.active !== false ||
-          Boolean(allowedTeacherAccessProfile) ||
-          Boolean(matchedTeacher),
+        active: Boolean(accessProfile) && accessProfile?.active !== false,
         accessDeniedReason: isStudentAccessProfile ? "student-portal" : "",
       };
 
@@ -446,10 +421,6 @@ async function handleObservedAuthUser(user) {
         )})`
       );
 
-      if (mergedUser.role === CONFIG.roles.admin) {
-        triggerStudentsSyncInBackground(mergedUser.email);
-      }
-
       const currentView =
         getState()?.app?.currentView || CONFIG.app.defaultRoute;
 
@@ -468,7 +439,15 @@ async function handleObservedAuthUser(user) {
         "[Bitácoras App] No se pudo resolver el acceso del usuario:",
         error
       );
-      setAuthUser(user);
+      setAuthUser({
+        ...user,
+        role: "unauthorized",
+        active: false,
+      });
+      setAppError("No se pudo verificar el perfil de acceso.");
+      renderInlineError(
+        "No se pudo verificar tu perfil de acceso. Intenta nuevamente en unos minutos."
+      );
       return;
     }
   }
@@ -477,92 +456,15 @@ async function handleObservedAuthUser(user) {
   logDebug("Sin sesión activa en Firebase Auth.");
 }
 
-/*
-  Sincronizacion Sheets -> Firestore al abrir la app como admin.
-  Fire-and-forget: no bloquea la carga de la app ni muestra errores al
-  usuario; el Apps Script tiene throttle propio (no repite si corrio hace
-  menos de 5 minutos) y lock contra corridas simultaneas.
-*/
-let studentsSyncTriggered = false;
-
-function triggerStudentsSyncInBackground(adminEmail = "") {
-  if (studentsSyncTriggered) return;
-  studentsSyncTriggered = true;
-
-  try {
-    const url = new URL(CONFIG.api.baseUrl);
-    url.searchParams.set("action", "sync");
-    url.searchParams.set("source", "app_open");
-
-    fetch(url.toString(), { method: "GET" })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (payload?.skipped) {
-          logDebug(`Sync de estudiantes omitido: ${payload.reason || "reciente"}`);
-        } else if (payload?.ok) {
-          logDebug("Sync de estudiantes completado al abrir la app.");
-        } else {
-          console.warn("[Bitácoras App] Sync de estudiantes falló:", payload?.error);
-        }
-      })
-      .catch((error) => {
-        console.warn("[Bitácoras App] No se pudo disparar el sync de estudiantes:", error);
-      });
-
-    logDebug(`Sync de estudiantes disparado en segundo plano (${adminEmail}).`);
-  } catch (error) {
-    console.warn("[Bitácoras App] No se pudo construir la URL de sync:", error);
-  }
-}
-
-function isAllowedTeacherAccessProfile(accessProfile = null) {
-  const safeRole = String(accessProfile?.role || "").trim().toLowerCase();
-
-  return (safeRole === CONFIG.roles.teacher || safeRole === "docente") &&
-    accessProfile?.active !== false
-    ? accessProfile
-    : null;
-}
-
 function isStudentPortalAccessProfile(accessProfile = null) {
   const safeRole = String(accessProfile?.role || "").trim().toLowerCase();
-  return safeRole === "student" || safeRole === "estudiante";
-}
-
-async function findTeacherByEmail(email) {
-  const safeEmail = String(email || "").trim().toLowerCase();
-  if (!safeEmail) return null;
-
-  try {
-    const catalogs = await getCatalogs();
-    const catalogTeachers = Array.isArray(catalogs?.docentes)
-      ? catalogs.docentes
-      : [];
-
-    const matchedCatalogTeacher = catalogTeachers.find((teacher) => {
-      const candidates = [
-        teacher?.email,
-        teacher?.correo,
-        teacher?.correoElectronico,
-        teacher?.mail,
-      ]
-        .map((value) => String(value || "").trim().toLowerCase())
-        .filter(Boolean);
-
-      return candidates.includes(safeEmail);
-    });
-
-    if (matchedCatalogTeacher) {
-      return matchedCatalogTeacher;
-    }
-  } catch (error) {
-    console.warn(
-      "[Bitácoras App] No se pudo resolver docente desde catalogos:",
-      error
-    );
-  }
-
-  return null;
+  return [
+    "student",
+    "estudiante",
+    "acudiente",
+    "guardian",
+    "parent",
+  ].includes(safeRole);
 }
 
 async function navigateTo(viewName, options = {}) {
