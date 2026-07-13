@@ -23,7 +23,8 @@ import {
 import {
   getLogicalStudentLinkedIds,
   resolveLogicalStudents,
-} from "../utils/student-resolver.js";
+} from "../utils/student-resolver.js?v=20260713.3";
+import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260713.3";
 
 const DEFAULT_TIMEOUT =
   Number.isFinite(CONFIG?.api?.timeoutMs) && CONFIG.api.timeoutMs > 0
@@ -816,13 +817,16 @@ function sortStudents(students = []) {
 }
 
 async function listStudentsFromFirestore() {
-  const snapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
+  const [snapshot, identityLinks] = await Promise.all([
+    getDocs(collection(db, STUDENTS_COLLECTION)),
+    listStudentIdentityLinkRecords({ includeReviews: true }),
+  ]);
   const rawRecords = snapshot.docs.map((docSnap) => ({
     ...docSnap.data(),
     __documentId: docSnap.id,
     id: docSnap.id,
   }));
-  logicalStudentsCache = resolveLogicalStudents(rawRecords)
+  logicalStudentsCache = resolveLogicalStudents(rawRecords, identityLinks)
     .map((record) => normalizeStudentRecord(record))
     .filter(Boolean);
   return logicalStudentsCache;

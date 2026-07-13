@@ -15,7 +15,14 @@ import {
   setStudentsLoading,
   getSelectedStudentIds,
 } from "../state.js";
-import { getStudents } from "../api/students.api.js";
+import { getStudents } from "../api/students.api.js?v=20260713.3";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260713.3";
+import {
+  getCachedStudentIdentityLinkRecords,
+  listStudentIdentityLinkRecords,
+  manageStudentIdentityLink,
+  maskStudentIdentityId,
+} from "../api/identity-links.api.js?v=20260713.3";
 import {
   escapeHtml,
   getReadableValue,
@@ -39,6 +46,11 @@ let currentModalStudentId = null;
 let currentCanUseHub = false;
 let hasRetriedInitialLoad = false;
 let searchInputDebounceTimer = null;
+let currentIdentityLinkStudentId = null;
+let identityLinkSelection = null;
+let identityLinkCounts = new Map();
+let identityLinkBusy = false;
+let identityTrayOpen = false;
 
 const SEARCH_INPUT_DEBOUNCE_MS = 120;
 
@@ -74,6 +86,7 @@ export async function render({
   bindViewEvents();
   renderSummary(getState(), safeConfig);
   renderResults(getState());
+  renderIdentityReviewSummary(getState());
   renderStudentModal(getState());
   syncInputValue(getState());
 
@@ -109,6 +122,7 @@ export async function render({
 
       renderSummary(safeNextState, safeConfig);
       renderResults(safeNextState);
+      renderIdentityReviewSummary(safeNextState);
       renderStudentModal(safeNextState);
       syncInputValue(safeNextState);
     });
@@ -309,6 +323,24 @@ function buildSearchViewMarkup(state, config) {
         </div>
       </section>
 
+      ${
+        resolveUserAccess(state?.auth?.user).role === CONFIG.roles.admin
+          ? `
+        <section class="panel identity-review-panel" aria-label="Revisión administrativa de identidad">
+          <div>
+            <p class="panel-header__eyebrow">Identidad administrativa</p>
+            <p id="identity-review-summary" class="search-summary__text">
+              Calculando expedientes pendientes…
+            </p>
+          </div>
+          <button type="button" id="identity-review-open-btn" class="btn btn--secondary btn--sm">
+            Abrir bandeja de identidad
+          </button>
+        </section>
+      `
+          : ""
+      }
+
       <section class="search-layout search-layout--single" aria-label="Listado de estudiantes">
         <article class="search-results-panel">
           <header class="panel-header">
@@ -354,6 +386,7 @@ function bindViewEvents() {
   const resultsContainer = viewRoot.querySelector("#students-results");
   const modalRoot = viewRoot.querySelector("#student-modal-root");
   const bulkActions = viewRoot.querySelector(".search-toolbar__bulk-actions");
+  const identityReviewBtn = viewRoot.querySelector("#identity-review-open-btn");
 
   if (input) {
     input.addEventListener("input", handleSearchInput);
@@ -375,6 +408,10 @@ function bindViewEvents() {
     openGroupEditorBtn.addEventListener("click", handleOpenGroupEditor);
   }
 
+  if (identityReviewBtn) {
+    identityReviewBtn.addEventListener("click", openIdentityReviewTray);
+  }
+
   if (resultsContainer) {
     resultsContainer.addEventListener("click", handleResultsClick);
     resultsContainer.addEventListener("keydown", handleResultsKeydown);
@@ -383,6 +420,7 @@ function bindViewEvents() {
 
   if (modalRoot) {
     modalRoot.addEventListener("click", handleModalClick);
+    modalRoot.addEventListener("change", handleIdentityModalChange);
   }
 }
 
@@ -511,9 +549,13 @@ function handleResultsClick(event) {
   const student = getStudentById(studentId);
   if (!student) return;
 
-  setSelectedStudent(student);
-
   const action = actionButton?.dataset?.studentAction || "details";
+  if (action === "identity-link") {
+    openIdentityLinkModal(student);
+    return;
+  }
+
+  setSelectedStudent(student);
 
   if (action === "editor") {
     goToEditor(student);
@@ -545,6 +587,12 @@ function handleResultsKeydown(event) {
 }
 
 function handleModalClick(event) {
+  if (
+    event.target.closest("input, select, label") &&
+    !event.target.closest("[data-modal-action]")
+  ) {
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
 
@@ -560,6 +608,15 @@ function handleModalClick(event) {
   if (!actionButton) return;
 
   const action = actionButton.dataset.modalAction;
+  if (action === "identity-open") {
+    const student = getStudentById(actionButton.dataset.studentId);
+    if (student) openIdentityLinkModal(student);
+    return;
+  }
+  if (action === "identity-confirm" || action === "identity-reject") {
+    handleIdentityDecision(action === "identity-confirm" ? "confirm" : "reject");
+    return;
+  }
   const studentId = toStringSafe(actionButton.dataset.studentId || currentModalStudentId);
   const state = getState();
   const student =
@@ -697,6 +754,16 @@ function renderStudentModal(state) {
   const modalRoot = viewRoot?.querySelector("#student-modal-root");
   if (!modalRoot) return;
 
+  if (identityTrayOpen) {
+    renderIdentityTrayModal(modalRoot, state);
+    return;
+  }
+
+  if (currentIdentityLinkStudentId) {
+    renderIdentityLinkModal(modalRoot);
+    return;
+  }
+
   if (!currentModalStudentId) {
     modalRoot.classList.add("is-hidden");
     modalRoot.innerHTML = "";
@@ -831,6 +898,9 @@ function renderStudentCard(student, isSelected = false, isChecked = false) {
   const documentValue = getStudentDocument(student) || "Sin documento";
   const teacher = getReadableValue(student.docente || student.teacher);
   const acudiente = getReadableValue(student.acudiente || student.responsable);
+  const canManageIdentity =
+    resolveUserAccess(getState()?.auth?.user).role === CONFIG.roles.admin &&
+    student.identityResolutionStatus === "pending";
 
   const processBadges = Array.isArray(student.processes)
     ? student.processes
@@ -904,6 +974,18 @@ function renderStudentCard(student, isSelected = false, isChecked = false) {
       </div>
 
       <div class="student-card__actions">
+        ${
+          canManageIdentity
+            ? `
+        <button
+          type="button"
+          class="btn btn--secondary btn--sm"
+          data-student-action="identity-link"
+        >
+          Vincular expediente histórico
+        </button>`
+            : ""
+        }
         <button
           type="button"
           class="btn btn--ghost btn--sm"
@@ -1164,6 +1246,267 @@ function getStudentById(studentId) {
   );
 }
 
+function pendingIdentityStudents(state = getState()) {
+  const students = Array.isArray(state?.search?.results)
+    ? state.search.results
+    : [];
+  const unique = new Map();
+  students
+    .filter((student) => student?.identityResolutionStatus === "pending")
+    .forEach((student) => {
+      const key =
+        toStringSafe(student.identityResolutionSuggestionKey) ||
+        candidateIds(student).sort().join("|") ||
+        getStudentIdentity(student);
+      const current = unique.get(key);
+      if (!current || (/^stu_/i.test(current.id) && !/^stu_/i.test(student.id))) {
+        unique.set(key, student);
+      }
+    });
+  return [...unique.values()];
+}
+
+function renderIdentityReviewSummary(state = getState()) {
+  const node = viewRoot?.querySelector("#identity-review-summary");
+  if (!node) return;
+  const pending = pendingIdentityStudents(state).length;
+  const records = getCachedStudentIdentityLinkRecords();
+  const confirmed = records.filter((item) => item.status === "confirmed").length;
+  const rejected = records.filter((item) => item.status === "rejected").length;
+  node.textContent = `${pending} pendientes · ${confirmed} confirmados · ${rejected} rechazados`;
+}
+
+function identityCandidates(student) {
+  return Array.isArray(student?.identityResolutionCandidates)
+    ? student.identityResolutionCandidates.filter((item) => item?.id)
+    : [];
+}
+
+function candidateIds(student) {
+  return identityCandidates(student).map((item) => toStringSafe(item.id)).filter(Boolean);
+}
+
+function countLogsForId(id) {
+  return Number(identityLinkCounts.get(toStringSafe(id)) || 0);
+}
+
+async function loadIdentityLogCounts(students) {
+  const ids = [...new Set(students.flatMap(candidateIds))];
+  if (!ids.length) return;
+  const logs = await getBitacorasByStudentIds(ids, { limit: 0 });
+  const counts = new Map(ids.map((id) => [id, 0]));
+  logs.forEach((log) => {
+    const refs = [...new Set([
+      log.studentId,
+      ...(Array.isArray(log.studentIds) ? log.studentIds : []),
+    ].map(toStringSafe).filter(Boolean))];
+    refs.forEach((id) => {
+      if (counts.has(id)) counts.set(id, counts.get(id) + 1);
+    });
+  });
+  identityLinkCounts = counts;
+}
+
+async function openIdentityReviewTray() {
+  if (resolveUserAccess(getState()?.auth?.user).role !== CONFIG.roles.admin) return;
+  identityTrayOpen = true;
+  currentIdentityLinkStudentId = null;
+  renderStudentModal(getState());
+  try {
+    await Promise.all([
+      listStudentIdentityLinkRecords({ includeReviews: true }),
+      loadIdentityLogCounts(pendingIdentityStudents()),
+    ]);
+  } catch (error) {
+    console.error("No se pudo cargar la bandeja de identidad:", error);
+    setAppError(error?.message || "No se pudo cargar la bandeja de identidad.");
+  }
+  renderIdentityReviewSummary(getState());
+  renderStudentModal(getState());
+}
+
+function renderIdentityTrayModal(modalRoot, state) {
+  const pending = pendingIdentityStudents(state);
+  const records = getCachedStudentIdentityLinkRecords();
+  const confirmed = records.filter((item) => item.status === "confirmed");
+  const rejected = records.filter((item) => item.status === "rejected");
+  const pendingRows = pending.map((student) => {
+    const ids = candidateIds(student);
+    const totalLogs = ids.reduce((sum, id) => sum + countLogsForId(id), 0);
+    return `
+      <div class="student-card" role="listitem">
+        <div class="student-card__body">
+          <strong>${escapeHtml(getStudentName(student))}</strong>
+          <p>${ids.map(maskStudentIdentityId).map(escapeHtml).join(" · ")}</p>
+          <p>${totalLogs} bitácoras · evidencia media · pendiente</p>
+        </div>
+        <button type="button" class="btn btn--secondary btn--sm"
+          data-modal-action="identity-open"
+          data-student-id="${escapeHtml(getStudentIdentity(student))}">
+          Comparar y resolver
+        </button>
+      </div>`;
+  }).join("");
+  const reviewedRows = [...confirmed, ...rejected].map((record) => `
+    <div class="student-card" role="listitem">
+      <div class="student-card__body">
+        <strong>${record.status === "confirmed" ? "Confirmado" : "Rechazado"}</strong>
+        <p>${escapeHtml(maskStudentIdentityId(record.canonicalStudentId))} · ${escapeHtml(maskStudentIdentityId(record.academicRecordId))}</p>
+        <p>${escapeHtml(record.linkMethod || "revisión administrativa")}</p>
+      </div>
+    </div>`).join("");
+
+  modalRoot.classList.remove("is-hidden");
+  modalRoot.innerHTML = `
+    <div class="student-modal-backdrop" data-modal-close="backdrop">
+      <article class="student-modal" role="dialog" aria-modal="true" aria-labelledby="identity-tray-title">
+        <header class="student-modal__header">
+          <div><p class="student-modal__eyebrow">Administración</p><h3 id="identity-tray-title">Bandeja de identidad</h3></div>
+          <button type="button" class="btn btn--ghost btn--sm" data-modal-close="button">Cerrar</button>
+        </header>
+        <p>${pending.length} pendientes · ${confirmed.length} confirmados · ${rejected.length} rechazados</p>
+        <div class="students-results" role="list">${pendingRows || '<p>Sin casos pendientes.</p>'}${reviewedRows}</div>
+      </article>
+    </div>`;
+}
+
+function selectedIdentityCandidates() {
+  const student = getStudentById(currentIdentityLinkStudentId);
+  const candidates = identityCandidates(student);
+  const canonical = candidates.find((item) => item.id === identityLinkSelection?.canonicalStudentId);
+  const academic = candidates.find((item) => item.id === identityLinkSelection?.academicRecordId);
+  return { student, candidates, canonical, academic };
+}
+
+function candidateProcesses(candidate = {}) {
+  const values = [candidate.area, candidate.instrumento, candidate.programa];
+  if (Array.isArray(candidate.processes)) {
+    candidate.processes.forEach((item) => values.push(item?.arte, item?.detalle, item?.label));
+  }
+  return [...new Set(values.map(toStringSafe).filter(Boolean))].join(" · ") || "No registrado";
+}
+
+function candidateDateRange(candidate = {}) {
+  return [candidate.createdAt, candidate.updatedAt]
+    .map((value) => toStringSafe(value?.toDate?.()?.toISOString?.() || value))
+    .filter(Boolean)
+    .join(" → ") || "No disponible";
+}
+
+function renderCandidateComparison(label, candidate) {
+  if (!candidate) return `<div><strong>${label}</strong><p>Selecciona un registro.</p></div>`;
+  return `
+    <section class="panel">
+      <h4>${escapeHtml(label)}</h4>
+      <dl class="student-modal__grid">
+        ${renderDetailItem("ID", candidate.id)}
+        ${renderDetailItem("Nombre", getStudentName(candidate))}
+        ${renderDetailItem("Estado", getReadableValue(candidate.estado || candidate.status))}
+        ${renderDetailItem("Acudiente", getReadableValue(candidate.acudiente || candidate.responsable))}
+        ${renderDetailItem("Áreas e instrumentos", candidateProcesses(candidate))}
+        ${renderDetailItem("Bitácoras", String(countLogsForId(candidate.id)))}
+        ${renderDetailItem("Fechas disponibles", candidateDateRange(candidate))}
+      </dl>
+    </section>`;
+}
+
+function renderIdentityLinkModal(modalRoot) {
+  const { candidates, canonical, academic } = selectedIdentityCandidates();
+  if (!candidates.length) {
+    currentIdentityLinkStudentId = null;
+    renderStudentModal(getState());
+    return;
+  }
+  const canonicalOptions = candidates.filter((item) => !/^stu_/i.test(item.id));
+  const academicOptions = candidates.filter((item) => /^stu_/i.test(item.id));
+  const option = (item, selected) => `<option value="${escapeHtml(item.id)}" ${item.id === selected ? "selected" : ""}>${escapeHtml(getStudentName(item))} · ${escapeHtml(item.id)}</option>`;
+  modalRoot.classList.remove("is-hidden");
+  modalRoot.innerHTML = `
+    <div class="student-modal-backdrop" data-modal-close="backdrop">
+      <article class="student-modal" role="dialog" aria-modal="true" aria-labelledby="identity-link-title">
+        <header class="student-modal__header">
+          <div><p class="student-modal__eyebrow">Confirmación administrativa</p><h3 id="identity-link-title">Vincular expediente histórico</h3></div>
+          <button type="button" class="btn btn--ghost btn--sm" data-modal-close="button">Cerrar</button>
+        </header>
+        <div class="field"><label>Registro canónico<select id="identity-canonical-select" class="field__input">${canonicalOptions.map((item) => option(item, canonical?.id)).join("")}</select></label></div>
+        <div class="field"><label>Registro STU histórico<select id="identity-academic-select" class="field__input">${academicOptions.map((item) => option(item, academic?.id)).join("")}</select></label></div>
+        <div class="search-layout">${renderCandidateComparison("Identidad canónica", canonical)}${renderCandidateComparison("Expediente académico", academic)}</div>
+        <p class="empty-state__text"><strong>Esta acción vincula los registros para visualización y seguimiento. No elimina ni fusiona documentos.</strong></p>
+        <label class="student-card__check"><input id="identity-explicit-confirm" type="checkbox" /> Confirmo que revisé la evidencia y los IDs.</label>
+        <div class="student-modal__actions">
+          <button type="button" class="btn btn--primary" data-modal-action="identity-confirm" ${identityLinkBusy ? "disabled" : ""}>Confirmar vínculo</button>
+          <button type="button" class="btn btn--ghost" data-modal-action="identity-reject" ${identityLinkBusy ? "disabled" : ""}>Rechazar sugerencia</button>
+        </div>
+      </article>
+    </div>`;
+}
+
+async function openIdentityLinkModal(student) {
+  if (resolveUserAccess(getState()?.auth?.user).role !== CONFIG.roles.admin) return;
+  const candidates = identityCandidates(student);
+  const canonical = candidates.find((item) => !/^stu_/i.test(item.id));
+  const academic = candidates.find((item) => /^stu_/i.test(item.id));
+  if (!canonical || !academic) {
+    setAppError("El caso no contiene un par canónico/STU válido.");
+    return;
+  }
+  identityTrayOpen = false;
+  currentModalStudentId = null;
+  currentIdentityLinkStudentId = getStudentIdentity(student);
+  identityLinkSelection = {
+    canonicalStudentId: canonical.id,
+    academicRecordId: academic.id,
+  };
+  renderStudentModal(getState());
+  await loadIdentityLogCounts([student]).catch((error) => {
+    console.warn("No se pudieron contar bitácoras para comparar:", error);
+  });
+  renderStudentModal(getState());
+}
+
+function handleIdentityModalChange(event) {
+  if (!currentIdentityLinkStudentId) return;
+  if (event.target.id === "identity-canonical-select") {
+    identityLinkSelection.canonicalStudentId = toStringSafe(event.target.value);
+    renderStudentModal(getState());
+  } else if (event.target.id === "identity-academic-select") {
+    identityLinkSelection.academicRecordId = toStringSafe(event.target.value);
+    renderStudentModal(getState());
+  }
+}
+
+async function handleIdentityDecision(action) {
+  if (identityLinkBusy || !identityLinkSelection) return;
+  const checked = viewRoot?.querySelector("#identity-explicit-confirm")?.checked === true;
+  if (!checked) {
+    setAppError("Confirma explícitamente que revisaste la evidencia.");
+    return;
+  }
+  identityLinkBusy = true;
+  renderStudentModal(getState());
+  try {
+    await manageStudentIdentityLink({
+      action,
+      canonicalStudentId: identityLinkSelection.canonicalStudentId,
+      academicRecordId: identityLinkSelection.academicRecordId,
+      linkedStudentIds: [
+        identityLinkSelection.canonicalStudentId,
+        identityLinkSelection.academicRecordId,
+      ],
+    });
+    currentIdentityLinkStudentId = null;
+    identityLinkSelection = null;
+    await refreshStudents();
+    clearAppError();
+  } catch (error) {
+    console.error("No se pudo resolver el vínculo de identidad:", error);
+    setAppError(error?.message || "No se pudo resolver el vínculo de identidad.");
+  } finally {
+    identityLinkBusy = false;
+    renderStudentModal(getState());
+  }
+}
+
 function toggleStudentInGroup(studentId) {
   const safeId = toStringSafe(studentId);
   if (!safeId) return;
@@ -1185,6 +1528,9 @@ function openStudentModal(studentId) {
 
 function closeStudentModal() {
   currentModalStudentId = null;
+  currentIdentityLinkStudentId = null;
+  identityLinkSelection = null;
+  identityTrayOpen = false;
   renderStudentModal(getState());
 }
 

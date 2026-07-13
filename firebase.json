@@ -5,6 +5,18 @@
   "storage": {
     "rules": "firebase rules/storage.rules"
   },
+  "functions": [
+    {
+      "source": "firebase-sync/identity-admin-functions",
+      "codebase": "identity-admin",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ],
   "hosting": {
     "site": "bitacoras-de-clase",
     "public": ".firebase-hosting",
