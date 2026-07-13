@@ -8,4 +8,28 @@ Thumbs.db
 
 # Logs y temporales
 *.log
+firebase-debug.log
+firestore-debug.log
 node_modules/
+**/node_modules/
+
+# Secretos: NUNCA versionar archivos de entorno ni claves.
+# El token que circuló en un ZIP se considera comprometido y fue rotado.
+.env
+**/.env
+*.serviceaccount.json
+serviceAccountKey*.json
+
+# Cachés y archivos generados locales
+.firebase/
+.firebase-hosting/
+.cache/
+coverage/
+.claude/settings.local.json
+
+# Reportes de migración (pueden contener IDs internos; se comparten aparte)
+firebase-sync/migrations/reports/
+
+# Snapshots de rollback: siempre cifrados y fuera de Git.
+*.backfill-snapshot.dpapi
+.backfill-snapshots/

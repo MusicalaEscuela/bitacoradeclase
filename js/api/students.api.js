@@ -52,6 +52,8 @@ function normalizeScalar(value) {
 function resolveStudentStatusValue(studentOrStatus) {
   if (isPlainObject(studentOrStatus)) {
     return (
+      // Estado publicado por RIP (fuente de verdad) cuando existe.
+      (isPlainObject(studentOrStatus.rip) && studentOrStatus.rip.statusLabel) ||
       studentOrStatus.estado ||
       studentOrStatus.status ||
       studentOrStatus.estadoActual ||
@@ -67,7 +69,20 @@ export function normalizeStudentStatus(studentOrStatus) {
   return normalizeText(resolveStudentStatusValue(studentOrStatus));
 }
 
-export function isStudentAllowedToLogIn(studentOrStatus) {
+/*
+  Permisos publicados por RIP (students/{id}.rip). RIP es la única fuente de
+  verdad del estado; los helpers de abajo solo caen a la política heredada
+  (derivada del texto del estado) cuando el doc todavía no tiene datos RIP.
+*/
+function getRipPermissions(studentOrStatus) {
+  if (!isPlainObject(studentOrStatus)) return null;
+  const rip = studentOrStatus.rip;
+  if (!isPlainObject(rip)) return null;
+  if (!rip.statusVersion && !rip.statusLabel && !rip.statusCode) return null;
+  return rip;
+}
+
+function legacyStatusAllows(studentOrStatus) {
   // Normalizamos también los distintos tipos de guion (- – —) a uno solo,
   // porque los rangos a veces vienen con guion corto y otras con guion largo.
   const safeStatus = normalizeStudentStatus(studentOrStatus)
@@ -91,6 +106,28 @@ export function isStudentAllowedToLogIn(studentOrStatus) {
   }
 
   return false;
+}
+
+export function isStudentAllowedToLogIn(studentOrStatus) {
+  const rip = getRipPermissions(studentOrStatus);
+  if (rip && typeof rip.canAccessHub === "boolean") return rip.canAccessHub;
+  return legacyStatusAllows(studentOrStatus);
+}
+
+/*
+  Criterio central para listas docentes: primero el permiso publicado por RIP
+  (showInTeacherLists); si el estudiante aún no fue sincronizado, se usa la
+  política heredada equivalente.
+*/
+export function isStudentVisibleForTeachers(student) {
+  const rip = getRipPermissions(student);
+  if (rip && typeof rip.showInTeacherLists === "boolean") {
+    return rip.showInTeacherLists;
+  }
+  if (isPlainObject(student) && typeof student.showInTeacherLists === "boolean") {
+    return student.showInTeacherLists;
+  }
+  return legacyStatusAllows(student);
 }
 
 export async function updateStudentTeacher(studentId, teacherName = "") {
@@ -722,7 +759,7 @@ function expandProcessRecords(process = {}, studentKey = "", index = 0) {
 }
 
 function matchesStatusFilter(student, statusValue, includeInactive) {
-  if (!includeInactive && !isStudentAllowedToLogIn(student)) {
+  if (!includeInactive && !isStudentVisibleForTeachers(student)) {
     return false;
   }
 
@@ -776,6 +813,9 @@ function sortStudents(students = []) {
 async function listStudentsFromFirestore() {
   const snapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
   return snapshot.docs
+    // Los docs marcados como alias de un canónico no son estudiantes
+    // adicionales: su doc canónico ya está en la lista (evita duplicados).
+    .filter((docSnap) => !toStringSafe((docSnap.data() || {}).legacyAliasOf))
     .map((docSnap) => normalizeStudentRecord({ id: docSnap.id, ...docSnap.data() }))
     .filter(Boolean);
 }
@@ -801,6 +841,45 @@ async function getStudentByEmailFromFirestore(email) {
   if (!snapshot?.docs?.length) return null;
   const first = snapshot.docs[0];
   return normalizeStudentRecord({ id: first.id, ...first.data() });
+}
+
+/*
+  Lista operativa para docentes usando la consulta indexable publicada por RIP
+  (rip.showInTeacherLists == true). TRANSICIÓN: mientras existan estudiantes
+  sin sincronizar desde RIP, se completa con la carga heredada filtrada por la
+  política equivalente; cuando la migración termine, la rama de fallback se
+  puede retirar y queda solo la consulta indexada.
+*/
+export async function getTeacherListStudents(options = {}) {
+  const byId = new Map();
+
+  try {
+    const snapshot = await getDocs(
+      query(
+        collection(db, STUDENTS_COLLECTION),
+        where("rip.showInTeacherLists", "==", true)
+      )
+    );
+    snapshot.docs.forEach((docSnap) => {
+      if (toStringSafe((docSnap.data() || {}).legacyAliasOf)) return;
+      const student = normalizeStudentRecord({ id: docSnap.id, ...docSnap.data() });
+      if (student) byId.set(student.studentId, student);
+    });
+  } catch (error) {
+    console.warn(
+      "[students.api] Consulta rip.showInTeacherLists no disponible; se usa solo el fallback.",
+      error
+    );
+  }
+
+  if (options.queryOnly !== true) {
+    const legacy = await getStudents({ ...options, includeInactive: false });
+    legacy.forEach((student) => {
+      if (!byId.has(student.studentId)) byId.set(student.studentId, student);
+    });
+  }
+
+  return sortStudents([...byId.values()]);
 }
 
 export async function getStudents(options = {}) {
@@ -1021,6 +1100,19 @@ export async function syncStudentsFromSheetToFirestore(options = {}) {
       updatedAt: serverTimestamp(),
     };
 
+    // El estado operativo es propiedad de RIP: si el doc ya tiene datos
+    // publicados por rip-musicala, este sync manual no toca estado/active.
+    if (
+      existing &&
+      isPlainObject(existing.rip) &&
+      (existing.rip.statusVersion || existing.rip.statusLabel)
+    ) {
+      delete payload.estado;
+      delete payload.status;
+      delete payload.active;
+      delete payload.showInTeacherLists;
+    }
+
     if (!existing) {
       payload.createdAt = serverTimestamp();
     }
@@ -1070,6 +1162,8 @@ export {
 
 export default {
   getStudents,
+  getTeacherListStudents,
+  isStudentVisibleForTeachers,
   getStudentsResponse,
   getStudentProfile,
   getStudentProfileResponse,

@@ -14,10 +14,7 @@ import {
 } from "../api/catalogs.api.js";
 import {
   listStudentAccessUsers,
-  syncStudentAccessUsersFromSheet,
-  syncTeacherAccessUsers,
 } from "../api/users.api.js";
-import { syncStudentsFromSheetToFirestore } from "../api/students.api.js";
 import { getStudents } from "../api/students.api.js";
 import {
   createBitacora,
@@ -98,13 +95,6 @@ export function destroy() {
 async function refreshCatalogs() {
   try {
     currentCatalogs = await getCatalogs();
-
-    const state = getState();
-    const access = resolveUserAccess(state?.auth?.user);
-
-    if (state?.auth?.isAuthenticated && access.canManageSettings) {
-      await syncTeacherAccessUsers(currentCatalogs.docentes || []);
-    }
 
     currentMessage = null;
   } catch (error) {
@@ -283,22 +273,9 @@ function buildMarkup(state) {
           </div>
 
           <div class="settings-form-actions">
-            <button
-              type="button"
-              class="btn btn--secondary"
-              id="settings-sync-students-btn"
-              ${!isAuthenticated || !canManageSettings ? "disabled" : ""}
-            >
-              Sincronizar base de estudiantes
-            </button>
-            <button
-              type="button"
-              class="btn btn--secondary"
-              id="settings-sync-student-access-btn"
-              ${!isAuthenticated || !canManageSettings ? "disabled" : ""}
-            >
-              Sincronizar accesos del HUB Estudiantes
-            </button>
+            <p class="field__hint">
+              La sincronización legacy desde el navegador fue retirada. Firestore mantiene la fuente operativa y las integraciones administrativas se ejecutan únicamente desde backend.
+            </p>
             <button
               type="button"
               class="btn btn--ghost"
@@ -953,8 +930,6 @@ function bindEvents(state) {
 
   const refreshBtn = viewRoot.querySelector("#settings-refresh-btn");
   const saveBtn = viewRoot.querySelector("#settings-save-btn");
-  const syncStudentsBtn = viewRoot.querySelector("#settings-sync-students-btn");
-  const syncStudentAccessBtn = viewRoot.querySelector("#settings-sync-student-access-btn");
   const refreshStudentAccessBtn = viewRoot.querySelector(
     "#settings-refresh-students-access-btn"
   );
@@ -1068,90 +1043,6 @@ function bindEvents(state) {
           loadingTitle: "Guardando",
           success: "Los catálogos se guardaron en Firebase.",
           successTitle: "Catálogos guardados",
-        }
-      );
-    });
-  }
-
-  if (syncStudentsBtn) {
-    syncStudentsBtn.addEventListener("click", async () => {
-      const access = resolveUserAccess(getState()?.auth?.user);
-
-      if (!state?.auth?.isAuthenticated) {
-        currentMessage = {
-          type: "warning",
-          text: "Necesitas iniciar sesión para sincronizar datos de estudiantes.",
-        };
-        renderView(getState());
-        return;
-      }
-
-      if (!access.canManageSettings) {
-        currentMessage = {
-          type: "warning",
-          text: "Solo un administrador puede sincronizar la base de estudiantes.",
-        };
-        renderView(getState());
-        return;
-      }
-
-      await withLoading(
-        async () => {
-          currentStudentSyncReport = await syncStudentsFromSheetToFirestore();
-          currentMessage = {
-            type: "success",
-            text: `Sincronizacion completada. Estudiantes nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
-          };
-          renderView(getState());
-        },
-        {
-          loading: "Estamos sincronizando la base de estudiantes.",
-          loadingTitle: "Sincronizando",
-          success: "La base de estudiantes quedó sincronizada.",
-          successTitle: "Sincronización completa",
-        }
-      );
-    });
-  }
-
-  if (syncStudentAccessBtn) {
-    syncStudentAccessBtn.addEventListener("click", async () => {
-      const access = resolveUserAccess(getState()?.auth?.user);
-
-      if (!state?.auth?.isAuthenticated) {
-        currentMessage = {
-          type: "warning",
-          text: "Necesitas iniciar sesión para sincronizar accesos.",
-        };
-        renderView(getState());
-        return;
-      }
-
-      if (!access.canManageSettings) {
-        currentMessage = {
-          type: "warning",
-          text: "Solo un administrador puede sincronizar accesos del HUB Estudiantes.",
-        };
-        renderView(getState());
-        return;
-      }
-
-      await withLoading(
-        async () => {
-          currentStudentSyncReport = await syncStudentAccessUsersFromSheet();
-          await refreshStudentAccessUsers();
-          expandedSettingsPanels.add("student-access-list");
-          currentMessage = {
-            type: "success",
-            text: `Accesos del HUB Estudiantes sincronizados. Nuevos: ${currentStudentSyncReport.created}, actualizados: ${currentStudentSyncReport.updated}, sin cambios: ${currentStudentSyncReport.unchanged}.`,
-          };
-          renderView(getState());
-        },
-        {
-          loading: "Estamos sincronizando los accesos del HUB Estudiantes.",
-          loadingTitle: "Sincronizando",
-          success: "Los accesos del HUB Estudiantes quedaron sincronizados.",
-          successTitle: "Accesos sincronizados",
         }
       );
     });

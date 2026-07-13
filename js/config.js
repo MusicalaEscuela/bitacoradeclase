@@ -16,20 +16,19 @@ function detectEnvironment() {
 const ENV = detectEnvironment();
 
 /*
-  Una sola URL del Apps Script para todo (API y uploads, dev y produccion).
-  Cuando se cree una nueva implementacion en Apps Script, solo se cambia aqui.
+  Integracion cliente legacy retirada. Firestore es la fuente operativa del
+  frontend y cualquier copia administrativa vive solo en backend con secretos.
 */
-const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbyPaqPmViYGR3dv5REoyWzoCTxOMsY3xCIKdux5vqSAkCQg35SniHB9DnYI4IHit4sVqA/exec";
+const LEGACY_CLIENT_ENDPOINT = "";
 
 const BASE_URLS = {
   development: {
-    appsScript: APPS_SCRIPT_URL,
-    uploads: APPS_SCRIPT_URL,
+    appsScript: LEGACY_CLIENT_ENDPOINT,
+    uploads: LEGACY_CLIENT_ENDPOINT,
   },
   production: {
-    appsScript: APPS_SCRIPT_URL,
-    uploads: APPS_SCRIPT_URL,
+    appsScript: LEGACY_CLIENT_ENDPOINT,
+    uploads: LEGACY_CLIENT_ENDPOINT,
   },
 };
 
@@ -165,15 +164,6 @@ export const CONFIG = Object.freeze({
   }),
 
   firestore: FIRESTORE_CONFIG,
-
-  access: Object.freeze({
-    bootstrapAdminEmails: Object.freeze([
-      "alekcaballeromusic@gmail.com",
-      "catalina.medina.leal@gmail.com",
-      "imusicala@gmail.com",
-      "adminmusicala@gmail.com",
-    ]),
-  }),
 });
 
 function ensureBaseUrl(baseUrl, sourceLabel) {
