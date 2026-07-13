@@ -590,18 +590,22 @@ export async function getBitacorasByStudentIds(studentIds = [], options = {}) {
 
   const bitacorasRef = collection(db, BITACORAS_COLLECTION);
   const byDocumentId = new Map();
+  const chunks = [];
+  for (let index = 0; index < safeStudentIds.length; index += 30) {
+    chunks.push(safeStudentIds.slice(index, index + 30));
+  }
   const snapshots = await Promise.all(
-    safeStudentIds.flatMap((studentId) => [
+    chunks.flatMap((studentIdChunk) => [
       getDocs(
         query(
           bitacorasRef,
-          where("studentIds", "array-contains", studentId)
+          where("studentIds", "array-contains-any", studentIdChunk)
         )
       ),
       getDocs(
         query(
           bitacorasRef,
-          where("studentId", "==", studentId)
+          where("studentId", "in", studentIdChunk)
         )
       ),
     ])

@@ -163,8 +163,9 @@ function groupBy(items = [], getKey) {
   return groups;
 }
 
-function buildLogicalStudent(group = [], evidence = []) {
+function buildLogicalStudent(group = [], evidence = [], confirmedLink = null) {
   const canonical =
+    group.find((item) => item.id === confirmedLink?.canonicalStudentId) ||
     [...group].sort((left, right) => canonicalScore(right) - canonicalScore(left))[0] ||
     group[0];
   const academicCandidates = [...group].sort((left, right) => {
@@ -173,9 +174,14 @@ function buildLogicalStudent(group = [], evidence = []) {
     if (left.isStu !== right.isStu) return right.isStu ? 1 : -1;
     return left.id.localeCompare(right.id);
   });
-  const bestAcademic = academicCandidates[0] || canonical;
+  const bestAcademic =
+    group.find((item) => item.id === confirmedLink?.academicRecordId) ||
+    academicCandidates[0] ||
+    canonical;
   const academic =
-    academicScore(bestAcademic) > academicScore(canonical) ? bestAcademic : canonical;
+    confirmedLink || academicScore(bestAcademic) > academicScore(canonical)
+      ? bestAcademic
+      : canonical;
 
   const merged = {
     ...(academic?.data || {}),
@@ -204,6 +210,8 @@ function buildLogicalStudent(group = [], evidence = []) {
     academicDocument: academic?.data || {},
     identityResolutionStatus: linkedStudentIds.length > 1 ? "resolved" : "single",
     identityResolutionEvidence: uniqueStrings(evidence),
+    identityLinkStatus: confirmedLink?.status || "",
+    identityLinkMethod: confirmedLink?.linkMethod || "",
   };
 }
 
@@ -231,14 +239,31 @@ function buildPendingStudent(items = []) {
     identityResolutionLabel: "Revisión de identidad pendiente",
     identityResolutionCandidateCount: items.length,
     identityResolutionEvidence: ["email_normalized_with_conflicting_candidates"],
+    identityResolutionCandidates: items.map((item) => ({
+      ...item.data,
+      id: item.id,
+      studentId: item.id,
+      isHistorical: item.isStu,
+    })),
   };
 }
 
-export function resolveLogicalStudents(records = []) {
+export function resolveLogicalStudents(records = [], identityLinkRecords = []) {
   const items = records.map(createItem).filter((item) => item.id);
   const byId = new Map(items.map((item) => [item.id, item]));
   const { find, union } = createDisjointSet([...byId.keys()]);
   const evidenceByPair = new Map();
+  const confirmedLinks = identityLinkRecords.filter(
+    (record) => record?.status === "confirmed"
+  );
+  const rejectedPairs = new Set(
+    identityLinkRecords
+      .filter((record) => record?.status === "rejected")
+      .map((record) =>
+        [record.canonicalStudentId, record.academicRecordId].sort().join("|")
+      )
+  );
+  const confirmedLinkByMember = new Map();
 
   const link = (left, right, evidence) => {
     if (!byId.has(left) || !byId.has(right) || left === right) return;
@@ -247,6 +272,23 @@ export function resolveLogicalStudents(records = []) {
     evidenceByPair.get(pairKey).add(evidence);
     union(left, right);
   };
+
+  confirmedLinks.forEach((confirmedLink) => {
+    const canonicalStudentId = toStringSafe(confirmedLink.canonicalStudentId);
+    const members = uniqueStrings([
+      canonicalStudentId,
+      confirmedLink.academicRecordId,
+      ...(Array.isArray(confirmedLink.linkedStudentIds)
+        ? confirmedLink.linkedStudentIds
+        : []),
+    ]);
+    members.forEach((memberId) => {
+      confirmedLinkByMember.set(memberId, confirmedLink);
+      if (memberId !== canonicalStudentId) {
+        link(canonicalStudentId, memberId, "admin-confirmed");
+      }
+    });
+  });
 
   items.forEach((item) => {
     EXPLICIT_SINGLE_LINK_FIELDS.forEach((field) => {
@@ -293,20 +335,34 @@ export function resolveLogicalStudents(records = []) {
   groupBy(items, (item) => item.emailKey).forEach((emailGroup) => {
     groupBy(emailGroup, (item) => item.nameKey).forEach((sameIdentityGroup) => {
       if (sameIdentityGroup.length < 2) return;
-      const stuItems = sameIdentityGroup.filter((item) => item.isStu);
-      const canonicalItems = sameIdentityGroup.filter((item) => !item.isStu);
+      const automaticGroup = sameIdentityGroup.filter(
+        (item) => !confirmedLinkByMember.has(item.id)
+      );
+      const stuItems = automaticGroup.filter((item) => item.isStu);
+      const canonicalItems = automaticGroup.filter((item) => !item.isStu);
       if (!stuItems.length || !canonicalItems.length) return;
 
       if (canonicalItems.length === 1) {
-        sameIdentityGroup.forEach((item) => {
+        automaticGroup.forEach((item) => {
           if (item.id !== canonicalItems[0].id) {
+            const pair = [canonicalItems[0].id, item.id].sort().join("|");
+            if (rejectedPairs.has(pair)) return;
             link(canonicalItems[0].id, item.id, "emailNormalized");
           }
         });
         return;
       }
 
-      pendingCandidateGroups.push(sameIdentityGroup);
+      const pendingItems = automaticGroup.filter((item) => {
+        if (!item.isStu) return true;
+        return canonicalItems.some(
+          (canonical) =>
+            !rejectedPairs.has([canonical.id, item.id].sort().join("|"))
+        );
+      });
+      if (pendingItems.some((item) => item.isStu)) {
+        pendingCandidateGroups.push(pendingItems);
+      }
     });
   });
 
@@ -333,10 +389,62 @@ export function resolveLogicalStudents(records = []) {
           (evidenceByPair.get(pairKey) || []).forEach((value) => evidence.add(value));
         }
       }
-      return buildLogicalStudent(group, [...evidence]);
+      const confirmedLink = group
+        .map((item) => confirmedLinkByMember.get(item.id))
+        .find(Boolean);
+      return buildLogicalStudent(group, [...evidence], confirmedLink);
     });
 
-  return [...resolved, ...pending];
+  /*
+    Coincidencias solo por nombre NO se unen. Se anotan como sugerencias
+    administrativas manteniendo cada tarjeta independiente hasta que exista
+    un vínculo confirmado por la Function.
+  */
+  const suggestionsById = new Map();
+  groupBy(items, (item) => item.nameKey).forEach((nameGroup, nameKey) => {
+    const candidates = nameGroup.filter(
+      (item) =>
+        !confirmedLinkByMember.has(item.id) &&
+        !consumedPendingIds.has(item.id)
+    );
+    const canonicalItems = candidates.filter((item) => !item.isStu);
+    const stuItems = candidates.filter((item) => item.isStu);
+    if (!canonicalItems.length || !stuItems.length) return;
+
+    const available = candidates.filter((item) => {
+      if (!item.isStu) return true;
+      return canonicalItems.some(
+        (canonical) =>
+          !rejectedPairs.has([canonical.id, item.id].sort().join("|"))
+      );
+    });
+    if (!available.some((item) => item.isStu)) return;
+    available.forEach((item) => {
+      suggestionsById.set(item.id, { nameKey, candidates: available });
+    });
+  });
+
+  const annotatedResolved = resolved.map((student) => {
+    if (student.identityResolutionStatus !== "single") return student;
+    const suggestion = suggestionsById.get(student.id);
+    if (!suggestion) return student;
+    return {
+      ...student,
+      identityResolutionStatus: "pending",
+      identityResolutionLabel: "Revisión de identidad pendiente",
+      identityResolutionEvidence: ["name-only-admin-review"],
+      identityResolutionSuggestionKey: `name:${suggestion.nameKey}`,
+      identityResolutionCandidateCount: suggestion.candidates.length,
+      identityResolutionCandidates: suggestion.candidates.map((item) => ({
+        ...item.data,
+        id: item.id,
+        studentId: item.id,
+        isHistorical: item.isStu,
+      })),
+    };
+  });
+
+  return [...annotatedResolved, ...pending];
 }
 
 export function getLogicalStudentLinkedIds(student = {}) {

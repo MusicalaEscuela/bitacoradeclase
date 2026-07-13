@@ -119,6 +119,20 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /student_identity_links/{canonicalStudentId} {
+      allow read: if isAdmin() || isTeacher();
+      allow create, update, delete: if false;
+    }
+
+    match /student_identity_link_reviews/{reviewId} {
+      allow read: if isAdmin() || isTeacher();
+      allow create, update, delete: if false;
+    }
+
+    match /student_identity_link_members/{studentId} {
+      allow read, write: if false;
+    }
+
     // Agenda publicada para los clientes autenticados con perfil activo.
     // Su aprovisionamiento no se hace desde el HUB ni desde Bitácoras.
     match /events/{eventId} {
