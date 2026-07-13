@@ -205,16 +205,23 @@ service cloud.firestore {
     }
 
     function legacyTeacherVisibleStatus() {
-      let status = resource.data.get('estado',
+      let legacyStatus = resource.data.get('estado',
           resource.data.get('status',
             resource.data.get('estadoActual',
               resource.data.get('studentStatus', ''))));
+      let status = resource.data.keys().hasAny(['rip']) &&
+          resource.data.rip is map &&
+          resource.data.rip.keys().hasAny(['statusLabel']) &&
+          resource.data.rip.statusLabel is string
+        ? resource.data.rip.statusLabel
+        : legacyStatus;
       return status is string &&
         (
           status.lower() == 'activo' ||
           status.lower().matches('^activo no registro.*') ||
           status.lower().matches('^activo en pausa.*') ||
-          status.lower().matches('^inactivo en pausa.*1.*3.*')
+          status.lower().matches('^inactivo en pausa [(]1-3 meses[)].*') ||
+          status.lower().matches('^inactivo en pausa [(]1 a 3 meses[)].*')
         );
     }
 
@@ -272,7 +279,7 @@ service cloud.firestore {
 
     function validProcessList(items) {
       return items is list &&
-        items.size() <= 12 &&
+        items.size() <= 15 &&
         validProcessAt(items, 0) &&
         validProcessAt(items, 1) &&
         validProcessAt(items, 2) &&
@@ -284,7 +291,10 @@ service cloud.firestore {
         validProcessAt(items, 8) &&
         validProcessAt(items, 9) &&
         validProcessAt(items, 10) &&
-        validProcessAt(items, 11);
+        validProcessAt(items, 11) &&
+        validProcessAt(items, 12) &&
+        validProcessAt(items, 13) &&
+        validProcessAt(items, 14);
     }
 
     function validProcessesUpdate() {
@@ -381,7 +391,7 @@ service cloud.firestore {
       return names is list &&
         items is list &&
         names.size() == items.size() &&
-        items.size() <= 12 &&
+        items.size() <= 20 &&
         names.toSet().size() == names.size() &&
         validRepertoireAt(names, items, 0) &&
         validRepertoireAt(names, items, 1) &&
@@ -394,7 +404,15 @@ service cloud.firestore {
         validRepertoireAt(names, items, 8) &&
         validRepertoireAt(names, items, 9) &&
         validRepertoireAt(names, items, 10) &&
-        validRepertoireAt(names, items, 11);
+        validRepertoireAt(names, items, 11) &&
+        validRepertoireAt(names, items, 12) &&
+        validRepertoireAt(names, items, 13) &&
+        validRepertoireAt(names, items, 14) &&
+        validRepertoireAt(names, items, 15) &&
+        validRepertoireAt(names, items, 16) &&
+        validRepertoireAt(names, items, 17) &&
+        validRepertoireAt(names, items, 18) &&
+        validRepertoireAt(names, items, 19);
     }
 
     function validRepertoireUpdate() {
