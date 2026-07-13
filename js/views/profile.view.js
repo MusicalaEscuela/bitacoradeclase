@@ -24,7 +24,7 @@ import {
 } from "../state.js";
 import {
   getBitacoraById,
-  getBitacorasByStudent,
+  getBitacorasByStudentIds,
   createBitacora,
   updateBitacora,
   deleteBitacora,
@@ -53,9 +53,11 @@ import {
   formatDisplayDate,
   getReadableValue,
   getStudentDocument,
+  getStudentAcademicRecordId,
   getStudentCondition,
   getStudentFallbackId,
   getStudentIdentity,
+  getStudentLinkedIds,
   getStudentName,
   getStudentProcessesSummary,
   normalizeStudentProcesses,
@@ -70,6 +72,7 @@ import {
   normalizeText,
   normalizeStudentIds,
   normalizeStudentRefs,
+  resolveStudentAcademicRecordIdFromBitacoras,
   resolveStudentRefFromPayload,
   findStudentInCollections,
   toStringSafe,
@@ -1350,6 +1353,11 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
 
 function renderStudentBadges(student) {
   return `
+    ${
+      student.identityResolutionStatus === "pending"
+        ? renderBadge("Revisión de identidad pendiente")
+        : ""
+    }
     ${renderBadge(student.modalidad)}
     ${renderBadge(student.area || student.instrumento || student.programa)}
   `;
@@ -1664,8 +1672,22 @@ function renderProcessesManagerContainer(student) {
   container.innerHTML = renderProcessesManager(student);
 }
 
+function mergePedagogicalUpdate(student, updated = {}) {
+  const canonicalStudentId = getStudentIdentity(student);
+  return {
+    ...student,
+    ...updated,
+    id: canonicalStudentId,
+    studentId: canonicalStudentId,
+    studentKey: canonicalStudentId,
+    canonicalStudentId,
+    academicRecordId: getStudentAcademicRecordId(student),
+    linkedStudentIds: getStudentLinkedIds(student),
+  };
+}
+
 async function persistStudentProcesses(student, nextProcesses, successMessage) {
-  const studentId = getStudentIdentity(student);
+  const studentId = getStudentAcademicRecordId(student);
   const message = viewRoot?.querySelector("[data-process-message]");
   if (!studentId) {
     setAppError("No hay estudiante seleccionado.");
@@ -1676,12 +1698,14 @@ async function persistStudentProcesses(student, nextProcesses, successMessage) {
     clearAppError();
     const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_processes";
     const updated = await updateStudentProcesses(studentId, nextProcesses, { updatedBy });
-    const refreshedProfile = await getStudentProfile(studentId).catch(() => null);
-    const nextStudent = {
-      ...student,
+    const refreshedProfile = await getStudentProfile(
+      getStudentIdentity(student),
+      { refresh: true }
+    ).catch(() => null);
+    const nextStudent = mergePedagogicalUpdate(student, {
       ...updated,
       ...(refreshedProfile || {}),
-    };
+    });
     updateStudentProfile(nextStudent);
     setSelectedStudent(nextStudent);
     renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
@@ -1878,7 +1902,7 @@ async function saveProfileTeacher(student) {
   const input = viewRoot?.querySelector("[data-profile-teacher-select]");
   const button = viewRoot?.querySelector("[data-profile-save-teacher]");
   const message = viewRoot?.querySelector("[data-profile-teacher-message]");
-  const studentId = getStudentIdentity(student);
+  const studentId = getStudentAcademicRecordId(student);
   const docente = toStringSafe(input?.value);
 
   if (!studentId) {
@@ -1892,12 +1916,11 @@ async function saveProfileTeacher(student) {
     clearProfileTeacherMessage(message);
 
     const updated = await updateStudentTeacher(studentId, docente);
-    updateStudentProfile({
-      ...student,
+    updateStudentProfile(mergePedagogicalUpdate(student, {
       ...updated,
       docente,
       teacher: docente,
-    });
+    }));
     showProfileTeacherMessage(
       viewRoot?.querySelector("[data-profile-teacher-message]") || message,
       "Docente guardado correctamente.",
@@ -1926,7 +1949,7 @@ async function saveProfileField(student, field) {
   const input = viewRoot?.querySelector(`[data-profile-field-input="${safeField}"]`);
   const button = viewRoot?.querySelector(`[data-profile-save-field="${safeField}"]`);
   const message = viewRoot?.querySelector(`[data-profile-field-message="${safeField}"]`);
-  const studentId = getStudentIdentity(student);
+  const studentId = getStudentAcademicRecordId(student);
   const value = toStringSafe(input?.value);
 
   if (!studentId) {
@@ -1946,7 +1969,7 @@ async function saveProfileField(student, field) {
       { updatedBy }
     );
 
-    updateStudentProfile({ ...student, ...updated });
+    updateStudentProfile(mergePedagogicalUpdate(student, updated));
     showProfileTeacherMessage(
       viewRoot?.querySelector(`[data-profile-field-message="${safeField}"]`) || message,
       "Cambios guardados.",
@@ -2761,18 +2784,16 @@ function formatRepertoireForAiReport(items = []) {
 }
 
 async function saveProfileRepertoire(student, values = []) {
-  const studentId = getStudentIdentity(student);
+  const studentId = getStudentAcademicRecordId(student);
   if (!studentId) return;
 
   clearAppError();
 
   try {
     const updated = await updateStudentRepertoire(studentId, values);
-    updateStudentProfile(updated);
-    setSelectedStudent({
-      ...student,
-      ...updated,
-    });
+    const nextStudent = mergePedagogicalUpdate(student, updated);
+    updateStudentProfile(nextStudent);
+    setSelectedStudent(nextStudent);
     renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
   } catch (error) {
     console.error("No se pudo guardar repertorio:", error);
@@ -5251,6 +5272,24 @@ function renderOverrideSection(label, values = []) {
   `;
 }
 
+function syncAcademicRecordFromHistory(student, items = []) {
+  const academicRecordId =
+    resolveStudentAcademicRecordIdFromBitacoras(student, items);
+  if (
+    !academicRecordId ||
+    academicRecordId === getStudentAcademicRecordId(student)
+  ) {
+    return;
+  }
+
+  const nextStudent = {
+    ...student,
+    academicRecordId,
+  };
+  updateStudentProfile(nextStudent);
+  setSelectedStudent(nextStudent);
+}
+
 async function ensureStudentBitacorasLoaded(student) {
   const studentRef = getStudentIdentity(student);
   if (!studentRef) return;
@@ -5263,15 +5302,14 @@ async function ensureStudentBitacorasLoaded(student) {
   try {
     // Traemos todo el historial del estudiante. El filtro por proceso se resuelve
     // en UI para no perder registros importados que aún no traen processKey.
-    const response = await getBitacorasByStudent(studentRef);
+    const linkedStudentIds = getStudentLinkedIds(student);
+    const response = await getBitacorasByStudentIds(linkedStudentIds);
     const items = normalizeBitacorasResponse(response);
 
-    setBitacorasForStudent(studentRef, items);
-
-    const fallbackId = getStudentFallbackId(student);
-    if (fallbackId && fallbackId !== studentRef) {
-      setBitacorasForStudent(fallbackId, items);
-    }
+    linkedStudentIds.forEach((linkedStudentId) => {
+      setBitacorasForStudent(linkedStudentId, items);
+    });
+    syncAcademicRecordFromHistory(student, items);
   } catch (error) {
     console.error("Error cargando bitácoras en profile:", error);
     setAppError(
@@ -5292,15 +5330,14 @@ async function reloadHistory(student) {
     clearAppError();
 
     // Mismo criterio que en la carga inicial: no filtrar por processKey en API.
-    const response = await getBitacorasByStudent(studentRef);
+    const linkedStudentIds = getStudentLinkedIds(student);
+    const response = await getBitacorasByStudentIds(linkedStudentIds);
     const items = normalizeBitacorasResponse(response);
 
-    setBitacorasForStudent(studentRef, items);
-
-    const fallbackId = getStudentFallbackId(student);
-    if (fallbackId && fallbackId !== studentRef) {
-      setBitacorasForStudent(fallbackId, items);
-    }
+    linkedStudentIds.forEach((linkedStudentId) => {
+      setBitacorasForStudent(linkedStudentId, items);
+    });
+    syncAcademicRecordFromHistory(student, items);
   } catch (error) {
     console.error("Error recargando historial en profile:", error);
     setAppError(error?.message || "No se pudo recargar el historial.");

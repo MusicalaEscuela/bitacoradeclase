@@ -840,6 +840,9 @@ function renderStudentCard(student, isSelected = false, isChecked = false) {
     : [];
 
   const badges = [
+    student.identityResolutionStatus === "pending"
+      ? "Revisión de identidad pendiente"
+      : "",
     student.estado,
     student.modalidad,
     student.area,
