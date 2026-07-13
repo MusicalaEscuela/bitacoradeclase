@@ -296,6 +296,8 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
   const studentOverrides = normalizeStudentOverridesFromPayload(input, studentIds);
   const primaryStudentId =
     safeString(input.primaryStudentId) || studentIds[0] || "";
+  const academicRecordId = safeString(input.academicRecordId);
+  const linkedStudentIds = uniqueStrings(input.linkedStudentIds);
 
   if (!studentIds.length) {
     throw createApiError("La bitácora debe tener al menos un estudiante relacionado.", {
@@ -367,6 +369,11 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
     studentOverrides,
     primaryStudentId,
     studentId: primaryStudentId,
+    academicRecordId,
+    linkedStudentIds,
+    studentAcademicRefs: Array.isArray(input.studentAcademicRefs)
+      ? input.studentAcademicRefs
+      : [],
     studentNameSnapshot,
     author,
     teacherId: author.uid,
@@ -405,6 +412,11 @@ function normalizeBitacoraRecord(docSnap) {
     ),
     primaryStudentId: safeString(normalized.primaryStudentId),
     studentId: safeString(normalized.studentId || normalized.primaryStudentId),
+    academicRecordId: safeString(normalized.academicRecordId),
+    linkedStudentIds: uniqueStrings(normalized.linkedStudentIds),
+    studentAcademicRefs: Array.isArray(normalized.studentAcademicRefs)
+      ? normalized.studentAcademicRefs
+      : [],
     studentNameSnapshot: safeString(normalized.studentNameSnapshot),
     teacherId: safeString(normalized.teacherId || normalized.author?.uid),
     teacherEmail: safeString(normalized.teacherEmail || normalized.author?.email),
@@ -566,6 +578,48 @@ export async function getBitacorasByStudent(studentId, options = {}) {
 }
 
 /**
+ * Trae y deduplica el historial completo de un estudiante lógico.
+ * Consulta tanto el array moderno studentIds como el campo legado studentId.
+ */
+export async function getBitacorasByStudentIds(studentIds = [], options = {}) {
+  assertFirestoreEnabled();
+  assertAuthenticated();
+
+  const safeStudentIds = uniqueStrings(studentIds);
+  if (!safeStudentIds.length) return [];
+
+  const bitacorasRef = collection(db, BITACORAS_COLLECTION);
+  const byDocumentId = new Map();
+  const snapshots = await Promise.all(
+    safeStudentIds.flatMap((studentId) => [
+      getDocs(
+        query(
+          bitacorasRef,
+          where("studentIds", "array-contains", studentId)
+        )
+      ),
+      getDocs(
+        query(
+          bitacorasRef,
+          where("studentId", "==", studentId)
+        )
+      ),
+    ])
+  );
+
+  snapshots.forEach((snapshot) => {
+    snapshot.docs.forEach((docSnap) => {
+      byDocumentId.set(docSnap.id, normalizeBitacoraRecord(docSnap));
+    });
+  });
+
+  return applyClientFilters([...byDocumentId.values()], {
+    ...options,
+    limit: options.limit || 0,
+  });
+}
+
+/**
  * Consulta una bitácora puntual por id.
  */
 export async function getBitacoraById(bitacoraId) {
@@ -715,6 +769,7 @@ export async function deleteBitacora(bitacoraId) {
 export default {
   getBitacoras,
   getBitacorasByStudent,
+  getBitacorasByStudentIds,
   getBitacoraById,
   createBitacora,
   updateBitacora,

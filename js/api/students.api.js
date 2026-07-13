@@ -20,6 +20,10 @@ import {
   slugifyProcessKey,
   toStringSafe,
 } from "../utils/shared.js";
+import {
+  getLogicalStudentLinkedIds,
+  resolveLogicalStudents,
+} from "../utils/student-resolver.js";
 
 const DEFAULT_TIMEOUT =
   Number.isFinite(CONFIG?.api?.timeoutMs) && CONFIG.api.timeoutMs > 0
@@ -28,6 +32,7 @@ const DEFAULT_TIMEOUT =
 
 const STUDENTS_COLLECTION = getStudentsCollectionName();
 const FIRESTORE_BATCH_LIMIT = 400;
+let logicalStudentsCache = [];
 
 function createApiError(message, extra = {}) {
   const error = new Error(message);
@@ -812,12 +817,15 @@ function sortStudents(students = []) {
 
 async function listStudentsFromFirestore() {
   const snapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
-  return snapshot.docs
-    // Los docs marcados como alias de un canónico no son estudiantes
-    // adicionales: su doc canónico ya está en la lista (evita duplicados).
-    .filter((docSnap) => !toStringSafe((docSnap.data() || {}).legacyAliasOf))
-    .map((docSnap) => normalizeStudentRecord({ id: docSnap.id, ...docSnap.data() }))
+  const rawRecords = snapshot.docs.map((docSnap) => ({
+    ...docSnap.data(),
+    __documentId: docSnap.id,
+    id: docSnap.id,
+  }));
+  logicalStudentsCache = resolveLogicalStudents(rawRecords)
+    .map((record) => normalizeStudentRecord(record))
     .filter(Boolean);
+  return logicalStudentsCache;
 }
 
 async function getStudentDocFromFirestore(studentRef) {
@@ -851,35 +859,7 @@ async function getStudentByEmailFromFirestore(email) {
   puede retirar y queda solo la consulta indexada.
 */
 export async function getTeacherListStudents(options = {}) {
-  const byId = new Map();
-
-  try {
-    const snapshot = await getDocs(
-      query(
-        collection(db, STUDENTS_COLLECTION),
-        where("rip.showInTeacherLists", "==", true)
-      )
-    );
-    snapshot.docs.forEach((docSnap) => {
-      if (toStringSafe((docSnap.data() || {}).legacyAliasOf)) return;
-      const student = normalizeStudentRecord({ id: docSnap.id, ...docSnap.data() });
-      if (student) byId.set(student.studentId, student);
-    });
-  } catch (error) {
-    console.warn(
-      "[students.api] Consulta rip.showInTeacherLists no disponible; se usa solo el fallback.",
-      error
-    );
-  }
-
-  if (options.queryOnly !== true) {
-    const legacy = await getStudents({ ...options, includeInactive: false });
-    legacy.forEach((student) => {
-      if (!byId.has(student.studentId)) byId.set(student.studentId, student);
-    });
-  }
-
-  return sortStudents([...byId.values()]);
+  return getStudents({ ...options, includeInactive: false });
 }
 
 export async function getStudents(options = {}) {
@@ -908,14 +888,36 @@ export async function getStudentsResponse(options = {}) {
   };
 }
 
-export async function getStudentProfile(studentRef) {
-  const student = await getStudentDocFromFirestore(studentRef);
-  return student || null;
+export async function getStudentProfile(studentRef, options = {}) {
+  const safeStudentRef = normalizeStudentIdentifier(studentRef);
+  if (!safeStudentRef) return null;
+  if (!logicalStudentsCache.length || options.refresh === true) {
+    await listStudentsFromFirestore();
+  }
+  return (
+    logicalStudentsCache.find((student) =>
+      getLogicalStudentLinkedIds(student).includes(safeStudentRef)
+    ) || null
+  );
 }
 
 export async function getStudentByEmail(email) {
-  const student = await getStudentByEmailFromFirestore(email);
-  return student || null;
+  const safeEmail = normalizeScalar(email).toLowerCase();
+  if (!safeEmail) return null;
+  if (!logicalStudentsCache.length) {
+    await listStudentsFromFirestore();
+  }
+  return (
+    logicalStudentsCache.find(
+      (student) =>
+        normalizeScalar(
+          student?.identityDocument?.emailNormalized ||
+            student?.email ||
+            student?.correo ||
+            student?.correoElectronico
+        ).toLowerCase() === safeEmail
+    ) || null
+  );
 }
 
 export async function getStudentProfileResponse(studentRef, options = {}) {

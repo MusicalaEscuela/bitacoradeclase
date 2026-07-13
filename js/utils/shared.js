@@ -341,6 +341,7 @@ export function resolveStudentRefFromPayload(payload) {
 export function getStudentIdentity(student) {
   if (!student) return "";
   return (
+    toStringSafe(student.canonicalStudentId) ||
     toStringSafe(student.studentKey) ||
     toStringSafe(student.id) ||
     toStringSafe(student.studentId) ||
@@ -348,9 +349,70 @@ export function getStudentIdentity(student) {
   );
 }
 
+export function getStudentLinkedIds(student) {
+  if (!student) return [];
+  return uniqueStrings([
+    student.canonicalStudentId,
+    student.studentId,
+    student.id,
+    student.studentKey,
+    student.academicRecordId,
+    ...(Array.isArray(student.linkedStudentIds)
+      ? student.linkedStudentIds
+      : []),
+  ]);
+}
+
+export function getStudentAcademicRecordId(student) {
+  if (!student) return "";
+  return (
+    toStringSafe(student.academicRecordId) ||
+    getStudentIdentity(student)
+  );
+}
+
+export function resolveStudentAcademicRecordIdFromBitacoras(
+  student,
+  bitacoras = []
+) {
+  const linkedStudentIds = getStudentLinkedIds(student);
+  if (!linkedStudentIds.length) return getStudentAcademicRecordId(student);
+
+  const counts = new Map(linkedStudentIds.map((id) => [id, 0]));
+  toArraySafe(bitacoras).forEach((item) => {
+    const itemIds = uniqueStrings([
+      item?.studentId,
+      item?.primaryStudentId,
+      ...(Array.isArray(item?.studentIds) ? item.studentIds : []),
+      ...(Array.isArray(item?.studentRefs)
+        ? item.studentRefs.map((ref) =>
+            typeof ref === "string"
+              ? ref
+              : ref?.id || ref?.studentId || ref?.studentKey
+          )
+        : []),
+    ]);
+    itemIds.forEach((id) => {
+      if (counts.has(id)) counts.set(id, counts.get(id) + 1);
+    });
+  });
+
+  const currentAcademicRecordId = getStudentAcademicRecordId(student);
+  const ranked = [...counts.entries()].sort((left, right) => {
+    const countDelta = right[1] - left[1];
+    if (countDelta) return countDelta;
+    if (left[0] === currentAcademicRecordId) return -1;
+    if (right[0] === currentAcademicRecordId) return 1;
+    return left[0].localeCompare(right[0]);
+  });
+
+  return ranked[0]?.[1] > 0 ? ranked[0][0] : currentAcademicRecordId;
+}
+
 export function getStudentFallbackId(student) {
   if (!student) return "";
   return (
+    toStringSafe(student.academicRecordId) ||
     toStringSafe(student.id) ||
     toStringSafe(student.studentId) ||
     toStringSafe(student.documento)

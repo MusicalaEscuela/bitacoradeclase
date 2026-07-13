@@ -24,7 +24,7 @@ import {
 } from "../state.js";
 
 import {
-  getBitacorasByStudent,
+  getBitacorasByStudentIds,
   createBitacora,
   updateBitacora,
   deleteBitacora,
@@ -49,9 +49,11 @@ import {
   formatDisplayDate,
   getReadableValue,
   getStudentDocument,
+  getStudentAcademicRecordId,
   getStudentCondition,
   getStudentFallbackId,
   getStudentIdentity,
+  getStudentLinkedIds,
   getStudentName,
   getStudentProcessesSummary,
   matchesFlexibleSearch,
@@ -66,6 +68,7 @@ import {
   normalizeMode,
   normalizeStudentIds,
   normalizeStudentRefs,
+  resolveStudentAcademicRecordIdFromBitacoras,
   resolveStudentRefFromPayload,
   findStudentInCollections,
   toStringSafe,
@@ -291,13 +294,10 @@ async function ensureBitacorasLoaded(student) {
   setBitacorasLoading(true);
 
   try {
-    const items = await safeLoadBitacoras(studentRef);
-    setBitacorasForStudent(studentRef, items);
-
-    const fallbackId = getStudentFallbackId(student);
-    if (fallbackId && fallbackId !== studentRef) {
-      setBitacorasForStudent(fallbackId, items);
-    }
+    const items = await safeLoadBitacoras(student);
+    getStudentLinkedIds(student).forEach((linkedStudentId) => {
+      setBitacorasForStudent(linkedStudentId, items);
+    });
   } catch (error) {
     console.error("Error cargando bitacoras del estudiante:", error);
     setAppError(error?.message || "No se pudieron cargar las bitacoras.");
@@ -2014,13 +2014,10 @@ async function reloadHistory(student) {
 
   try {
     clearAppError();
-    const items = await safeLoadBitacoras(studentRef);
-    setBitacorasForStudent(studentRef, items);
-
-    const fallbackId = getStudentFallbackId(student);
-    if (fallbackId && fallbackId !== studentRef) {
-      setBitacorasForStudent(fallbackId, items);
-    }
+    const items = await safeLoadBitacoras(student);
+    getStudentLinkedIds(student).forEach((linkedStudentId) => {
+      setBitacorasForStudent(linkedStudentId, items);
+    });
 
     resolveLoadingToast(loadingToastId, {
       type: "success",
@@ -2041,7 +2038,12 @@ async function reloadHistory(student) {
 }
 
 async function findPotentialDuplicateBitacora(student, payload = {}) {
-  const relatedIds = new Set(normalizeStudentIds(payload.studentIds || [payload.studentId]));
+  const relatedIds = new Set(
+    normalizeStudentIds([
+      ...(payload.studentIds || [payload.studentId]),
+      ...getStudentLinkedIds(student),
+    ])
+  );
   if (!relatedIds.size) return null;
 
   let items = [
@@ -2051,7 +2053,7 @@ async function findPotentialDuplicateBitacora(student, payload = {}) {
   items = dedupeBitacorasById(items);
   if (!items.length) {
     try {
-      items = await safeLoadBitacoras(getStudentIdentity(student));
+      items = await safeLoadBitacoras(student);
     } catch (error) {
       console.warn("No se pudo consultar historial para validar duplicados:", error);
       return null;
@@ -2513,8 +2515,12 @@ function renderPrintableOverridesSection(item = {}) {
   return renderPrintableSection("Personalizacion por estudiante", blocks.join("\n"));
 }
 
-async function safeLoadBitacoras(studentRef) {
-  const response = await getBitacorasByStudent(studentRef, {
+async function safeLoadBitacoras(studentOrRef) {
+  const linkedStudentIds =
+    studentOrRef && typeof studentOrRef === "object"
+      ? getStudentLinkedIds(studentOrRef)
+      : normalizeStudentIds([studentOrRef]);
+  const response = await getBitacorasByStudentIds(linkedStudentIds, {
     processKey: currentEditorProcessKey || "",
   });
   const items = normalizeBitacorasResponse(response);
@@ -2634,6 +2640,28 @@ function buildBitacoraPayload(student, draft) {
           },
         ];
 
+  const studentAcademicRefs = selectedStudents.map((item) => ({
+    canonicalStudentId: item.id,
+    academicRecordId: item.academicRecordId || item.id,
+    linkedStudentIds: normalizeStudentIds(
+      item.linkedStudentIds || [item.id]
+    ),
+  }));
+  const linkedStudentIds = normalizeStudentIds(
+    studentAcademicRefs.flatMap((item) => item.linkedStudentIds)
+  );
+  const primaryAcademicRef =
+    studentAcademicRefs.find((item) => item.canonicalStudentId === studentRef) ||
+    studentAcademicRefs[0] ||
+    null;
+  const resolvedPrimaryAcademicId =
+    mode === CONFIG.modes.individual
+      ? resolveStudentAcademicRecordIdFromBitacoras(
+          student,
+          getBitacorasFromState(student)
+        )
+      : primaryAcademicRef?.academicRecordId;
+
   return applyAutomaticCategoriesFromWorks({
     mode,
     studentId: studentRef,
@@ -2641,6 +2669,11 @@ function buildBitacoraPayload(student, draft) {
     studentIds,
     studentRefs,
     primaryStudentId: studentRef,
+    academicRecordId:
+      resolvedPrimaryAcademicId ||
+      getStudentAcademicRecordId(student),
+    linkedStudentIds,
+    studentAcademicRefs,
     title: String(
       draft.titulo ||
         buildAutoTitle(student, draft.fechaClase, { mode, studentRefs })
@@ -4153,6 +4186,8 @@ function mapStudentForSelection(student) {
     id: getStudentIdentity(student),
     name: getStudentName(student),
     document: getStudentDocument(student),
+    academicRecordId: getStudentAcademicRecordId(student),
+    linkedStudentIds: getStudentLinkedIds(student),
   };
 }
 
