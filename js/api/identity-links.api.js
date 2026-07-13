@@ -1,20 +1,18 @@
 import {
-  app,
   collection,
   db,
+  doc,
+  getCurrentUser,
   getDocs,
   normalizeTimestamps,
+  serverTimestamp,
+  writeBatch,
 } from "../firebase.client.js";
 import { toStringSafe } from "../utils/shared.js";
-import {
-  getFunctions,
-  httpsCallable,
-} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-functions.js";
 
 const LINKS_COLLECTION = "student_identity_links";
 const REVIEWS_COLLECTION = "student_identity_link_reviews";
 let cachedRecords = [];
-const functions = getFunctions(app, "us-central1");
 
 function normalizeRecord(docSnap, kind) {
   return {
@@ -45,16 +43,59 @@ export function getCachedStudentIdentityLinkRecords() {
 }
 
 export async function manageStudentIdentityLink(payload = {}) {
-  const callable = httpsCallable(functions, "manageStudentIdentityLink");
-  const result = await callable({
-    action: toStringSafe(payload.action || "confirm"),
-    canonicalStudentId: toStringSafe(payload.canonicalStudentId),
-    academicRecordId: toStringSafe(payload.academicRecordId),
-    linkedStudentIds: Array.isArray(payload.linkedStudentIds)
-      ? payload.linkedStudentIds.map(toStringSafe).filter(Boolean)
-      : [],
+  const action = toStringSafe(payload.action || "confirm").toLowerCase();
+  const canonicalStudentId = toStringSafe(payload.canonicalStudentId);
+  const academicRecordId = toStringSafe(payload.academicRecordId);
+  const currentUser = getCurrentUser();
+  if (!currentUser?.uid) throw new Error("Debes iniciar sesión.");
+  if (!canonicalStudentId || !academicRecordId || canonicalStudentId === academicRecordId) {
+    throw new Error("Selecciona dos registros distintos.");
+  }
+  if (/^stu_/i.test(canonicalStudentId) || !/^stu_/i.test(academicRecordId)) {
+    throw new Error("Selecciona un canónico y un expediente STU.");
+  }
+
+  const batch = writeBatch(db);
+  const reviewKey = `${canonicalStudentId}__${academicRecordId}`;
+  const reviewRef = doc(db, REVIEWS_COLLECTION, reviewKey);
+  const now = serverTimestamp();
+
+  if (action === "reject") {
+    batch.set(reviewRef, {
+      canonicalStudentId,
+      academicRecordId,
+      linkedStudentIds: [canonicalStudentId, academicRecordId],
+      status: "rejected",
+      linkMethod: "admin-rejected",
+      reviewedAt: now,
+      reviewedBy: currentUser.uid,
+    });
+    await batch.commit();
+    return { ok: true, status: "rejected" };
+  }
+
+  const linkedStudentIds = [canonicalStudentId, academicRecordId];
+  const linkRef = doc(db, LINKS_COLLECTION, canonicalStudentId);
+  batch.set(linkRef, {
+    canonicalStudentId,
+    academicRecordId,
+    linkedStudentIds,
+    status: "confirmed",
+    linkMethod: "admin-confirmed",
+    linkedAt: now,
+    linkedBy: currentUser.uid,
   });
-  return result?.data || {};
+  linkedStudentIds.forEach((studentId) => {
+    batch.set(doc(db, "student_identity_link_members", studentId), {
+      studentId,
+      canonicalStudentId,
+      status: "confirmed",
+      linkedAt: now,
+    });
+  });
+  batch.delete(reviewRef);
+  await batch.commit();
+  return { ok: true, status: "confirmed", linkedStudentIds };
 }
 
 export function maskStudentIdentityId(value) {

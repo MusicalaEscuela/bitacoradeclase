@@ -119,18 +119,113 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    function identityDocumentValue(studentId) {
+      let data = get(/databases/$(database)/documents/students/$(studentId)).data;
+      return data.get('documentFingerprint',
+        data.get('documento',
+          data.get('numeroDocumento',
+            data.get('identificacion', data.get('cc', '')))));
+    }
+
+    function identityMembersReady(canonicalStudentId, academicRecordId) {
+      return getAfter(/databases/$(database)/documents/student_identity_link_members/$(canonicalStudentId)).data.canonicalStudentId == canonicalStudentId &&
+        getAfter(/databases/$(database)/documents/student_identity_link_members/$(academicRecordId)).data.canonicalStudentId == canonicalStudentId;
+    }
+
+    function validIdentityLink(canonicalStudentId) {
+      let academicRecordId = request.resource.data.academicRecordId;
+      let canonicalDocument = identityDocumentValue(canonicalStudentId);
+      let academicDocument = identityDocumentValue(academicRecordId);
+      return request.resource.data.keys().hasAll([
+          'canonicalStudentId', 'academicRecordId', 'linkedStudentIds',
+          'status', 'linkMethod', 'linkedAt', 'linkedBy'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'canonicalStudentId', 'academicRecordId', 'linkedStudentIds',
+          'status', 'linkMethod', 'linkedAt', 'linkedBy'
+        ]) &&
+        request.resource.data.canonicalStudentId == canonicalStudentId &&
+        !canonicalStudentId.matches('^stu_.*') &&
+        academicRecordId is string &&
+        academicRecordId.matches('^stu_.*') &&
+        canonicalStudentId != academicRecordId &&
+        request.resource.data.linkedStudentIds is list &&
+        request.resource.data.linkedStudentIds.size() == 2 &&
+        request.resource.data.linkedStudentIds.hasAll([canonicalStudentId, academicRecordId]) &&
+        request.resource.data.status == 'confirmed' &&
+        request.resource.data.linkMethod == 'admin-confirmed' &&
+        request.resource.data.linkedAt == request.time &&
+        request.resource.data.linkedBy == request.auth.uid &&
+        exists(/databases/$(database)/documents/students/$(canonicalStudentId)) &&
+        exists(/databases/$(database)/documents/students/$(academicRecordId)) &&
+        (canonicalDocument == '' || academicDocument == '' || canonicalDocument == academicDocument) &&
+        identityMembersReady(canonicalStudentId, academicRecordId);
+    }
+
+    function validIdentityMember(studentId) {
+      let canonicalStudentId = request.resource.data.canonicalStudentId;
+      return request.resource.data.keys().hasAll([
+          'studentId', 'canonicalStudentId', 'status', 'linkedAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'studentId', 'canonicalStudentId', 'status', 'linkedAt'
+        ]) &&
+        request.resource.data.studentId == studentId &&
+        canonicalStudentId is string &&
+        request.resource.data.status == 'confirmed' &&
+        request.resource.data.linkedAt == request.time &&
+        exists(/databases/$(database)/documents/students/$(studentId)) &&
+        getAfter(/databases/$(database)/documents/student_identity_links/$(canonicalStudentId)).data.status == 'confirmed' &&
+        getAfter(/databases/$(database)/documents/student_identity_links/$(canonicalStudentId)).data.linkedStudentIds.hasAny([studentId]) &&
+        (!exists(/databases/$(database)/documents/student_identity_link_members/$(studentId)) ||
+          resource.data.canonicalStudentId == canonicalStudentId);
+    }
+
+    function validIdentityRejection() {
+      return request.resource.data.keys().hasAll([
+          'canonicalStudentId', 'academicRecordId', 'linkedStudentIds',
+          'status', 'linkMethod', 'reviewedAt', 'reviewedBy'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'canonicalStudentId', 'academicRecordId', 'linkedStudentIds',
+          'status', 'linkMethod', 'reviewedAt', 'reviewedBy'
+        ]) &&
+        request.resource.data.canonicalStudentId is string &&
+        request.resource.data.academicRecordId is string &&
+        request.resource.data.academicRecordId.matches('^stu_.*') &&
+        request.resource.data.canonicalStudentId != request.resource.data.academicRecordId &&
+        request.resource.data.linkedStudentIds == [
+          request.resource.data.canonicalStudentId,
+          request.resource.data.academicRecordId
+        ] &&
+        request.resource.data.status == 'rejected' &&
+        request.resource.data.linkMethod == 'admin-rejected' &&
+        request.resource.data.reviewedAt == request.time &&
+        request.resource.data.reviewedBy == request.auth.uid &&
+        exists(/databases/$(database)/documents/students/$(request.resource.data.canonicalStudentId)) &&
+        exists(/databases/$(database)/documents/students/$(request.resource.data.academicRecordId));
+    }
+
     match /student_identity_links/{canonicalStudentId} {
       allow read: if isAdmin() || isTeacher();
-      allow create, update, delete: if false;
+      allow create: if isAdmin() && validIdentityLink(canonicalStudentId);
+      allow update: if isAdmin() &&
+        resource.data.canonicalStudentId == canonicalStudentId &&
+        resource.data.academicRecordId == request.resource.data.academicRecordId &&
+        validIdentityLink(canonicalStudentId);
+      allow delete: if false;
     }
 
     match /student_identity_link_reviews/{reviewId} {
       allow read: if isAdmin() || isTeacher();
-      allow create, update, delete: if false;
+      allow create, update: if isAdmin() && validIdentityRejection();
+      allow delete: if isAdmin();
     }
 
     match /student_identity_link_members/{studentId} {
-      allow read, write: if false;
+      allow read: if false;
+      allow create, update: if isAdmin() && validIdentityMember(studentId);
+      allow delete: if false;
     }
 
     // Agenda publicada para los clientes autenticados con perfil activo.
