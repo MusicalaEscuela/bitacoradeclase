@@ -14,6 +14,7 @@ import {
 } from "../api/catalogs.api.js";
 import {
   listStudentAccessUsers,
+  subscribeStudentAccessUsers,
 } from "../api/users.api.js";
 import { getStudents } from "../api/students.api.js";
 import {
@@ -47,7 +48,7 @@ let currentCatalogs = getEmptyCatalogs();
 let currentMessage = null;
 let currentStudentAccessUsers = [];
 let currentStudentAccessSearchQuery = "";
-let currentStudentSyncReport = null;
+let unsubscribeStudentAccessUsers = null;
 let currentBitacoraImportPlan = null;
 let currentArtCatalogSearchQuery = "";
 const expandedSettingsPanels = new Set();
@@ -82,6 +83,7 @@ export async function render({ root, state, subscribe: subscribeFn, navigateTo }
 
   renderView(state || getState());
   setupSubscription();
+  setupStudentAccessSubscription();
 }
 
 export function beforeLeave() {
@@ -135,10 +137,36 @@ function setupSubscription() {
   });
 }
 
+function setupStudentAccessSubscription() {
+  if (unsubscribeStudentAccessUsers) {
+    unsubscribeStudentAccessUsers();
+    unsubscribeStudentAccessUsers = null;
+  }
+
+  unsubscribeStudentAccessUsers = subscribeStudentAccessUsers(
+    (users) => {
+      currentStudentAccessUsers = users;
+      if (viewRoot?.isConnected) renderView(getState());
+    },
+    (error) => {
+      currentMessage = {
+        type: "warning",
+        text: error?.message || "No se pudieron actualizar los accesos de estudiantes.",
+      };
+      if (viewRoot?.isConnected) renderView(getState());
+    }
+  );
+}
+
 function cleanupView() {
   if (unsubscribeView) {
     unsubscribeView();
     unsubscribeView = null;
+  }
+
+  if (unsubscribeStudentAccessUsers) {
+    unsubscribeStudentAccessUsers();
+    unsubscribeStudentAccessUsers = null;
   }
 
   viewRoot = null;
@@ -272,35 +300,9 @@ function buildMarkup(state) {
             </p>
           </div>
 
-          <div class="settings-form-actions">
-            <p class="field__hint">
-              La sincronización legacy desde el navegador fue retirada. Firestore mantiene la fuente operativa y las integraciones administrativas se ejecutan únicamente desde backend.
-            </p>
-            <button
-              type="button"
-              class="btn btn--ghost"
-              id="settings-refresh-students-access-btn"
-            >
-              Actualizar lista de accesos estudiantiles
-            </button>
-          </div>
-
-          ${
-            currentStudentSyncReport
-              ? `
-                <div class="message-box message-box--info">
-                  Leídos: ${escapeHtml(String(currentStudentSyncReport.totalStudentsRead || 0))} ·
-                  válidos: ${escapeHtml(String(currentStudentSyncReport.validStudents || 0))} ·
-                  nuevos: ${escapeHtml(String(currentStudentSyncReport.created || 0))} ·
-                  actualizados: ${escapeHtml(String(currentStudentSyncReport.updated || 0))} ·
-                  sin cambios: ${escapeHtml(String(currentStudentSyncReport.unchanged || 0))} ·
-                  sin correo: ${escapeHtml(String(currentStudentSyncReport.skippedMissingEmail || 0))} ·
-                  duplicados: ${escapeHtml(String(currentStudentSyncReport.skippedDuplicateEmail || 0))} ·
-                  conflictos: ${escapeHtml(String(currentStudentSyncReport.conflicts || 0))}
-                </div>
-              `
-              : ""
-          }
+          <p class="field__hint">
+            La lista se actualiza automáticamente cuando Firebase recibe cambios desde la fuente correspondiente. Esta pantalla solo muestra los accesos; no crea ni modifica vínculos.
+          </p>
 
           ${buildCollapsibleList({
             listKey: "student-access-list",
@@ -930,9 +932,6 @@ function bindEvents(state) {
 
   const refreshBtn = viewRoot.querySelector("#settings-refresh-btn");
   const saveBtn = viewRoot.querySelector("#settings-save-btn");
-  const refreshStudentAccessBtn = viewRoot.querySelector(
-    "#settings-refresh-students-access-btn"
-  );
   const teacherForm = viewRoot.querySelector("#settings-teacher-form");
   const teacherImport = viewRoot.querySelector("#settings-import-teachers");
   const bitacoraImportInput = viewRoot.querySelector("#settings-import-bitacoras");
@@ -1043,24 +1042,6 @@ function bindEvents(state) {
           loadingTitle: "Guardando",
           success: "Los catálogos se guardaron en Firebase.",
           successTitle: "Catálogos guardados",
-        }
-      );
-    });
-  }
-
-  if (refreshStudentAccessBtn) {
-    refreshStudentAccessBtn.addEventListener("click", async () => {
-      await withLoading(
-        async () => {
-          await refreshStudentAccessUsers();
-          expandedSettingsPanels.add("student-access-list");
-          renderView(getState());
-        },
-        {
-          loading: "Estamos actualizando la lista de accesos.",
-          loadingTitle: "Actualizando",
-          success: "La lista de accesos está al día.",
-          successTitle: "Lista actualizada",
         }
       );
     });
