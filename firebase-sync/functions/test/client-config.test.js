@@ -18,6 +18,7 @@ const sources = files.map((file) => ({ file, source: fs.readFileSync(file, "utf8
 const config = sources.find((item) => item.file.endsWith(`${path.sep}config.js`)).source;
 const app = sources.find((item) => item.file.endsWith(`${path.sep}app.js`)).source;
 const settings = sources.find((item) => item.file.endsWith(`${path.sep}settings.view.js`)).source;
+const firebaseClient = sources.find((item) => item.file.endsWith(`${path.sep}firebase.client.js`)).source;
 
 assert.ok(files.length > 5, "se esperaban archivos cliente para auditar");
 for (const item of sources) {
@@ -27,8 +28,11 @@ assert.match(config, /const LEGACY_CLIENT_ENDPOINT\s*=\s*""/);
 assert.ok(!app.includes("triggerStudentsSyncInBackground"));
 assert.ok(!settings.includes("settings-sync-students-btn"));
 assert.ok(!settings.includes("settings-sync-student-access-btn"));
+assert.ok(!settings.includes("settings-refresh-students-access-btn"));
 assert.ok(!settings.includes("syncStudentsFromSheetToFirestore"));
 assert.ok(!settings.includes("syncStudentAccessUsersFromSheet"));
+assert.match(settings, /subscribeStudentAccessUsers/);
+assert.match(firebaseClient, /onSnapshot/);
 
 const activeImports = sources
   .filter((item) => !item.file.endsWith(`${path.sep}uploads.api.js`))
