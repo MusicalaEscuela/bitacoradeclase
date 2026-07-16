@@ -11,6 +11,7 @@ const { _internals } = require("../index.js");
 const {
   normalizeStudent,
   mergeProcesses,
+  resolvePedagogicalProfileFields,
   isAllowedStudentStatus,
   ripOwnsStatus,
   extractEmails,
@@ -162,6 +163,23 @@ test("sin nombre no se sincroniza", () => {
 test("extractEmails encuentra correos de estudiante y acudiente", () => {
   const emails = extractEmails("Ana <ANA@Test.com>", ["acudiente@test.com"]);
   assert.deepStrictEqual(emails, ["acudiente@test.com", "ana@test.com"]);
+});
+
+test("la sincronización conserva modalidad e intereses editados si la fuente llega vacía", () => {
+  assert.deepStrictEqual(
+    resolvePedagogicalProfileFields(
+      { modalidad: "", interesesMusicales: "" },
+      { modalidad: "Virtual", interesesMusicales: "Jazz y composición" }
+    ),
+    { modalidad: "Virtual", interesesMusicales: "Jazz y composición" }
+  );
+  assert.deepStrictEqual(
+    resolvePedagogicalProfileFields(
+      { modalidad: "Presencial", intereses: "Violín clásico" },
+      { modalidad: "Virtual", interesesMusicales: "Jazz y composición" }
+    ),
+    { modalidad: "Presencial", interesesMusicales: "Violín clásico" }
+  );
 });
 
 test("mergeProcesses conserva áreas agregadas a mano en Bitácoras", () => {
