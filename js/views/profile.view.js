@@ -33,6 +33,8 @@ import {
   getStudentProfile,
   updateStudentTeacher,
   updateStudentRepertoire,
+  listStudentWorkSuggestions,
+  resolveStudentWorkSuggestion,
   updateStudentProfileFields,
   updateStudentProcesses,
   getStudentPrivateNotes,
@@ -725,6 +727,26 @@ export async function render({
   root.innerHTML = buildProfileMarkup(student, safeState, safeConfig);
 
   bindProfileEvents(student);
+  renderStudentWorkSuggestions(student).then((html) => {
+    const target = viewRoot?.querySelector("#profile-work-suggestions");
+    if (!target) return;
+    target.innerHTML = html;
+    target.addEventListener("click", async (event) => {
+      const accept = event.target.closest("[data-work-suggestion-accept]");
+      const dismiss = event.target.closest("[data-work-suggestion-dismiss]");
+      if (!accept && !dismiss) return;
+      const id = (accept || dismiss).getAttribute(accept ? "data-work-suggestion-accept" : "data-work-suggestion-dismiss");
+      try {
+        if (accept) {
+          await saveProfileRepertoire(student, [...getStudentRepertoireItems(student), { nombre: accept.getAttribute("data-work-suggestion-name"), estado: "quiere", prioridad: "media", notas: "", fechaInicio: "", fechaLogro: "" }]);
+          await resolveStudentWorkSuggestion(id, "aceptada");
+        } else {
+          await resolveStudentWorkSuggestion(id, "descartada");
+        }
+        target.innerHTML = await renderStudentWorkSuggestions(student);
+      } catch (error) { setAppError(error?.message || "No se pudo revisar la sugerencia."); }
+    });
+  });
   applyProfileFocusLayout(student);
   renderReactiveBlocks(getState(), safeConfig, currentProfileStudentKey);
   setupSubscription(safeConfig, currentProfileStudentKey);
@@ -892,6 +914,7 @@ function buildProfileMarkup(student, state, config) {
               ${renderStudentRepertoireCard(student, access)}
             </div>
           </article>
+          <div id="profile-work-suggestions"></div>
 
           <article class="card profile-quick-actions">
             <header class="panel-header">
@@ -2608,6 +2631,7 @@ function renderStudentRepertoireCard(student = {}, access = {}) {
 
   return `
     <div class="profile-repertoire">
+      <p class="field__hint">Obras que el estudiante quiere trabajar, está trabajando o ya logró.</p>
       <div class="profile-repertoire__board" data-repertoire-list>
         ${REPERTOIRE_STATUSES.map((status) =>
           renderRepertoireColumn(status, items, canEdit)
@@ -2640,6 +2664,14 @@ function renderStudentRepertoireCard(student = {}, access = {}) {
       }
     </div>
   `;
+}
+
+async function renderStudentWorkSuggestions(student) {
+  const studentId = getStudentAcademicRecordId(student);
+  if (!studentId) return "";
+  const suggestions = await listStudentWorkSuggestions(studentId).catch(() => []);
+  const pending = suggestions.filter((item) => item.estado === "pendiente");
+  return `<article class="card profile-repertoire-card"><header class="panel-header"><div><p class="panel-header__eyebrow">Desde Estudiantes HUB</p><h2 class="panel-header__title">Obras sugeridas por el estudiante</h2></div></header><div class="profile-repertoire">${pending.length ? pending.map((item) => `<article class="profile-repertoire-item"><div class="profile-repertoire-item__main"><strong>${escapeHtml(toStringSafe(item.nombre))}</strong><span>${escapeHtml(toStringSafe(item.notas) || "Sin nota adicional")}</span></div><div class="profile-repertoire-item__actions"><button class="profile-repertoire-action" data-work-suggestion-accept="${escapeHtml(item.id)}" data-work-suggestion-name="${escapeHtml(toStringSafe(item.nombre))}">Aceptar en Obras</button><button class="profile-repertoire-chip__remove" data-work-suggestion-dismiss="${escapeHtml(item.id)}">Descartar</button></div></article>`).join("") : `<p class="field__hint">No hay sugerencias pendientes.</p>`}</div></article>`;
 }
 
 function renderRepertoireColumn(status, items = [], canEdit = false) {

@@ -23,8 +23,8 @@ import {
 import {
   getLogicalStudentLinkedIds,
   resolveLogicalStudents,
-} from "../utils/student-resolver.js?v=20260713.3";
-import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260713.3";
+} from "../utils/student-resolver.js?v=20260716.1";
+import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260716.1";
 
 const DEFAULT_TIMEOUT =
   Number.isFinite(CONFIG?.api?.timeoutMs) && CONFIG.api.timeoutMs > 0
@@ -214,6 +214,27 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
     repertorioProceso,
     repertoireProgress: repertorioProceso,
   };
+}
+
+export async function listStudentWorkSuggestions(studentId) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) return [];
+  const snapshot = await getDocs(query(
+    collection(db, "student_work_suggestions"),
+    where("studentId", "==", safeStudentId),
+    limit(50)
+  ));
+  return snapshot.docs.map((item) => ({ id: item.id, ...normalizeTimestamps(item.data()) }));
+}
+
+export async function resolveStudentWorkSuggestion(suggestionId, status = "aceptada") {
+  const id = normalizeScalar(suggestionId);
+  if (!id) throw createApiError("Se requiere la sugerencia a actualizar.");
+  await updateDoc(doc(db, "student_work_suggestions", id), {
+    estado: status,
+    reviewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 function normalizeRepertoireForWrite(repertoire = []) {
