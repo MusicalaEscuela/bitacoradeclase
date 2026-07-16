@@ -586,6 +586,20 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // Propuestas creadas desde Estudiantes HUB. Solo el equipo las convierte
+    // en una obra oficial del proceso.
+    match /student_work_suggestions/{suggestionId} {
+      allow read: if isAdmin() || isTeacher() ||
+        (isActiveStudent() && resource.data.studentId in linkedStudentIds());
+      allow create: if isActiveStudent() &&
+        request.resource.data.keys().hasOnly(['studentId', 'studentName', 'nombre', 'notas', 'estado', 'createdAt', 'updatedAt']) &&
+        request.resource.data.studentId in linkedStudentIds() &&
+        request.resource.data.nombre is string && request.resource.data.nombre.size() > 0 && request.resource.data.nombre.size() <= 300 &&
+        request.resource.data.notas is string && request.resource.data.notas.size() <= 1000 &&
+        request.resource.data.estado == 'pendiente';
+      allow update, delete: if isAdmin() || isTeacher();
+    }
+
     // Bitácora de sincronizaciones entre proyectos (escrita solo por los
     // backends via Admin SDK; el cliente únicamente puede consultarla).
     match /sync_logs/{logId} {
