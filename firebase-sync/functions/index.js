@@ -561,10 +561,34 @@ function ripOwnsStatus(existingDoc) {
    Escrituras: Bitácoras
 ========================= */
 
+function resolvePedagogicalProfileFields(normalized = {}, existing = {}) {
+  // Modalidad e intereses también se editan directamente en Bitácoras. Si la
+  // fuente de identidad no los trae, no debemos borrar una actualización
+  // pedagógica que ya confirmó una docente en este proyecto.
+  return {
+    modalidad: firstText(
+      normalized.modalidad,
+      normalized.modality,
+      existing.modalidad,
+      existing.modality
+    ),
+    interesesMusicales: firstText(
+      normalized.interesesMusicales,
+      normalized.intereses,
+      existing.interesesMusicales,
+      existing.intereses
+    ),
+  };
+}
+
 async function mergeBitacorasStudent(normalized) {
   const ref = bitacorasDb.collection(TARGET_STUDENTS_COLLECTION).doc(normalized.studentId);
   const snap = await ref.get();
   const existing = snap.exists ? snap.data() || {} : {};
+  const { modalidad, interesesMusicales } = resolvePedagogicalProfileFields(
+    normalized,
+    existing
+  );
   const existingIds = Array.isArray(existing.studentIds) ? existing.studentIds : [];
   // Los IDs previos pueden traer el documento (syncs antiguos): se filtra
   // SIEMPRE al reescribir. sanitize-sensitive-aliases.js limpia el resto.
@@ -593,12 +617,13 @@ async function mergeBitacorasStudent(normalized) {
     correoElectronico: normalized.email,
     emails: normalized.emails,
     edad: normalized.edad,
-    interesesMusicales: normalized.interesesMusicales,
-    intereses: normalized.intereses,
+    interesesMusicales,
+    intereses: interesesMusicales,
     area: normalized.area,
     programa: normalized.programa,
     instrumento: normalized.instrumento,
-    modalidad: normalized.modalidad,
+    modalidad,
+    modality: modalidad,
     sede: normalized.sede,
     docente: normalized.docente,
     teacher: normalized.teacher,
@@ -2403,6 +2428,7 @@ exports._internals = {
   normalizeStudent,
   normalizeProcesses,
   mergeProcesses,
+  resolvePedagogicalProfileFields,
   isAllowedStudentStatus,
   uniqueTexts,
   extractEmails,
