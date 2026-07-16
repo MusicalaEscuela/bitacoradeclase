@@ -1969,7 +1969,26 @@ async function saveProfileField(student, field) {
       { updatedBy }
     );
 
-    updateStudentProfile(mergePedagogicalUpdate(student, updated));
+    // Confirmar con una lectura nueva evita mostrar un éxito local si una
+    // sincronización de identidad acabara de reemplazar el dato en Firestore.
+    const refreshedProfile = await getStudentProfile(getStudentIdentity(student), {
+      refresh: true,
+    });
+    const persistedValue = toStringSafe(
+      safeField === "interesesMusicales"
+        ? refreshedProfile?.interesesMusicales || refreshedProfile?.intereses
+        : refreshedProfile?.modalidad || refreshedProfile?.modality
+    );
+    if (persistedValue !== value) {
+      throw new Error("Firebase no confirmó el valor guardado. Inténtalo de nuevo.");
+    }
+
+    const nextStudent = mergePedagogicalUpdate(student, {
+      ...updated,
+      ...(refreshedProfile || {}),
+    });
+    updateStudentProfile(nextStudent);
+    setSelectedStudent(nextStudent);
     showProfileTeacherMessage(
       viewRoot?.querySelector(`[data-profile-field-message="${safeField}"]`) || message,
       "Cambios guardados.",
