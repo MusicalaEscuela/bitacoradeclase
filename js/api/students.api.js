@@ -216,6 +216,27 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
   };
 }
 
+export async function listStudentWorkSuggestions(studentId) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  if (!safeStudentId) return [];
+  const snapshot = await getDocs(query(
+    collection(db, "student_work_suggestions"),
+    where("studentId", "==", safeStudentId),
+    limit(50)
+  ));
+  return snapshot.docs.map((item) => ({ id: item.id, ...normalizeTimestamps(item.data()) }));
+}
+
+export async function resolveStudentWorkSuggestion(suggestionId, status = "aceptada") {
+  const id = normalizeScalar(suggestionId);
+  if (!id) throw createApiError("Se requiere la sugerencia a actualizar.");
+  await updateDoc(doc(db, "student_work_suggestions", id), {
+    estado: status,
+    reviewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
 function normalizeRepertoireForWrite(repertoire = []) {
   const items = Array.isArray(repertoire) ? repertoire : [repertoire];
   const byName = new Map();
