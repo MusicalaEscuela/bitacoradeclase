@@ -37,6 +37,7 @@ import {
 
 import { uploadFileResumable } from "../firebase.client.js";
 import {
+  showSuccess,
   showLoadingToast,
   resolveLoadingToast,
   updateToast,
@@ -936,12 +937,12 @@ function bindEditorEvents(student) {
       return;
     }
 
-    const addSelected = event.target.closest("[data-picker-add-selected]");
-    if (addSelected) {
-      addCheckedPickerSelections(
-        addSelected.getAttribute("data-picker-add-selected"),
-        student
-      );
+    const addPending = event.target.closest("[data-picker-add-pending]");
+    if (addPending && !addPending.disabled) {
+      event.preventDefault();
+      const key = addPending.getAttribute("data-picker-add-pending");
+      if (key) addPendingPickerValues(key, student);
+      return;
     }
   });
 
@@ -1011,14 +1012,6 @@ function bindEditorEvents(student) {
           togglePickerPanel(key, true);
         }
       }
-    });
-  });
-
-  viewRoot.querySelectorAll("[data-picker-add-pending]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const key = button.getAttribute("data-picker-add-pending");
-      if (!key) return;
-      addPendingPickerValues(key, student);
     });
   });
 
@@ -1616,7 +1609,10 @@ function addPendingPickerValues(key, student) {
   if (!values.length) return;
 
   const input = viewRoot?.querySelector(`[data-multi-input="${key}"]`);
+  const selectedBefore = getMultiValueSelection(key).length;
   addMultiValueSelection(key, values, student);
+  const selectedAfter = getMultiValueSelection(key).length;
+  const addedCount = Math.max(0, selectedAfter - selectedBefore);
   viewRoot
     ?.querySelectorAll(`[data-picker-pending="${key}"]`)
     .forEach((option) => {
@@ -1632,6 +1628,16 @@ function addPendingPickerValues(key, student) {
     input.value = "";
     renderPickerOptionsForInput(key, input);
     togglePickerPanel(key, false);
+  }
+
+  if (addedCount) {
+    const itemWord = addedCount === 1 ? "ejercicio" : "ejercicios";
+    showSuccess(`${addedCount} ${itemWord} agregados a la bitácora.`);
+    // En móvil los chips quedan debajo del selector. Llevamos el foco visual
+    // a ese resultado para que la docente confirme de inmediato la acción.
+    viewRoot
+      ?.querySelector(`[data-multi-values="${key}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 }
 
