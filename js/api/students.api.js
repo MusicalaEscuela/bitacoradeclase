@@ -335,9 +335,15 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     .map((process, index) => normalizeProcessForWrite(process, index))
     .filter(Boolean);
 
-  const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
-  const snapshot = await getDoc(ref);
-  if (!snapshot.exists()) {
+  const targetIds = [...new Set([
+    safeStudentId,
+    ...(Array.isArray(options.linkedStudentIds) ? options.linkedStudentIds : []),
+  ].map(normalizeStudentIdentifier).filter(Boolean))];
+  const snapshots = await Promise.all(
+    targetIds.map(async (id) => ({ id, snapshot: await getDoc(doc(db, STUDENTS_COLLECTION, id)) }))
+  );
+  const existingTargets = snapshots.filter(({ snapshot }) => snapshot.exists());
+  if (!existingTargets.length) {
     throw createApiError("No se encontro el estudiante en Firebase para actualizar areas.", {
       code: "STUDENT_NOT_FOUND",
       studentId: safeStudentId,
@@ -354,7 +360,13 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     updatedBy: normalizeScalar(options.updatedBy) || "profile_processes",
   };
 
-  await updateDoc(ref, payload);
+  // Un perfil puede tener registros canónicos y legados. Mantener sus procesos
+  // alineados evita que una recarga desde otro alias borre visualmente docente.
+  const batch = writeBatch(db);
+  existingTargets.forEach(({ id }) => {
+    batch.update(doc(db, STUDENTS_COLLECTION, id), payload);
+  });
+  await batch.commit();
 
   return {
     id: safeStudentId,

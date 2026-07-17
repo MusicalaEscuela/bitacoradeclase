@@ -1720,14 +1720,17 @@ async function persistStudentProcesses(student, nextProcesses, successMessage) {
   try {
     clearAppError();
     const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_processes";
-    const updated = await updateStudentProcesses(studentId, nextProcesses, { updatedBy });
+    const updated = await updateStudentProcesses(studentId, nextProcesses, {
+      updatedBy,
+      linkedStudentIds: getStudentLinkedIds(student),
+    });
     const refreshedProfile = await getStudentProfile(
       getStudentIdentity(student),
       { refresh: true }
     ).catch(() => null);
     const nextStudent = mergePedagogicalUpdate(student, {
-      ...updated,
       ...(refreshedProfile || {}),
+      ...updated,
     });
     updateStudentProfile(nextStudent);
     setSelectedStudent(nextStudent);
