@@ -670,19 +670,11 @@ export async function createBitacora(bitacoraData, options = {}) {
     updatedAt: serverTimestamp(),
   });
 
-  const created = await getBitacoraById(docRef.id);
-
-  if (!created) {
-    throw createApiError(
-      "La bitácora se creó, pero no se pudo leer después del guardado.",
-      {
-        code: "BITACORA_CREATED_BUT_NOT_READABLE",
-        bitacoraId: docRef.id,
-      }
-    );
-  }
-
-  return created;
+  const now = new Date().toISOString();
+  return normalizeBitacoraRecord({
+    id: docRef.id,
+    data: () => ({ ...payload, createdAt: now, updatedAt: now }),
+  });
 }
 
 /**
