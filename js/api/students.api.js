@@ -850,10 +850,15 @@ function sortStudents(students = []) {
 }
 
 async function listStudentsFromFirestore() {
-  const [snapshot, identityLinks] = await Promise.all([
-    getDocs(collection(db, STUDENTS_COLLECTION)),
-    listStudentIdentityLinkRecords({ includeReviews: true }),
-  ]);
+  // La búsqueda nunca debe quedar vacía por una falla en la bandeja auxiliar
+  // de identidad. Los estudiantes son la fuente principal; los links sólo
+  // enriquecen cómo se agrupan sus aliases.
+  const snapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
+  const identityLinks = await listStudentIdentityLinkRecords({ includeReviews: true })
+    .catch((error) => {
+      console.warn("No se pudieron cargar los vínculos de identidad; se muestran los estudiantes sin agrupar.", error);
+      return [];
+    });
   const rawRecords = snapshot.docs.map((docSnap) => ({
     ...docSnap.data(),
     __documentId: docSnap.id,
