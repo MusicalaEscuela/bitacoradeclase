@@ -6437,8 +6437,9 @@ function getBitacorasFromState(studentOrRef) {
     );
 
     const filtered = items.filter((item) => {
-      if (isGroupBitacoraForStudent(item, studentRef, fallbackId)) {
-        return true;
+      const groupOverride = getGroupBitacoraOverrideForStudent(item, studentOrRef);
+      if (isGroupBitacoraForStudent(item, studentRef, fallbackId) && groupOverride?.processKey) {
+        return !safeProcessKey || groupOverride.processKey === safeProcessKey;
       }
 
       const itemProcessKey = toStringSafe(
@@ -6517,6 +6518,20 @@ function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") 
   return Boolean(isGroup && belongsToStudent);
 }
 
+function getGroupBitacoraOverrideForStudent(item = {}, student = {}) {
+  const overrides = item?.studentOverrides || item?.overrides || {};
+  const aliases = normalizeStudentIds([
+    getStudentIdentity(student), getStudentFallbackId(student), student?.id,
+    student?.studentId, student?.studentKey, student?.canonicalStudentId,
+    ...(Array.isArray(student?.linkedStudentIds) ? student.linkedStudentIds : []),
+  ]);
+  for (const alias of aliases) {
+    const override = overrides[alias];
+    if (override && typeof override === "object") return override;
+  }
+  return null;
+}
+
 function normalizeBitacorasResponse(response) {
   return normalizeBitacorasResponseShared(response, normalizeBitacora);
 }
@@ -6571,6 +6586,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       const source = value && typeof value === "object" ? value : {};
     const normalized = {
       enabled: Boolean(source.enabled),
+      processKey: toStringSafe(source.processKey),
       tareas: repairVisibleText(source.tareas),
       etiquetas: normalizeTags(source.etiquetas || []).map(repairVisibleText),
       componenteCorporal: normalizeTags(source.componenteCorporal || []).map(repairVisibleText),
@@ -6581,6 +6597,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
 
       if (
         !normalized.enabled &&
+        !normalized.processKey &&
         !normalized.tareas &&
         !normalized.etiquetas.length &&
         !normalized.componenteCorporal.length &&
