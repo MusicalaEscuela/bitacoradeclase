@@ -1572,7 +1572,11 @@
   }
 
   .multi-picker-options {
-    max-height: 48vh;
+    /* En móvil el scroll interno podía dejar una tarjeta a medio ver. La lista
+       crece con su contenido y el desplazamiento queda a cargo de la página. */
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .multi-picker-option {
