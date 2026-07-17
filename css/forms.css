@@ -1576,14 +1576,23 @@
   }
 
   .multi-picker-option {
-    min-height: 72px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    min-height: 0;
+    height: auto;
     padding: 0.82rem 0.9rem;
     align-items: start;
+    overflow: visible;
   }
 
   .multi-picker-option small {
-    align-self: center;
-    padding-top: 0.15rem;
+    justify-self: start;
+    padding-top: 0;
+  }
+
+  .multi-picker-option span {
+    overflow: visible;
+    word-break: break-word;
   }
 
   .multi-value-chip,
