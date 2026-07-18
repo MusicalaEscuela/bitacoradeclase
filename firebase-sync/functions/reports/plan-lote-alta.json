@@ -1,0 +1,1908 @@
+[
+  {
+    "survivor": "Dianap.galeano@gmail.com",
+    "nombre": "Diana Galeano",
+    "writes": [
+      "0000"
+    ],
+    "members": [
+      {
+        "id": "0000",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Dianap.galeano@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Camilolzamora@gmail.com",
+    "nombre": "Camilo Cordobés Zamora",
+    "writes": [
+      "1000065263",
+      "stu_camilo_cordobes_zamora_49"
+    ],
+    "members": [
+      {
+        "id": "1000065263",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Camilolzamora@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_camilo_cordobes_zamora_49",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "4759853",
+    "nombre": "María Paula Rincón Guzmán",
+    "writes": [
+      "1000810866",
+      "stu_maria_paula_rincon_guzman_934"
+    ],
+    "members": [
+      {
+        "id": "1000810866",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "4759853",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_maria_paula_rincon_guzman_934",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Andreadeavilag7@gmail.com",
+    "nombre": "Andrea Carolina De Avila Gonzalez",
+    "writes": [
+      "1007660753",
+      "stu_andrea_carolina_de_avila_gonzalez_244"
+    ],
+    "members": [
+      {
+        "id": "1007660753",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Andreadeavilag7@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_andrea_carolina_de_avila_gonzalez_244",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Eddypaty125@hotmail.com",
+    "nombre": "Juan Pablo Lizcano Casas",
+    "writes": [
+      "1011222321"
+    ],
+    "members": [
+      {
+        "id": "1011222321",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Eddypaty125@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Anmafa82@yahoo.es",
+    "nombre": "Marcela cardenas",
+    "writes": [
+      "1011227275"
+    ],
+    "members": [
+      {
+        "id": "1011227275",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Anmafa82@yahoo.es",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Dianacharryc@hotmail.com",
+    "nombre": "Diana Charry",
+    "writes": [
+      "1013008147"
+    ],
+    "members": [
+      {
+        "id": "1013008147",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Dianacharryc@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Escobarvallejo@gmail.com",
+    "nombre": "Juan Escobar",
+    "writes": [
+      "1013010192"
+    ],
+    "members": [
+      {
+        "id": "1013010192",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Escobarvallejo@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Clagialv@gmail.com",
+    "nombre": "Claudia Alvarez",
+    "writes": [
+      "1013012759"
+    ],
+    "members": [
+      {
+        "id": "1013012759",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Clagialv@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Aprsierra@hotmail.com",
+    "nombre": "Adriana Rivera",
+    "writes": [
+      "1013014417"
+    ],
+    "members": [
+      {
+        "id": "1013014417",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Aprsierra@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Aprsierra@gmail.com",
+    "nombre": "Adriana Patricia Rivera Sierra",
+    "writes": [
+      "1013037821"
+    ],
+    "members": [
+      {
+        "id": "1013037821",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Aprsierra@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Alejmoore@gmail.com",
+    "nombre": "David marrugo",
+    "writes": [
+      "1013040860"
+    ],
+    "members": [
+      {
+        "id": "1013040860",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Alejmoore@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Cuasarenergiadelser@gmail.com",
+    "nombre": "INGRIS PEÑA GONZALEZ",
+    "writes": [
+      "1013621729",
+      "stu_ingris_pena_gonzalez_805"
+    ],
+    "members": [
+      {
+        "id": "1013621729",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Cuasarenergiadelser@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_ingris_pena_gonzalez_805",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "ANDREASALAS1303@GMAIL.COM",
+    "nombre": "Andrea Carolina Salas Beltrán",
+    "writes": [
+      "1014183778",
+      "stu_andrea_carolina_salas_beltran_775"
+    ],
+    "members": [
+      {
+        "id": "1014183778",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "ANDREASALAS1303@GMAIL.COM",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_andrea_carolina_salas_beltran_775",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Andre.m2@gmail.com",
+    "nombre": "Andrea Montenegro",
+    "writes": [
+      "1014901896"
+    ],
+    "members": [
+      {
+        "id": "1014901896",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Andre.m2@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Camiveloza1991@gmail.com",
+    "nombre": "María Camila veloza cárdenas",
+    "writes": [
+      "1016917191"
+    ],
+    "members": [
+      {
+        "id": "1016917191",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Camiveloza1991@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Baldioncamilal@gmail.com",
+    "nombre": "Maria Camila Baldion Alba",
+    "writes": [
+      "1016942944",
+      "stu_maria_camila_baldion_alba_616"
+    ],
+    "members": [
+      {
+        "id": "1016942944",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Baldioncamilal@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_maria_camila_baldion_alba_616",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Catalina.ald@hotmail.com",
+    "nombre": "Catalina Aldana",
+    "writes": [
+      "1018432182",
+      "stu_catalina_aldana_71"
+    ],
+    "members": [
+      {
+        "id": "1018432182",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Catalina.ald@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_catalina_aldana_71",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Danapoma@unisabana.edu.co",
+    "nombre": "Dana Porras",
+    "writes": [
+      "1019148409",
+      "stu_dana_porras_73"
+    ],
+    "members": [
+      {
+        "id": "1019148409",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Danapoma@unisabana.edu.co",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_dana_porras_73",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Cyndymartinezruiz@gmail.com",
+    "nombre": "Felipe Prieto",
+    "writes": [
+      "1019846271"
+    ],
+    "members": [
+      {
+        "id": "1019846271",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Cyndymartinezruiz@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Carolina.thompson@yahoo.com",
+    "nombre": "Carolina Thompson",
+    "writes": [
+      "1019850340"
+    ],
+    "members": [
+      {
+        "id": "1019850340",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Carolina.thompson@yahoo.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Andrudominguez@hotmail.com",
+    "nombre": "Andrea Domínguez",
+    "writes": [
+      "1019907460",
+      "stu_andrea_dominguez_1172"
+    ],
+    "members": [
+      {
+        "id": "1019907460",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Andrudominguez@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_andrea_dominguez_1172",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Agutierrezparrado@gmail.com",
+    "nombre": "Ana Milena Hurtado",
+    "writes": [
+      "1019913795"
+    ],
+    "members": [
+      {
+        "id": "1019913795",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Agutierrezparrado@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Alejo.mej@gmail.com",
+    "nombre": "Alejandro Mejía",
+    "writes": [
+      "1020719499",
+      "stu_alejandro_mejia_679"
+    ],
+    "members": [
+      {
+        "id": "1020719499",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Alejo.mej@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_alejandro_mejia_679",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Dannaby6@gmail.com",
+    "nombre": "Danna Sofía Garzón Galindo",
+    "writes": [
+      "1021673525",
+      "stu_danna_sofia_garzon_galindo_107"
+    ],
+    "members": [
+      {
+        "id": "1021673525",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Dannaby6@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_danna_sofia_garzon_galindo_107",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Diegoca290@gmail.com",
+    "nombre": "Diego Castro",
+    "writes": [
+      "1022362238",
+      "stu_diego_castro_761"
+    ],
+    "members": [
+      {
+        "id": "1022362238",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Diegoca290@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_diego_castro_761",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "91lorena@hotmail.es",
+    "nombre": "Lorena mendieta",
+    "writes": [
+      "1022368242",
+      "stu_lorena_mendieta_794"
+    ],
+    "members": [
+      {
+        "id": "1022368242",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "91lorena@hotmail.es",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_lorena_mendieta_794",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Adrycaoca@gmail.com",
+    "nombre": "Andrés Gaviria",
+    "writes": [
+      "1027284017",
+      "stu_andres_gaviria_944"
+    ],
+    "members": [
+      {
+        "id": "1027284017",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Adrycaoca@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_andres_gaviria_944",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Anamariasantofimio@hotmail.com",
+    "nombre": "Ana María Santofimio",
+    "writes": [
+      "1027539749",
+      "stu_ana_maria_santofimio_852"
+    ],
+    "members": [
+      {
+        "id": "1027539749",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Anamariasantofimio@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_ana_maria_santofimio_852",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Cristinarodriguezsanchez@hotmail.com",
+    "nombre": "Santiago Giraldo Rodríguez",
+    "writes": [
+      "1028445027"
+    ],
+    "members": [
+      {
+        "id": "1028445027",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Cristinarodriguezsanchez@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Angelika_jaramillo@hotmail.com",
+    "nombre": "Angélica jaramillo",
+    "writes": [
+      "1028484601"
+    ],
+    "members": [
+      {
+        "id": "1028484601",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Angelika_jaramillo@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "4540470",
+    "nombre": "Julied Camila Martinez Castiblanco",
+    "writes": [
+      "1030555483",
+      "stu_julied_camila_martinez_castiblanco_964"
+    ],
+    "members": [
+      {
+        "id": "1030555483",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "4540470",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_julied_camila_martinez_castiblanco_964",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Danchaos018@gmail.com",
+    "nombre": "Daniel Moreno",
+    "writes": [
+      "1031651446",
+      "stu_daniel_moreno_516"
+    ],
+    "members": [
+      {
+        "id": "1031651446",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Danchaos018@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_daniel_moreno_516",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Andrealeonarias@gmail.com",
+    "nombre": "Andrea León",
+    "writes": [
+      "1032365567"
+    ],
+    "members": [
+      {
+        "id": "1032365567",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Andrealeonarias@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Andre.m2@hotmail.com",
+    "nombre": "Andrea Montenegro",
+    "writes": [
+      "1032448152"
+    ],
+    "members": [
+      {
+        "id": "1032448152",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Andre.m2@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Cpereziguaran@gmail.com",
+    "nombre": "Carlos dario Pérez Iguarán",
+    "writes": [
+      "1032462849",
+      "stu_carlos_dario_perez_iguaran_649"
+    ],
+    "members": [
+      {
+        "id": "1032462849",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Cpereziguaran@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_carlos_dario_perez_iguaran_649",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Desymelo13@gmail.com",
+    "nombre": "Deisy Carolina Melo Pérez",
+    "writes": [
+      "1032938611",
+      "stu_deisy_carolina_melo_perez_105"
+    ],
+    "members": [
+      {
+        "id": "1032938611",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Desymelo13@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_deisy_carolina_melo_perez_105",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Clarapnoel@gmail.com",
+    "nombre": "Clara Patricia Noel Barbosa",
+    "writes": [
+      "1033108598"
+    ],
+    "members": [
+      {
+        "id": "1033108598",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Clarapnoel@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Carodru.19@gmail.com",
+    "nombre": "María Carolina Ruiz",
+    "writes": [
+      "1037603221",
+      "stu_maria_carolina_ruiz_641"
+    ],
+    "members": [
+      {
+        "id": "1037603221",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Carodru.19@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_maria_carolina_ruiz_641",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Andreslloreda1990@gmail.com",
+    "nombre": "Juan Andrés Lloreda Montaño",
+    "writes": [
+      "1054547482",
+      "stu_juan_andres_lloreda_montano_157"
+    ],
+    "members": [
+      {
+        "id": "1054547482",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Andreslloreda1990@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_juan_andres_lloreda_montano_157",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Catalina.a@kiloalimentos.com",
+    "nombre": "Catalina Alvarado",
+    "writes": [
+      "1056574263"
+    ],
+    "members": [
+      {
+        "id": "1056574263",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Catalina.a@kiloalimentos.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Andreacmotta86@gmail.com",
+    "nombre": "Andrea Catalina Rojas Motta",
+    "writes": [
+      "1057571495",
+      "stu_andrea_catalina_rojas_motta_819"
+    ],
+    "members": [
+      {
+        "id": "1057571495",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Andreacmotta86@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_andrea_catalina_rojas_motta_819",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Diegogil9810@gmail.com",
+    "nombre": "Diego Fernando Martínez Gil",
+    "writes": [
+      "1070021364",
+      "stu_diego_fernando_martinez_gil_126",
+      "stu_diego_fernando_martinez_gil_226"
+    ],
+    "members": [
+      {
+        "id": "1070021364",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_diego_fernando_martinez_gil_126",
+        "via": "nombre",
+        "esStu": true
+      },
+      {
+        "id": "stu_diego_fernando_martinez_gil_226",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Balzamarquez27@gmail.com",
+    "nombre": "Michelle balza marquez",
+    "writes": [
+      "1081843695",
+      "stu_michelle_balza_marquez_469"
+    ],
+    "members": [
+      {
+        "id": "1081843695",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Balzamarquez27@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_michelle_balza_marquez_469",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Alejandra.oh@hotmail.com",
+    "nombre": "Alejandra Olivares",
+    "writes": [
+      "1090393588"
+    ],
+    "members": [
+      {
+        "id": "1090393588",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Alejandra.oh@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "ABOGADASILVIATOSCANO@GMAIL.COM",
+    "nombre": "SILVIA CONSTANZA TOSCANO CORONEL",
+    "writes": [
+      "1098735601"
+    ],
+    "members": [
+      {
+        "id": "1098735601",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "ABOGADASILVIATOSCANO@GMAIL.COM",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Eliph@outlook.com",
+    "nombre": "Eliacid Hermias",
+    "writes": [
+      "1125810511"
+    ],
+    "members": [
+      {
+        "id": "1125810511",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Eliph@outlook.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Ammusp103@gmail.com",
+    "nombre": "Alberto Mario Murillo",
+    "writes": [
+      "1129571028",
+      "stu_alberto_mario_murillo_128"
+    ],
+    "members": [
+      {
+        "id": "1129571028",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Ammusp103@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_alberto_mario_murillo_128",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Bellanith.duran@hotmail.com",
+    "nombre": "Bellanith Duran Forero",
+    "writes": [
+      "1141367814"
+    ],
+    "members": [
+      {
+        "id": "1141367814",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Bellanith.duran@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Felipe.0999@hotmial.com",
+    "nombre": "Felipe Ruiz.",
+    "writes": [
+      "1233694384",
+      "stu_felipe_ruiz_719"
+    ],
+    "members": [
+      {
+        "id": "1233694384",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Felipe.0999@hotmial.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_felipe_ruiz_719",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Frankleon1098@hotmail.com",
+    "nombre": "Frank elkin león rubiano",
+    "writes": [
+      "1233901697",
+      "stu_frank_elkin_leon_rubiano_441"
+    ],
+    "members": [
+      {
+        "id": "1233901697",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Frankleon1098@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_frank_elkin_leon_rubiano_441",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Diegofelipe_rodriguez@hotmail.com-Esperanza_pulido@hotmail.com",
+    "nombre": "Diego Felipe Rodríguez Pulido",
+    "writes": [
+      "1243758060"
+    ],
+    "members": [
+      {
+        "id": "1243758060",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Diegofelipe_rodriguez@hotmail.com-Esperanza_pulido@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "Carlosyosuehurtado@gmail.com",
+    "nombre": "Carlos yosue hurtado azuaje",
+    "writes": [
+      "26155220",
+      "stu_carlos_yosue_hurtado_azuaje_423"
+    ],
+    "members": [
+      {
+        "id": "26155220",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Carlosyosuehurtado@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_carlos_yosue_hurtado_azuaje_423",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Amaege@hotmail.com",
+    "nombre": "Aura María Arango",
+    "writes": [
+      "31576938",
+      "stu_aura_maria_arango_669"
+    ],
+    "members": [
+      {
+        "id": "31576938",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Amaege@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_aura_maria_arango_669",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "4FZxYr89lFuSszurKNy9",
+    "nombre": "Luna Suarez",
+    "writes": [
+      "CC1026255114",
+      "stu_luna_suarez_31196"
+    ],
+    "members": [
+      {
+        "id": "4FZxYr89lFuSszurKNy9",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "CC1026255114",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_luna_suarez_31196",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Cristinapedraza1@hotmail.com",
+    "nombre": "Pilar Cristina Pedraza Ariza",
+    "writes": [
+      "52378556",
+      "stu_pilar_cristina_pedraza_ariza_530"
+    ],
+    "members": [
+      {
+        "id": "52378556",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Cristinapedraza1@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_pilar_cristina_pedraza_ariza_530",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Carlosh82@hotmail.com",
+    "nombre": "Carlos Enrique Herrera Moncada",
+    "writes": [
+      "79797994",
+      "stu_carlos_enrique_herrera_moncada_531"
+    ],
+    "members": [
+      {
+        "id": "79797994",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Carlosh82@hotmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_carlos_enrique_herrera_moncada_531",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Biaggioruocco@gmail.com",
+    "nombre": "Biaggio ruocco",
+    "writes": [
+      "80133771",
+      "stu_biaggio_ruocco_881"
+    ],
+    "members": [
+      {
+        "id": "80133771",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Biaggioruocco@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_biaggio_ruocco_881",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Erick.frade@gmail.com",
+    "nombre": "Erick Frade",
+    "writes": [
+      "80189655",
+      "stu_erick_frade_304"
+    ],
+    "members": [
+      {
+        "id": "80189655",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Erick.frade@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_erick_frade_304",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "FESCOBARV@ME.COM",
+    "nombre": "Fernando Escobar",
+    "writes": [
+      "80214881",
+      "stu_fernando_escobar_250"
+    ],
+    "members": [
+      {
+        "id": "80214881",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "FESCOBARV@ME.COM",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_fernando_escobar_250",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Bg7I5dzf2ii5XhzlCqi6",
+    "nombre": "Maria del Pilar Acosta",
+    "writes": [
+      "CC51743515",
+      "stu_maria_del_pilar_acosta_39225"
+    ],
+    "members": [
+      {
+        "id": "Bg7I5dzf2ii5XhzlCqi6",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "CC51743515",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_maria_del_pilar_acosta_39225",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "nEtlQntaa26g03nVw0ve",
+    "nombre": "Juan Carlos Sánchez Cortés",
+    "writes": [
+      "CC1019057406",
+      "stu_juan_carlos_sanchez_cortes_29690"
+    ],
+    "members": [
+      {
+        "id": "CC1019057406",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "nEtlQntaa26g03nVw0ve",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_juan_carlos_sanchez_cortes_29690",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Cgs9joeCWPmCKE4tdMoK",
+    "nombre": "Darmeli Rubio Pinilla",
+    "writes": [
+      "CC39721769",
+      "stu_darmeli_rubio_pinilla_37719"
+    ],
+    "members": [
+      {
+        "id": "CC39721769",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Cgs9joeCWPmCKE4tdMoK",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_darmeli_rubio_pinilla_37719",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "z2VZoZzNB6iBKlewwN1C",
+    "nombre": "Jorge Perez",
+    "writes": [
+      "CC79590985",
+      "stu_jorge_perez_28686"
+    ],
+    "members": [
+      {
+        "id": "CC79590985",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_jorge_perez_28686",
+        "via": "nombre",
+        "esStu": true
+      },
+      {
+        "id": "z2VZoZzNB6iBKlewwN1C",
+        "via": "id-oficial",
+        "esStu": false
+      }
+    ]
+  },
+  {
+    "survivor": "CN0NEE1Dmf9eobaPnUDB",
+    "nombre": "Manuela  Farfan",
+    "writes": [
+      "TI1014893045",
+      "stu_manuela_farfan_31698"
+    ],
+    "members": [
+      {
+        "id": "CN0NEE1Dmf9eobaPnUDB",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "TI1014893045",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_manuela_farfan_31698",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Edmicasa@gmail.com",
+    "nombre": "Cristian Felipe Carreño Lizarazo",
+    "writes": [
+      "Cc1072424831",
+      "stu_cristian_felipe_carreno_lizarazo_1035"
+    ],
+    "members": [
+      {
+        "id": "Cc1072424831",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "Edmicasa@gmail.com",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_cristian_felipe_carreno_lizarazo_1035",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "JuCanInFB7AefjE9JX94",
+    "nombre": "Josué Páez Aponte",
+    "writes": [
+      "TI1032880004",
+      "stu_josue_paez_aponte_45249"
+    ],
+    "members": [
+      {
+        "id": "JuCanInFB7AefjE9JX94",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "TI1032880004",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_josue_paez_aponte_45249",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Mbx6yKN6k09SyVz6iJNS",
+    "nombre": "Joaquin Castillo Vega",
+    "writes": [
+      "TI1014098094",
+      "stu_joaquin_castillo_vega_29188"
+    ],
+    "members": [
+      {
+        "id": "Mbx6yKN6k09SyVz6iJNS",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "TI1014098094",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_joaquin_castillo_vega_29188",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "PGTXKj0St5xnJuIujtp2",
+    "nombre": "Luciana Rodríguez Rodríguez",
+    "writes": [
+      "RC1014322487",
+      "stu_luciana_rodriguez_rodriguez_1143"
+    ],
+    "members": [
+      {
+        "id": "PGTXKj0St5xnJuIujtp2",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "RC1014322487",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_luciana_rodriguez_rodriguez_1143",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "Qk6ZLqHkHKy3YYIqU75Q",
+    "nombre": "Emma Sofia Chaparro Rojas",
+    "writes": [
+      "TI1021401121",
+      "stu_emma_sofia_chaparro_rojas_33204"
+    ],
+    "members": [
+      {
+        "id": "Qk6ZLqHkHKy3YYIqU75Q",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "TI1021401121",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_emma_sofia_chaparro_rojas_33204",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "dVxBpsuppta9QH0hxNod",
+    "nombre": "Matias Martinez",
+    "writes": [
+      "RC1016608300",
+      "stu_matias_martinez_39727"
+    ],
+    "members": [
+      {
+        "id": "RC1016608300",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "dVxBpsuppta9QH0hxNod",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_matias_martinez_39727",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "cuJofLxmixqdcoB8CNCk",
+    "nombre": "Santiago Gómez Iregui",
+    "writes": [
+      "RC1016920564",
+      "stu_santiago_gomez_iregui_36715"
+    ],
+    "members": [
+      {
+        "id": "RC1016920564",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_santiago_gomez_iregui_36715",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "76lei393leSRm02chsKI",
+    "nombre": "Sophie Valentina Vargas Rodríguez",
+    "writes": [
+      "RC1016968145",
+      "stu_sophie_valentina_vargas_rodriguez_42739"
+    ],
+    "members": [
+      {
+        "id": "RC1016968145",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_sophie_valentina_vargas_rodriguez_42739",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "atWavo7uJNfs66ACdJOp",
+    "nombre": "Juan Luis Sarmiento Bermudez",
+    "writes": [
+      "RC1019848721",
+      "stu_juan_luis_sarmiento_bermudez_40229"
+    ],
+    "members": [
+      {
+        "id": "RC1019848721",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_juan_luis_sarmiento_bermudez_40229",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "hcHRzAXUp9FkFoOg88wM",
+    "nombre": "Juan Andrés Riveros Rodriguez",
+    "writes": [
+      "RC1019850250",
+      "stu_juan_andres_riveros_rodriguez_43743"
+    ],
+    "members": [
+      {
+        "id": "RC1019850250",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "hcHRzAXUp9FkFoOg88wM",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_juan_andres_riveros_rodriguez_43743",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "iUzqOeIr1JeVI7mBDz08",
+    "nombre": "Luciana laverde Farfán",
+    "writes": [
+      "RC1020852171",
+      "stu_luciana_laverde_farfan_41233"
+    ],
+    "members": [
+      {
+        "id": "RC1020852171",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "iUzqOeIr1JeVI7mBDz08",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_luciana_laverde_farfan_41233",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "b8T004HrHQX0rM6nosda",
+    "nombre": "Olivia Farias",
+    "writes": [
+      "RC9015048539",
+      "stu_olivia_farias_45751"
+    ],
+    "members": [
+      {
+        "id": "RC9015048539",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "b8T004HrHQX0rM6nosda",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_olivia_farias_45751",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "kx9kk6ReKcdivrXuUhi6",
+    "nombre": "Maria Jose Vargas Romero",
+    "writes": [
+      "TI1014889751",
+      "stu_maria_jose_vargas_romero_30192"
+    ],
+    "members": [
+      {
+        "id": "TI1014889751",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "kx9kk6ReKcdivrXuUhi6",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_maria_jose_vargas_romero_30192",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "dX1QUYgPRY8ogaVUK1DF",
+    "nombre": "Alejandro Díaz Marulanda",
+    "writes": [
+      "TI1016836779",
+      "stu_alejandro_diaz_marulanda_32702"
+    ],
+    "members": [
+      {
+        "id": "TI1016836779",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "dX1QUYgPRY8ogaVUK1DF",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_alejandro_diaz_marulanda_32702",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "pHAePTgvllrB2ZHEPTqB",
+    "nombre": "Juan Andrés Maestre Aramendiz",
+    "writes": [
+      "TI1019912186",
+      "stu_juan_andres_maestre_aramendiz_41735"
+    ],
+    "members": [
+      {
+        "id": "TI1019912186",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "pHAePTgvllrB2ZHEPTqB",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_juan_andres_maestre_aramendiz_41735",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "si0c2nOHBAN9Vyboz7Sw",
+    "nombre": "José David Maestre Aramendiz",
+    "writes": [
+      "TI1019912187",
+      "stu_jose_david_maestre_aramendiz_42237"
+    ],
+    "members": [
+      {
+        "id": "TI1019912187",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "si0c2nOHBAN9Vyboz7Sw",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_jose_david_maestre_aramendiz_42237",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "CVt0dRAsZWwoN1dskiid",
+    "nombre": "Sara Nowogroder Molina",
+    "writes": [
+      "TI1042267850",
+      "stu_sara_nowogroder_molina_44245"
+    ],
+    "members": [
+      {
+        "id": "TI1042267850",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "stu_sara_nowogroder_molina_44245",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  },
+  {
+    "survivor": "muXJbaINKEy8lqRCCr21",
+    "nombre": "Antonia Alfonso Morales",
+    "writes": [
+      "TI1188223664",
+      "stu_antonia_alfonso_morales_30694"
+    ],
+    "members": [
+      {
+        "id": "TI1188223664",
+        "via": "id=documento",
+        "esStu": false
+      },
+      {
+        "id": "muXJbaINKEy8lqRCCr21",
+        "via": "id-oficial",
+        "esStu": false
+      },
+      {
+        "id": "stu_antonia_alfonso_morales_30694",
+        "via": "nombre",
+        "esStu": true
+      }
+    ]
+  }
+]

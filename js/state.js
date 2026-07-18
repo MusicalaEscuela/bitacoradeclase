@@ -1410,13 +1410,17 @@ export function prepareGroupDraft(studentIds = []) {
 export function loadDraft(studentId, mode = CONFIG.modes.individual) {
   const safeStudentId = toStringSafe(studentId);
   if (!safeStudentId) return null;
-  return null;
+
+  const key = buildDraftKey(safeStudentId, mode);
+  return readPersistedDraft(key);
 }
 
 export function loadGroupDraft(studentIds = []) {
   const groupIds = uniqueStrings(studentIds);
   if (!groupIds.length) return null;
-  return null;
+
+  const key = buildGroupDraftKey(groupIds);
+  return readPersistedDraft(key);
 }
 
 export function hydrateDraftForStudent(student, mode = CONFIG.modes.individual) {
@@ -1667,11 +1671,46 @@ function getDraftStorageKey(draft) {
 }
 
 function persistCurrentDraft(draft) {
-  void draft;
+  const key = getDraftStorageKey(draft);
+  if (!key) return;
+
+  const serializableDraft = sanitizeDraftForStorage(draft);
+  safeDraftStorageSet(key, JSON.stringify(serializableDraft));
 }
 
 function removePersistedDraft(draft) {
-  void draft;
+  const key = getDraftStorageKey(draft);
+  if (!key) return;
+  safeDraftStorageRemove(key);
+}
+
+function readPersistedDraft(key) {
+  const raw = safeDraftStorageGet(key);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!isPlainObject(parsed)) return null;
+    return createEmptyDraft(parsed);
+  } catch (error) {
+    console.warn("No se pudo recuperar un borrador de bitácora:", error);
+    safeDraftStorageRemove(key);
+    return null;
+  }
+}
+
+function sanitizeDraftForStorage(draft = {}) {
+  const safeDraft = createEmptyDraft(draft);
+  const archivos = Array.isArray(safeDraft.archivos)
+    ? safeDraft.archivos
+        .filter((file) => file?.url)
+        .map(({ sourceFile, previewUrl, ...file }) => file)
+    : [];
+
+  return {
+    ...safeDraft,
+    archivos,
+  };
 }
 
 /* ==========================================================================
@@ -1693,6 +1732,35 @@ function safeLocalStorageRemove(key) {
     localStorage.removeItem(key);
   } catch (error) {
     console.warn(`No se pudo eliminar "${key}" de localStorage:`, error);
+  }
+}
+
+// El borrador pertenece únicamente a la pestaña actual: sobrevive una recarga
+// accidental sin dejar datos pedagógicos en equipos compartidos al cerrar la
+// sesión/pestaña. No reutilizamos localStorage, que antes se limpiaba como
+// estado heredado durante el arranque.
+function safeDraftStorageGet(key) {
+  try {
+    return sessionStorage.getItem(key);
+  } catch (error) {
+    console.warn(`No se pudo leer el borrador "${key}" de sessionStorage:`, error);
+    return null;
+  }
+}
+
+function safeDraftStorageSet(key, value) {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch (error) {
+    console.warn(`No se pudo guardar el borrador "${key}" en sessionStorage:`, error);
+  }
+}
+
+function safeDraftStorageRemove(key) {
+  try {
+    sessionStorage.removeItem(key);
+  } catch (error) {
+    console.warn(`No se pudo eliminar el borrador "${key}" de sessionStorage:`, error);
   }
 }
 

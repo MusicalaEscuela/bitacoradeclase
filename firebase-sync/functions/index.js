@@ -62,6 +62,12 @@ const STUDENT_DIRECTORY_EMAILS = new Set([
   "adminmusicala@gmail.com",
   "musicalaasesor@gmail.com",
 ]);
+// La unificación cambia la visibilidad de registros fuente y por eso se
+// restringe a quienes hoy pueden editar el directorio, no a todo lector.
+const STUDENT_DIRECTORY_MERGE_EMAILS = new Set([
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com",
+]);
 const HISTORICAL_DIRECTORY_CACHE_MS = 5 * 60 * 1000;
 let historicalDirectoryCache = { expiresAt: 0, payload: null };
 
@@ -360,7 +366,10 @@ function normalizeStudent(raw, sourceDocId) {
     raw.acudienteEmail,
     raw.correo_electronico_envio_de_guias_e_informacion_adicional,
     raw.emails,
-    raw.correos
+    raw.correos,
+    raw.alternateEmails,
+    raw.allEmails,
+    raw.linkedEmails
   );
 
   // Aliases heredados NO SENSIBLES: contactId, IDs Firestore antiguos,
@@ -2438,6 +2447,93 @@ exports.diagnoseStudentAccess = onRequest(
 );
 
 /*
+  Unificación manual de inscripciones fuente.
+
+  No borra el duplicado: lo archiva y conserva el vínculo hacia el canónico.
+  Los correos encontrados se guardan en el canónico como alternateEmails y el
+  trigger normal de identidad los replica a los directorios consumidores.
+*/
+exports.mergeStudentDuplicate = onCall(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB" },
+  async (request) => {
+    const email = toText(request.auth && request.auth.token && request.auth.token.email).toLowerCase();
+    if (!request.auth || !STUDENT_DIRECTORY_MERGE_EMAILS.has(email)) {
+      throw new HttpsError("permission-denied", "No tienes permiso para unificar estudiantes.");
+    }
+
+    const canonicalStudentId = toText(request.data && request.data.canonicalStudentId);
+    const duplicateStudentId = toText(request.data && request.data.duplicateStudentId);
+    const confirmedSamePerson = request.data && request.data.confirmedSamePerson === true;
+    if (!canonicalStudentId || !duplicateStudentId || canonicalStudentId === duplicateStudentId) {
+      throw new HttpsError("invalid-argument", "Selecciona dos registros distintos.");
+    }
+    if (!confirmedSamePerson) {
+      throw new HttpsError("failed-precondition", "Debes confirmar que revisaste la identidad.");
+    }
+
+    const [canonicalSnap, duplicateSnap] = await Promise.all([
+      sourceDb.collection(SOURCE_STUDENTS_COLLECTION).doc(canonicalStudentId).get(),
+      sourceDb.collection(SOURCE_STUDENTS_COLLECTION).doc(duplicateStudentId).get(),
+    ]);
+    if (!canonicalSnap.exists || !duplicateSnap.exists) {
+      throw new HttpsError("not-found", "No se encontraron ambos registros en el directorio.");
+    }
+    const canonical = canonicalSnap.data() || {};
+    const duplicate = duplicateSnap.data() || {};
+    if (duplicate.identityMergeStatus === "archived_duplicate") {
+      throw new HttpsError("failed-precondition", "El registro secundario ya fue unificado.");
+    }
+
+    const canonicalName = normalizeText(firstText(canonical.studentName, canonical.nombre, canonical.name));
+    const duplicateName = normalizeText(firstText(duplicate.studentName, duplicate.nombre, duplicate.name));
+    const canonicalDocuments = collectDocumentValues(canonical);
+    const sharesDocument = [...canonicalDocuments].some((value) => collectDocumentValues(duplicate).has(value));
+    if (!sharesDocument && (!canonicalName || canonicalName !== duplicateName)) {
+      throw new HttpsError("failed-precondition", "Los registros no comparten evidencia suficiente para unirlos.");
+    }
+
+    const allEmails = extractEmails(
+      canonical.studentEmail, canonical.email, canonical.correo, canonical.emails,
+      canonical.alternateEmails, canonical.allEmails,
+      duplicate.studentEmail, duplicate.email, duplicate.correo, duplicate.emails,
+      duplicate.alternateEmails, duplicate.allEmails
+    );
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const batch = sourceDb.batch();
+    batch.set(canonicalSnap.ref, {
+      alternateEmails: allEmails.filter((value) => value !== toText(canonical.studentEmail).toLowerCase()),
+      allEmails,
+      mergedSourceStudentIds: uniqueTexts([
+        ...(Array.isArray(canonical.mergedSourceStudentIds) ? canonical.mergedSourceStudentIds : []),
+        duplicateStudentId,
+      ]),
+      identityMerge: { status: "canonical", updatedAt: now, updatedBy: email },
+      updatedAt: now,
+    }, { merge: true });
+    batch.set(duplicateSnap.ref, {
+      identityMergeStatus: "archived_duplicate",
+      canonicalStudentId,
+      archivedFromDirectory: true,
+      archivedAt: now,
+      archivedBy: email,
+      alternateEmails: allEmails,
+      updatedAt: now,
+    }, { merge: true });
+    await batch.commit();
+    historicalDirectoryCache = { expiresAt: 0, payload: null };
+    logger.info("Duplicado de estudiante unificado manualmente.", buildTechnicalLog({
+      eventId: request.rawRequest && request.rawRequest.id,
+      studentId: canonicalStudentId,
+      status: "merged",
+      durationMs: 0,
+      operations: ["identity_sync"],
+      counts: { writes: 2 },
+    }));
+    return { ok: true, canonicalStudentId, archivedStudentId: duplicateStudentId, emailCount: allEmails.length };
+  }
+);
+
+/*
   Complemento histórico para la Lista de Estudiantes.
 
   Es callable para que Firebase valide el ID token del proyecto
@@ -2457,7 +2553,8 @@ exports.listHistoricalStudents = onCall(
       throw new HttpsError("permission-denied", "Cuenta no autorizada para consultar el directorio.");
     }
 
-    if (historicalDirectoryCache.payload && historicalDirectoryCache.expiresAt > Date.now()) {
+    const refreshRequested = request.data && request.data.refresh === true;
+    if (!refreshRequested && historicalDirectoryCache.payload && historicalDirectoryCache.expiresAt > Date.now()) {
       return historicalDirectoryCache.payload;
     }
 

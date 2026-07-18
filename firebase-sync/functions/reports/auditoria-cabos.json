@@ -1,0 +1,35 @@
+{
+  "appliedAt": "2026-07-16T04:08:34.463Z",
+  "createdMirrors": [
+    {
+      "id": "Diegogil9810@gmail.com",
+      "nombre": "Diego Fernando Martínez Gil"
+    },
+    {
+      "id": "cuJofLxmixqdcoB8CNCk",
+      "nombre": "Santiago Gómez Iregui"
+    },
+    {
+      "id": "76lei393leSRm02chsKI",
+      "nombre": "Sophie Valentina Vargas Rodríguez"
+    },
+    {
+      "id": "atWavo7uJNfs66ACdJOp",
+      "nombre": "Juan Luis Sarmiento Bermudez"
+    },
+    {
+      "id": "CVt0dRAsZWwoN1dskiid",
+      "nombre": "Sara Nowogroder Molina"
+    }
+  ],
+  "lauraRojas": [
+    {
+      "id": "Cra11b_14-11_(Mosquera)",
+      "canonicalStudentId": "1010023779"
+    },
+    {
+      "id": "stu_laura_valentina_rojas_montenegro_967",
+      "canonicalStudentId": "1010023779"
+    }
+  ]
+}

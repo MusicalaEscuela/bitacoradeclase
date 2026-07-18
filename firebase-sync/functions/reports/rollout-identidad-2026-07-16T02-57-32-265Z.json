@@ -1,0 +1,1312 @@
+{
+  "generatedAt": "2026-07-16T02:57:32.265Z",
+  "tierCount": {
+    "ALTA": 84,
+    "ya-unido": 1
+  },
+  "totalCasos": 85,
+  "tipoDanielNombres": 40,
+  "casos": [
+    {
+      "official": "Dianap.galeano@gmail.com",
+      "nombre": "Diana Galeano",
+      "ids": [
+        "0000",
+        "Dianap.galeano@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Camilolzamora@gmail.com",
+      "nombre": "Camilo Cordobés Zamora",
+      "ids": [
+        "1000065263",
+        "Camilolzamora@gmail.com",
+        "stu_camilo_cordobes_zamora_49"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "8120234",
+      "nombre": "Laura Valentina Garzón Mora",
+      "ids": [
+        "1000796169",
+        "8120234",
+        "stu_laura_valentina_garzon_mora_966"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ya-unido",
+      "bitacoras": 0
+    },
+    {
+      "official": "4759853",
+      "nombre": "María Paula Rincón Guzmán",
+      "ids": [
+        "1000810866",
+        "4759853",
+        "stu_maria_paula_rincon_guzman_934"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Andreadeavilag7@gmail.com",
+      "nombre": "Andrea Carolina De Avila Gonzalez",
+      "ids": [
+        "1007660753",
+        "Andreadeavilag7@gmail.com",
+        "stu_andrea_carolina_de_avila_gonzalez_244"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Cra11b_14-11_(Mosquera)",
+      "nombre": "Laura Valentina Rojas Montenegro",
+      "ids": [
+        "1010023779",
+        "Cra11b_14-11_(Mosquera)",
+        "stu_laura_valentina_rojas_montenegro_967"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Eddypaty125@hotmail.com",
+      "nombre": "Juan Pablo Lizcano Casas",
+      "ids": [
+        "1011222321",
+        "Eddypaty125@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Anmafa82@yahoo.es",
+      "nombre": "Marcela cardenas",
+      "ids": [
+        "1011227275",
+        "Anmafa82@yahoo.es"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Dianacharryc@hotmail.com",
+      "nombre": "Diana Charry",
+      "ids": [
+        "1013008147",
+        "Dianacharryc@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Escobarvallejo@gmail.com",
+      "nombre": "Juan Escobar",
+      "ids": [
+        "1013010192",
+        "Escobarvallejo@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Clagialv@gmail.com",
+      "nombre": "Claudia Alvarez",
+      "ids": [
+        "1013012759",
+        "Clagialv@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Aprsierra@hotmail.com",
+      "nombre": "Adriana Rivera",
+      "ids": [
+        "1013014417",
+        "Aprsierra@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Aprsierra@gmail.com",
+      "nombre": "Adriana Patricia Rivera Sierra",
+      "ids": [
+        "1013037821",
+        "Aprsierra@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Alejmoore@gmail.com",
+      "nombre": "David marrugo",
+      "ids": [
+        "1013040860",
+        "Alejmoore@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Cuasarenergiadelser@gmail.com",
+      "nombre": "INGRIS PEÑA GONZALEZ",
+      "ids": [
+        "1013621729",
+        "Cuasarenergiadelser@gmail.com",
+        "stu_ingris_pena_gonzalez_805"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "ANDREASALAS1303@GMAIL.COM",
+      "nombre": "Andrea Carolina Salas Beltrán",
+      "ids": [
+        "1014183778",
+        "ANDREASALAS1303@GMAIL.COM",
+        "stu_andrea_carolina_salas_beltran_775"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Andre.m2@gmail.com",
+      "nombre": "Andrea Montenegro",
+      "ids": [
+        "1014901896",
+        "Andre.m2@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Camiveloza1991@gmail.com",
+      "nombre": "María Camila veloza cárdenas",
+      "ids": [
+        "1016917191",
+        "Camiveloza1991@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Baldioncamilal@gmail.com",
+      "nombre": "Maria Camila Baldion Alba",
+      "ids": [
+        "1016942944",
+        "Baldioncamilal@gmail.com",
+        "stu_maria_camila_baldion_alba_616"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Catalina.ald@hotmail.com",
+      "nombre": "Catalina Aldana",
+      "ids": [
+        "1018432182",
+        "Catalina.ald@hotmail.com",
+        "stu_catalina_aldana_71"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Danapoma@unisabana.edu.co",
+      "nombre": "Dana Porras",
+      "ids": [
+        "1019148409",
+        "Danapoma@unisabana.edu.co",
+        "stu_dana_porras_73"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Cyndymartinezruiz@gmail.com",
+      "nombre": "Felipe Prieto",
+      "ids": [
+        "1019846271",
+        "Cyndymartinezruiz@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Carolina.thompson@yahoo.com",
+      "nombre": "Carolina Thompson",
+      "ids": [
+        "1019850340",
+        "Carolina.thompson@yahoo.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Andrudominguez@hotmail.com",
+      "nombre": "Andrea Domínguez",
+      "ids": [
+        "1019907460",
+        "Andrudominguez@hotmail.com",
+        "stu_andrea_dominguez_1172"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Agutierrezparrado@gmail.com",
+      "nombre": "Ana Milena Hurtado",
+      "ids": [
+        "1019913795",
+        "Agutierrezparrado@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Alejo.mej@gmail.com",
+      "nombre": "Alejandro Mejía",
+      "ids": [
+        "1020719499",
+        "Alejo.mej@gmail.com",
+        "stu_alejandro_mejia_679"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Dannaby6@gmail.com",
+      "nombre": "Danna Sofía Garzón Galindo",
+      "ids": [
+        "1021673525",
+        "Dannaby6@gmail.com",
+        "stu_danna_sofia_garzon_galindo_107"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Diegoca290@gmail.com",
+      "nombre": "Diego Castro",
+      "ids": [
+        "1022362238",
+        "Diegoca290@gmail.com",
+        "stu_diego_castro_761"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "91lorena@hotmail.es",
+      "nombre": "Lorena mendieta",
+      "ids": [
+        "1022368242",
+        "91lorena@hotmail.es",
+        "stu_lorena_mendieta_794"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Adrycaoca@gmail.com",
+      "nombre": "Andrés Gaviria",
+      "ids": [
+        "1027284017",
+        "Adrycaoca@gmail.com",
+        "stu_andres_gaviria_944"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Anamariasantofimio@hotmail.com",
+      "nombre": "Ana María Santofimio",
+      "ids": [
+        "1027539749",
+        "Anamariasantofimio@hotmail.com",
+        "stu_ana_maria_santofimio_852"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Cristinarodriguezsanchez@hotmail.com",
+      "nombre": "Santiago Giraldo Rodríguez",
+      "ids": [
+        "1028445027",
+        "Cristinarodriguezsanchez@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Angelika_jaramillo@hotmail.com",
+      "nombre": "Angélica jaramillo",
+      "ids": [
+        "1028484601",
+        "Angelika_jaramillo@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "4540470",
+      "nombre": "Julied Camila Martinez Castiblanco",
+      "ids": [
+        "1030555483",
+        "4540470",
+        "stu_julied_camila_martinez_castiblanco_964"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Danchaos018@gmail.com",
+      "nombre": "Daniel Moreno",
+      "ids": [
+        "1031651446",
+        "Danchaos018@gmail.com",
+        "stu_daniel_moreno_516"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Andrealeonarias@gmail.com",
+      "nombre": "Andrea León",
+      "ids": [
+        "1032365567",
+        "Andrealeonarias@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Andre.m2@hotmail.com",
+      "nombre": "Andrea Montenegro",
+      "ids": [
+        "1032448152",
+        "Andre.m2@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Cpereziguaran@gmail.com",
+      "nombre": "Carlos dario Pérez Iguarán",
+      "ids": [
+        "1032462849",
+        "Cpereziguaran@gmail.com",
+        "stu_carlos_dario_perez_iguaran_649"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Desymelo13@gmail.com",
+      "nombre": "Deisy Carolina Melo Pérez",
+      "ids": [
+        "1032938611",
+        "Desymelo13@gmail.com",
+        "stu_deisy_carolina_melo_perez_105"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Clarapnoel@gmail.com",
+      "nombre": "Clara Patricia Noel Barbosa",
+      "ids": [
+        "1033108598",
+        "Clarapnoel@gmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Carodru.19@gmail.com",
+      "nombre": "María Carolina Ruiz",
+      "ids": [
+        "1037603221",
+        "Carodru.19@gmail.com",
+        "stu_maria_carolina_ruiz_641"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Andreslloreda1990@gmail.com",
+      "nombre": "Juan Andrés Lloreda Montaño",
+      "ids": [
+        "1054547482",
+        "Andreslloreda1990@gmail.com",
+        "stu_juan_andres_lloreda_montano_157"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Catalina.a@kiloalimentos.com",
+      "nombre": "Catalina Alvarado",
+      "ids": [
+        "1056574263",
+        "Catalina.a@kiloalimentos.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Andreacmotta86@gmail.com",
+      "nombre": "Andrea Catalina Rojas Motta",
+      "ids": [
+        "1057571495",
+        "Andreacmotta86@gmail.com",
+        "stu_andrea_catalina_rojas_motta_819"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Diegogil9810@gmail.com",
+      "nombre": "Diego Fernando Martínez Gil",
+      "ids": [
+        "1070021364",
+        "stu_diego_fernando_martinez_gil_126",
+        "stu_diego_fernando_martinez_gil_226"
+      ],
+      "evidencias": [
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Balzamarquez27@gmail.com",
+      "nombre": "Michelle balza marquez",
+      "ids": [
+        "1081843695",
+        "Balzamarquez27@gmail.com",
+        "stu_michelle_balza_marquez_469"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Alejandra.oh@hotmail.com",
+      "nombre": "Alejandra Olivares",
+      "ids": [
+        "1090393588",
+        "Alejandra.oh@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "ABOGADASILVIATOSCANO@GMAIL.COM",
+      "nombre": "SILVIA CONSTANZA TOSCANO CORONEL",
+      "ids": [
+        "1098735601",
+        "ABOGADASILVIATOSCANO@GMAIL.COM"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Eliph@outlook.com",
+      "nombre": "Eliacid Hermias",
+      "ids": [
+        "1125810511",
+        "Eliph@outlook.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Ammusp103@gmail.com",
+      "nombre": "Alberto Mario Murillo",
+      "ids": [
+        "1129571028",
+        "Ammusp103@gmail.com",
+        "stu_alberto_mario_murillo_128"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Bellanith.duran@hotmail.com",
+      "nombre": "Bellanith Duran Forero",
+      "ids": [
+        "1141367814",
+        "Bellanith.duran@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Felipe.0999@hotmial.com",
+      "nombre": "Felipe Ruiz.",
+      "ids": [
+        "1233694384",
+        "Felipe.0999@hotmial.com",
+        "stu_felipe_ruiz_719"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Frankleon1098@hotmail.com",
+      "nombre": "Frank elkin león rubiano",
+      "ids": [
+        "1233901697",
+        "Frankleon1098@hotmail.com",
+        "stu_frank_elkin_leon_rubiano_441"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Diegofelipe_rodriguez@hotmail.com-Esperanza_pulido@hotmail.com",
+      "nombre": "Diego Felipe Rodríguez Pulido",
+      "ids": [
+        "1243758060",
+        "Diegofelipe_rodriguez@hotmail.com-Esperanza_pulido@hotmail.com"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Carlosyosuehurtado@gmail.com",
+      "nombre": "Carlos yosue hurtado azuaje",
+      "ids": [
+        "26155220",
+        "Carlosyosuehurtado@gmail.com",
+        "stu_carlos_yosue_hurtado_azuaje_423"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Amaege@hotmail.com",
+      "nombre": "Aura María Arango",
+      "ids": [
+        "31576938",
+        "Amaege@hotmail.com",
+        "stu_aura_maria_arango_669"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "4FZxYr89lFuSszurKNy9",
+      "nombre": "Luna Suarez",
+      "ids": [
+        "4FZxYr89lFuSszurKNy9",
+        "CC1026255114",
+        "stu_luna_suarez_31196"
+      ],
+      "evidencias": [
+        "id==docId-fuente",
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Cristinapedraza1@hotmail.com",
+      "nombre": "Pilar Cristina Pedraza Ariza",
+      "ids": [
+        "52378556",
+        "Cristinapedraza1@hotmail.com",
+        "stu_pilar_cristina_pedraza_ariza_530"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Carlosh82@hotmail.com",
+      "nombre": "Carlos Enrique Herrera Moncada",
+      "ids": [
+        "79797994",
+        "Carlosh82@hotmail.com",
+        "stu_carlos_enrique_herrera_moncada_531"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Biaggioruocco@gmail.com",
+      "nombre": "Biaggio ruocco",
+      "ids": [
+        "80133771",
+        "Biaggioruocco@gmail.com",
+        "stu_biaggio_ruocco_881"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Erick.frade@gmail.com",
+      "nombre": "Erick Frade",
+      "ids": [
+        "80189655",
+        "Erick.frade@gmail.com",
+        "stu_erick_frade_304"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "FESCOBARV@ME.COM",
+      "nombre": "Fernando Escobar",
+      "ids": [
+        "80214881",
+        "FESCOBARV@ME.COM",
+        "stu_fernando_escobar_250"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Bg7I5dzf2ii5XhzlCqi6",
+      "nombre": "Maria del Pilar Acosta",
+      "ids": [
+        "Bg7I5dzf2ii5XhzlCqi6",
+        "CC51743515",
+        "stu_maria_del_pilar_acosta_39225"
+      ],
+      "evidencias": [
+        "id==docId-fuente",
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "nEtlQntaa26g03nVw0ve",
+      "nombre": "Juan Carlos Sánchez Cortés",
+      "ids": [
+        "CC1019057406",
+        "nEtlQntaa26g03nVw0ve",
+        "stu_juan_carlos_sanchez_cortes_29690"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Cgs9joeCWPmCKE4tdMoK",
+      "nombre": "Darmeli Rubio Pinilla",
+      "ids": [
+        "CC39721769",
+        "Cgs9joeCWPmCKE4tdMoK",
+        "stu_darmeli_rubio_pinilla_37719"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "z2VZoZzNB6iBKlewwN1C",
+      "nombre": "Jorge Perez",
+      "ids": [
+        "CC79590985",
+        "stu_jorge_perez_28686",
+        "z2VZoZzNB6iBKlewwN1C"
+      ],
+      "evidencias": [
+        "documento",
+        "nombre",
+        "id==docId-fuente"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "CN0NEE1Dmf9eobaPnUDB",
+      "nombre": "Manuela  Farfan",
+      "ids": [
+        "CN0NEE1Dmf9eobaPnUDB",
+        "TI1014893045",
+        "stu_manuela_farfan_31698"
+      ],
+      "evidencias": [
+        "id==docId-fuente",
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Edmicasa@gmail.com",
+      "nombre": "Cristian Felipe Carreño Lizarazo",
+      "ids": [
+        "Cc1072424831",
+        "Edmicasa@gmail.com",
+        "stu_cristian_felipe_carreno_lizarazo_1035"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "JuCanInFB7AefjE9JX94",
+      "nombre": "Josué Páez Aponte",
+      "ids": [
+        "JuCanInFB7AefjE9JX94",
+        "TI1032880004",
+        "stu_josue_paez_aponte_45249"
+      ],
+      "evidencias": [
+        "id==docId-fuente",
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Mbx6yKN6k09SyVz6iJNS",
+      "nombre": "Joaquin Castillo Vega",
+      "ids": [
+        "Mbx6yKN6k09SyVz6iJNS",
+        "TI1014098094",
+        "stu_joaquin_castillo_vega_29188"
+      ],
+      "evidencias": [
+        "id==docId-fuente",
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "PGTXKj0St5xnJuIujtp2",
+      "nombre": "Luciana Rodríguez Rodríguez",
+      "ids": [
+        "PGTXKj0St5xnJuIujtp2",
+        "RC1014322487",
+        "stu_luciana_rodriguez_rodriguez_1143"
+      ],
+      "evidencias": [
+        "id==docId-fuente",
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "Qk6ZLqHkHKy3YYIqU75Q",
+      "nombre": "Emma Sofia Chaparro Rojas",
+      "ids": [
+        "Qk6ZLqHkHKy3YYIqU75Q",
+        "TI1021401121",
+        "stu_emma_sofia_chaparro_rojas_33204"
+      ],
+      "evidencias": [
+        "id==docId-fuente",
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "dVxBpsuppta9QH0hxNod",
+      "nombre": "Matias Martinez",
+      "ids": [
+        "RC1016608300",
+        "dVxBpsuppta9QH0hxNod",
+        "stu_matias_martinez_39727"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "cuJofLxmixqdcoB8CNCk",
+      "nombre": "Santiago Gómez Iregui",
+      "ids": [
+        "RC1016920564",
+        "stu_santiago_gomez_iregui_36715"
+      ],
+      "evidencias": [
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "76lei393leSRm02chsKI",
+      "nombre": "Sophie Valentina Vargas Rodríguez",
+      "ids": [
+        "RC1016968145",
+        "stu_sophie_valentina_vargas_rodriguez_42739"
+      ],
+      "evidencias": [
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "atWavo7uJNfs66ACdJOp",
+      "nombre": "Juan Luis Sarmiento Bermudez",
+      "ids": [
+        "RC1019848721",
+        "stu_juan_luis_sarmiento_bermudez_40229"
+      ],
+      "evidencias": [
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "hcHRzAXUp9FkFoOg88wM",
+      "nombre": "Juan Andrés Riveros Rodriguez",
+      "ids": [
+        "RC1019850250",
+        "hcHRzAXUp9FkFoOg88wM",
+        "stu_juan_andres_riveros_rodriguez_43743"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "iUzqOeIr1JeVI7mBDz08",
+      "nombre": "Luciana laverde Farfán",
+      "ids": [
+        "RC1020852171",
+        "iUzqOeIr1JeVI7mBDz08",
+        "stu_luciana_laverde_farfan_41233"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "b8T004HrHQX0rM6nosda",
+      "nombre": "Olivia Farias",
+      "ids": [
+        "RC9015048539",
+        "b8T004HrHQX0rM6nosda",
+        "stu_olivia_farias_45751"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "kx9kk6ReKcdivrXuUhi6",
+      "nombre": "Maria Jose Vargas Romero",
+      "ids": [
+        "TI1014889751",
+        "kx9kk6ReKcdivrXuUhi6",
+        "stu_maria_jose_vargas_romero_30192"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "dX1QUYgPRY8ogaVUK1DF",
+      "nombre": "Alejandro Díaz Marulanda",
+      "ids": [
+        "TI1016836779",
+        "dX1QUYgPRY8ogaVUK1DF",
+        "stu_alejandro_diaz_marulanda_32702"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "pHAePTgvllrB2ZHEPTqB",
+      "nombre": "Juan Andrés Maestre Aramendiz",
+      "ids": [
+        "TI1019912186",
+        "pHAePTgvllrB2ZHEPTqB",
+        "stu_juan_andres_maestre_aramendiz_41735"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "si0c2nOHBAN9Vyboz7Sw",
+      "nombre": "José David Maestre Aramendiz",
+      "ids": [
+        "TI1019912187",
+        "si0c2nOHBAN9Vyboz7Sw",
+        "stu_jose_david_maestre_aramendiz_42237"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "CVt0dRAsZWwoN1dskiid",
+      "nombre": "Sara Nowogroder Molina",
+      "ids": [
+        "TI1042267850",
+        "stu_sara_nowogroder_molina_44245"
+      ],
+      "evidencias": [
+        "documento",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    },
+    {
+      "official": "muXJbaINKEy8lqRCCr21",
+      "nombre": "Antonia Alfonso Morales",
+      "ids": [
+        "TI1188223664",
+        "muXJbaINKEy8lqRCCr21",
+        "stu_antonia_alfonso_morales_30694"
+      ],
+      "evidencias": [
+        "documento",
+        "id==docId-fuente",
+        "nombre"
+      ],
+      "tier": "ALTA",
+      "bitacoras": 0
+    }
+  ]
+}

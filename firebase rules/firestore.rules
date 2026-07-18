@@ -73,6 +73,43 @@ service cloud.firestore {
         linkedStudentIds().size() > 0;
     }
 
+    // Accesos adicionales administrados desde Estudiantes HUB. Se mantienen
+    // aquí, en la política canónica compartida con Bitácoras, para que el HUB
+    // no necesite ni pueda publicar una copia parcial de estas reglas.
+    function isPortalAccessRole(role) {
+      return role in ["student", "estudiante", "acudiente", "guardian", "parent"];
+    }
+
+    function validManagedPortalAccess(emailKey) {
+      return emailKey == request.resource.data.email &&
+        request.resource.data.email is string &&
+        request.resource.data.email.lower() == emailKey &&
+        isPortalAccessRole(request.resource.data.role) &&
+        request.resource.data.active == true &&
+        request.resource.data.portalAccessManaged == true &&
+        request.resource.data.studentId is string &&
+        request.resource.data.studentId != '' &&
+        request.resource.data.studentIds is list &&
+        request.resource.data.studentIds.size() == 1 &&
+        request.resource.data.studentIds[0] == request.resource.data.studentId &&
+        request.resource.data.linkedBy == authEmail() &&
+        request.resource.data.keys().hasOnly([
+          'email', 'role', 'active', 'studentId', 'studentIds',
+          'portalAccessManaged', 'linkedBy', 'linkedAt', 'updatedAt'
+        ]);
+    }
+
+    function validPortalStudentLinksUpdate() {
+      return isPortalAccessRole(resource.data.get('role', '').lower()) &&
+        request.resource.data.get('role', '').lower() == resource.data.get('role', '').lower() &&
+        request.resource.data.get('active', true) == resource.data.get('active', true) &&
+        request.resource.data.studentIds is list &&
+        request.resource.data.studentIds.size() <= 10 &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'studentIds', 'updatedAt'
+        ]);
+    }
+
     /*
       Sin comprobaciones "is list"/"is string": si el campo no existe, la rama
       falla sola y el || la absorbe cuando la otra concede. Acceder al campo
@@ -88,12 +125,30 @@ service cloud.firestore {
     }
 
     function studentOwnsStudentDoc() {
-      return isActiveStudent() &&
+      // Esta ruta también debe poder evaluarse en consultas `list` por
+      // canonicalStudentId. Reutilizar isActiveStudent()/linkedStudentIds()
+      // aquí expandía profileData() varias veces y superaba el límite de
+      // 1000 expresiones, aunque el alias estuviera correctamente autorizado.
+      let profile = profileData();
+      let role = profile.get('role', '').lower();
+      let ids = profile.get('studentIds',
+        profile.get('students',
+          [profile.get('studentId',
+            profile.get('studentKey',
+              profile.get('estudianteId', '')))]));
+      return isSignedIn() &&
+        role in ["student", "estudiante", "acudiente", "guardian", "parent"] &&
+        profile.get('active', true) != false &&
+        ids.size() > 0 &&
         (
-          resource.id in linkedStudentIds() ||
-          (resource.data.studentId is string && resource.data.studentId in linkedStudentIds()) ||
-          (resource.data.studentKey is string && resource.data.studentKey in linkedStudentIds()) ||
-          (resource.data.estudianteId is string && resource.data.estudianteId in linkedStudentIds())
+          resource.id in ids ||
+          (resource.data.studentId is string && resource.data.studentId in ids) ||
+          (resource.data.studentKey is string && resource.data.studentKey in ids) ||
+          (resource.data.estudianteId is string && resource.data.estudianteId in ids) ||
+          // Alias académico confirmado: permite leer únicamente los documentos
+          // que un administrador vinculó al mismo estudiante canónico.
+          (resource.data.canonicalStudentId is string &&
+            resource.data.canonicalStudentId in ids)
         );
     }
 
@@ -109,8 +164,15 @@ service cloud.firestore {
 
     match /users/{emailKey} {
       allow read: if isAdmin() || (isSignedIn() && authEmail() == emailKey);
-      // Los perfiles de acceso e identidad se aprovisionan solo desde backend.
-      allow create, update, delete: if false;
+      // Los perfiles de acceso e identidad se aprovisionan desde backend.
+      // La única excepción de cliente es el vínculo acotado de un acudiente
+      // creado o administrado por un admin desde Estudiantes HUB.
+      allow create: if isAdmin() && validManagedPortalAccess(emailKey);
+      allow update: if isAdmin() && (
+        (resource.data.portalAccessManaged == true && validManagedPortalAccess(emailKey)) ||
+        validPortalStudentLinksUpdate()
+      );
+      allow delete: if isAdmin() && resource.data.get('portalAccessManaged', false) == true;
     }
 
     match /app_config/{docId} {

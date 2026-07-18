@@ -1,0 +1,717 @@
+{
+  "appliedAt": "2026-07-16T03:06:52.932Z",
+  "personas": 83,
+  "escrituras": 142,
+  "audit": [
+    {
+      "id": "0000",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Dianap.galeano@gmail.com"
+    },
+    {
+      "id": "1000065263",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Camilolzamora@gmail.com"
+    },
+    {
+      "id": "stu_camilo_cordobes_zamora_49",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Camilolzamora@gmail.com"
+    },
+    {
+      "id": "1000810866",
+      "previo_canonicalStudentId": null,
+      "nuevo": "4759853"
+    },
+    {
+      "id": "stu_maria_paula_rincon_guzman_934",
+      "previo_canonicalStudentId": null,
+      "nuevo": "4759853"
+    },
+    {
+      "id": "1007660753",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andreadeavilag7@gmail.com"
+    },
+    {
+      "id": "stu_andrea_carolina_de_avila_gonzalez_244",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andreadeavilag7@gmail.com"
+    },
+    {
+      "id": "1011222321",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Eddypaty125@hotmail.com"
+    },
+    {
+      "id": "1011227275",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Anmafa82@yahoo.es"
+    },
+    {
+      "id": "1013008147",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Dianacharryc@hotmail.com"
+    },
+    {
+      "id": "1013010192",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Escobarvallejo@gmail.com"
+    },
+    {
+      "id": "1013012759",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Clagialv@gmail.com"
+    },
+    {
+      "id": "1013014417",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Aprsierra@hotmail.com"
+    },
+    {
+      "id": "1013037821",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Aprsierra@gmail.com"
+    },
+    {
+      "id": "1013040860",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Alejmoore@gmail.com"
+    },
+    {
+      "id": "1013621729",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cuasarenergiadelser@gmail.com"
+    },
+    {
+      "id": "stu_ingris_pena_gonzalez_805",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cuasarenergiadelser@gmail.com"
+    },
+    {
+      "id": "1014183778",
+      "previo_canonicalStudentId": null,
+      "nuevo": "ANDREASALAS1303@GMAIL.COM"
+    },
+    {
+      "id": "stu_andrea_carolina_salas_beltran_775",
+      "previo_canonicalStudentId": null,
+      "nuevo": "ANDREASALAS1303@GMAIL.COM"
+    },
+    {
+      "id": "1014901896",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andre.m2@gmail.com"
+    },
+    {
+      "id": "1016917191",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Camiveloza1991@gmail.com"
+    },
+    {
+      "id": "1016942944",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Baldioncamilal@gmail.com"
+    },
+    {
+      "id": "stu_maria_camila_baldion_alba_616",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Baldioncamilal@gmail.com"
+    },
+    {
+      "id": "1018432182",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Catalina.ald@hotmail.com"
+    },
+    {
+      "id": "stu_catalina_aldana_71",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Catalina.ald@hotmail.com"
+    },
+    {
+      "id": "1019148409",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Danapoma@unisabana.edu.co"
+    },
+    {
+      "id": "stu_dana_porras_73",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Danapoma@unisabana.edu.co"
+    },
+    {
+      "id": "1019846271",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cyndymartinezruiz@gmail.com"
+    },
+    {
+      "id": "1019850340",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Carolina.thompson@yahoo.com"
+    },
+    {
+      "id": "1019907460",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andrudominguez@hotmail.com"
+    },
+    {
+      "id": "stu_andrea_dominguez_1172",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andrudominguez@hotmail.com"
+    },
+    {
+      "id": "1019913795",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Agutierrezparrado@gmail.com"
+    },
+    {
+      "id": "1020719499",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Alejo.mej@gmail.com"
+    },
+    {
+      "id": "stu_alejandro_mejia_679",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Alejo.mej@gmail.com"
+    },
+    {
+      "id": "1021673525",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Dannaby6@gmail.com"
+    },
+    {
+      "id": "stu_danna_sofia_garzon_galindo_107",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Dannaby6@gmail.com"
+    },
+    {
+      "id": "1022362238",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Diegoca290@gmail.com"
+    },
+    {
+      "id": "stu_diego_castro_761",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Diegoca290@gmail.com"
+    },
+    {
+      "id": "1022368242",
+      "previo_canonicalStudentId": null,
+      "nuevo": "91lorena@hotmail.es"
+    },
+    {
+      "id": "stu_lorena_mendieta_794",
+      "previo_canonicalStudentId": null,
+      "nuevo": "91lorena@hotmail.es"
+    },
+    {
+      "id": "1027284017",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Adrycaoca@gmail.com"
+    },
+    {
+      "id": "stu_andres_gaviria_944",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Adrycaoca@gmail.com"
+    },
+    {
+      "id": "1027539749",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Anamariasantofimio@hotmail.com"
+    },
+    {
+      "id": "stu_ana_maria_santofimio_852",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Anamariasantofimio@hotmail.com"
+    },
+    {
+      "id": "1028445027",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cristinarodriguezsanchez@hotmail.com"
+    },
+    {
+      "id": "1028484601",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Angelika_jaramillo@hotmail.com"
+    },
+    {
+      "id": "1030555483",
+      "previo_canonicalStudentId": null,
+      "nuevo": "4540470"
+    },
+    {
+      "id": "stu_julied_camila_martinez_castiblanco_964",
+      "previo_canonicalStudentId": null,
+      "nuevo": "4540470"
+    },
+    {
+      "id": "1031651446",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Danchaos018@gmail.com"
+    },
+    {
+      "id": "stu_daniel_moreno_516",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Danchaos018@gmail.com"
+    },
+    {
+      "id": "1032365567",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andrealeonarias@gmail.com"
+    },
+    {
+      "id": "1032448152",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andre.m2@hotmail.com"
+    },
+    {
+      "id": "1032462849",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cpereziguaran@gmail.com"
+    },
+    {
+      "id": "stu_carlos_dario_perez_iguaran_649",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cpereziguaran@gmail.com"
+    },
+    {
+      "id": "1032938611",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Desymelo13@gmail.com"
+    },
+    {
+      "id": "stu_deisy_carolina_melo_perez_105",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Desymelo13@gmail.com"
+    },
+    {
+      "id": "1033108598",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Clarapnoel@gmail.com"
+    },
+    {
+      "id": "1037603221",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Carodru.19@gmail.com"
+    },
+    {
+      "id": "stu_maria_carolina_ruiz_641",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Carodru.19@gmail.com"
+    },
+    {
+      "id": "1054547482",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andreslloreda1990@gmail.com"
+    },
+    {
+      "id": "stu_juan_andres_lloreda_montano_157",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andreslloreda1990@gmail.com"
+    },
+    {
+      "id": "1056574263",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Catalina.a@kiloalimentos.com"
+    },
+    {
+      "id": "1057571495",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andreacmotta86@gmail.com"
+    },
+    {
+      "id": "stu_andrea_catalina_rojas_motta_819",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Andreacmotta86@gmail.com"
+    },
+    {
+      "id": "1070021364",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Diegogil9810@gmail.com"
+    },
+    {
+      "id": "stu_diego_fernando_martinez_gil_126",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Diegogil9810@gmail.com"
+    },
+    {
+      "id": "stu_diego_fernando_martinez_gil_226",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Diegogil9810@gmail.com"
+    },
+    {
+      "id": "1081843695",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Balzamarquez27@gmail.com"
+    },
+    {
+      "id": "stu_michelle_balza_marquez_469",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Balzamarquez27@gmail.com"
+    },
+    {
+      "id": "1090393588",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Alejandra.oh@hotmail.com"
+    },
+    {
+      "id": "1098735601",
+      "previo_canonicalStudentId": null,
+      "nuevo": "ABOGADASILVIATOSCANO@GMAIL.COM"
+    },
+    {
+      "id": "1125810511",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Eliph@outlook.com"
+    },
+    {
+      "id": "1129571028",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Ammusp103@gmail.com"
+    },
+    {
+      "id": "stu_alberto_mario_murillo_128",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Ammusp103@gmail.com"
+    },
+    {
+      "id": "1141367814",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Bellanith.duran@hotmail.com"
+    },
+    {
+      "id": "1233694384",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Felipe.0999@hotmial.com"
+    },
+    {
+      "id": "stu_felipe_ruiz_719",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Felipe.0999@hotmial.com"
+    },
+    {
+      "id": "1233901697",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Frankleon1098@hotmail.com"
+    },
+    {
+      "id": "stu_frank_elkin_leon_rubiano_441",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Frankleon1098@hotmail.com"
+    },
+    {
+      "id": "1243758060",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Diegofelipe_rodriguez@hotmail.com-Esperanza_pulido@hotmail.com"
+    },
+    {
+      "id": "26155220",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Carlosyosuehurtado@gmail.com"
+    },
+    {
+      "id": "stu_carlos_yosue_hurtado_azuaje_423",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Carlosyosuehurtado@gmail.com"
+    },
+    {
+      "id": "31576938",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Amaege@hotmail.com"
+    },
+    {
+      "id": "stu_aura_maria_arango_669",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Amaege@hotmail.com"
+    },
+    {
+      "id": "CC1026255114",
+      "previo_canonicalStudentId": null,
+      "nuevo": "4FZxYr89lFuSszurKNy9"
+    },
+    {
+      "id": "stu_luna_suarez_31196",
+      "previo_canonicalStudentId": null,
+      "nuevo": "4FZxYr89lFuSszurKNy9"
+    },
+    {
+      "id": "52378556",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cristinapedraza1@hotmail.com"
+    },
+    {
+      "id": "stu_pilar_cristina_pedraza_ariza_530",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cristinapedraza1@hotmail.com"
+    },
+    {
+      "id": "79797994",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Carlosh82@hotmail.com"
+    },
+    {
+      "id": "stu_carlos_enrique_herrera_moncada_531",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Carlosh82@hotmail.com"
+    },
+    {
+      "id": "80133771",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Biaggioruocco@gmail.com"
+    },
+    {
+      "id": "stu_biaggio_ruocco_881",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Biaggioruocco@gmail.com"
+    },
+    {
+      "id": "80189655",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Erick.frade@gmail.com"
+    },
+    {
+      "id": "stu_erick_frade_304",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Erick.frade@gmail.com"
+    },
+    {
+      "id": "80214881",
+      "previo_canonicalStudentId": null,
+      "nuevo": "FESCOBARV@ME.COM"
+    },
+    {
+      "id": "stu_fernando_escobar_250",
+      "previo_canonicalStudentId": null,
+      "nuevo": "FESCOBARV@ME.COM"
+    },
+    {
+      "id": "CC51743515",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Bg7I5dzf2ii5XhzlCqi6"
+    },
+    {
+      "id": "stu_maria_del_pilar_acosta_39225",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Bg7I5dzf2ii5XhzlCqi6"
+    },
+    {
+      "id": "CC1019057406",
+      "previo_canonicalStudentId": null,
+      "nuevo": "nEtlQntaa26g03nVw0ve"
+    },
+    {
+      "id": "stu_juan_carlos_sanchez_cortes_29690",
+      "previo_canonicalStudentId": null,
+      "nuevo": "nEtlQntaa26g03nVw0ve"
+    },
+    {
+      "id": "CC39721769",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cgs9joeCWPmCKE4tdMoK"
+    },
+    {
+      "id": "stu_darmeli_rubio_pinilla_37719",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Cgs9joeCWPmCKE4tdMoK"
+    },
+    {
+      "id": "CC79590985",
+      "previo_canonicalStudentId": null,
+      "nuevo": "z2VZoZzNB6iBKlewwN1C"
+    },
+    {
+      "id": "stu_jorge_perez_28686",
+      "previo_canonicalStudentId": null,
+      "nuevo": "z2VZoZzNB6iBKlewwN1C"
+    },
+    {
+      "id": "TI1014893045",
+      "previo_canonicalStudentId": null,
+      "nuevo": "CN0NEE1Dmf9eobaPnUDB"
+    },
+    {
+      "id": "stu_manuela_farfan_31698",
+      "previo_canonicalStudentId": null,
+      "nuevo": "CN0NEE1Dmf9eobaPnUDB"
+    },
+    {
+      "id": "Cc1072424831",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Edmicasa@gmail.com"
+    },
+    {
+      "id": "stu_cristian_felipe_carreno_lizarazo_1035",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Edmicasa@gmail.com"
+    },
+    {
+      "id": "TI1032880004",
+      "previo_canonicalStudentId": null,
+      "nuevo": "JuCanInFB7AefjE9JX94"
+    },
+    {
+      "id": "stu_josue_paez_aponte_45249",
+      "previo_canonicalStudentId": null,
+      "nuevo": "JuCanInFB7AefjE9JX94"
+    },
+    {
+      "id": "TI1014098094",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Mbx6yKN6k09SyVz6iJNS"
+    },
+    {
+      "id": "stu_joaquin_castillo_vega_29188",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Mbx6yKN6k09SyVz6iJNS"
+    },
+    {
+      "id": "RC1014322487",
+      "previo_canonicalStudentId": null,
+      "nuevo": "PGTXKj0St5xnJuIujtp2"
+    },
+    {
+      "id": "stu_luciana_rodriguez_rodriguez_1143",
+      "previo_canonicalStudentId": null,
+      "nuevo": "PGTXKj0St5xnJuIujtp2"
+    },
+    {
+      "id": "TI1021401121",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Qk6ZLqHkHKy3YYIqU75Q"
+    },
+    {
+      "id": "stu_emma_sofia_chaparro_rojas_33204",
+      "previo_canonicalStudentId": null,
+      "nuevo": "Qk6ZLqHkHKy3YYIqU75Q"
+    },
+    {
+      "id": "RC1016608300",
+      "previo_canonicalStudentId": null,
+      "nuevo": "dVxBpsuppta9QH0hxNod"
+    },
+    {
+      "id": "stu_matias_martinez_39727",
+      "previo_canonicalStudentId": null,
+      "nuevo": "dVxBpsuppta9QH0hxNod"
+    },
+    {
+      "id": "RC1016920564",
+      "previo_canonicalStudentId": null,
+      "nuevo": "cuJofLxmixqdcoB8CNCk"
+    },
+    {
+      "id": "stu_santiago_gomez_iregui_36715",
+      "previo_canonicalStudentId": null,
+      "nuevo": "cuJofLxmixqdcoB8CNCk"
+    },
+    {
+      "id": "RC1016968145",
+      "previo_canonicalStudentId": null,
+      "nuevo": "76lei393leSRm02chsKI"
+    },
+    {
+      "id": "stu_sophie_valentina_vargas_rodriguez_42739",
+      "previo_canonicalStudentId": null,
+      "nuevo": "76lei393leSRm02chsKI"
+    },
+    {
+      "id": "RC1019848721",
+      "previo_canonicalStudentId": null,
+      "nuevo": "atWavo7uJNfs66ACdJOp"
+    },
+    {
+      "id": "stu_juan_luis_sarmiento_bermudez_40229",
+      "previo_canonicalStudentId": null,
+      "nuevo": "atWavo7uJNfs66ACdJOp"
+    },
+    {
+      "id": "RC1019850250",
+      "previo_canonicalStudentId": null,
+      "nuevo": "hcHRzAXUp9FkFoOg88wM"
+    },
+    {
+      "id": "stu_juan_andres_riveros_rodriguez_43743",
+      "previo_canonicalStudentId": null,
+      "nuevo": "hcHRzAXUp9FkFoOg88wM"
+    },
+    {
+      "id": "RC1020852171",
+      "previo_canonicalStudentId": null,
+      "nuevo": "iUzqOeIr1JeVI7mBDz08"
+    },
+    {
+      "id": "stu_luciana_laverde_farfan_41233",
+      "previo_canonicalStudentId": null,
+      "nuevo": "iUzqOeIr1JeVI7mBDz08"
+    },
+    {
+      "id": "RC9015048539",
+      "previo_canonicalStudentId": null,
+      "nuevo": "b8T004HrHQX0rM6nosda"
+    },
+    {
+      "id": "stu_olivia_farias_45751",
+      "previo_canonicalStudentId": null,
+      "nuevo": "b8T004HrHQX0rM6nosda"
+    },
+    {
+      "id": "TI1014889751",
+      "previo_canonicalStudentId": null,
+      "nuevo": "kx9kk6ReKcdivrXuUhi6"
+    },
+    {
+      "id": "stu_maria_jose_vargas_romero_30192",
+      "previo_canonicalStudentId": null,
+      "nuevo": "kx9kk6ReKcdivrXuUhi6"
+    },
+    {
+      "id": "TI1016836779",
+      "previo_canonicalStudentId": null,
+      "nuevo": "dX1QUYgPRY8ogaVUK1DF"
+    },
+    {
+      "id": "stu_alejandro_diaz_marulanda_32702",
+      "previo_canonicalStudentId": null,
+      "nuevo": "dX1QUYgPRY8ogaVUK1DF"
+    },
+    {
+      "id": "TI1019912186",
+      "previo_canonicalStudentId": null,
+      "nuevo": "pHAePTgvllrB2ZHEPTqB"
+    },
+    {
+      "id": "stu_juan_andres_maestre_aramendiz_41735",
+      "previo_canonicalStudentId": null,
+      "nuevo": "pHAePTgvllrB2ZHEPTqB"
+    },
+    {
+      "id": "TI1019912187",
+      "previo_canonicalStudentId": null,
+      "nuevo": "si0c2nOHBAN9Vyboz7Sw"
+    },
+    {
+      "id": "stu_jose_david_maestre_aramendiz_42237",
+      "previo_canonicalStudentId": null,
+      "nuevo": "si0c2nOHBAN9Vyboz7Sw"
+    },
+    {
+      "id": "TI1042267850",
+      "previo_canonicalStudentId": null,
+      "nuevo": "CVt0dRAsZWwoN1dskiid"
+    },
+    {
+      "id": "stu_sara_nowogroder_molina_44245",
+      "previo_canonicalStudentId": null,
+      "nuevo": "CVt0dRAsZWwoN1dskiid"
+    },
+    {
+      "id": "TI1188223664",
+      "previo_canonicalStudentId": null,
+      "nuevo": "muXJbaINKEy8lqRCCr21"
+    },
+    {
+      "id": "stu_antonia_alfonso_morales_30694",
+      "previo_canonicalStudentId": null,
+      "nuevo": "muXJbaINKEy8lqRCCr21"
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import {
   removeBitacoraForStudent,
   updateDraft,
   resetDraft,
+  hydrateDraftForStudent,
   setUploadQueue,
   setUploading,
   addUploadedFiles,
@@ -162,6 +163,18 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   const draft = getCurrentDraft();
 
   if (!draftBelongsToContext(draft, student)) {
+    // Tras una recarga accidental el estado en memoria empieza vacío. Antes de
+    // crear un borrador nuevo, recuperamos el de esta misma pestaña si existe.
+    hydrateDraftForStudent(
+      student,
+      requestedMode || CONFIG.modes.individual
+    );
+    const recoveredDraft = getCurrentDraft();
+    if (draftBelongsToContext(recoveredDraft, student)) {
+      currentEditorMode = recoveredDraft.mode || CONFIG.modes.individual;
+      return;
+    }
+
     resetDraftForContext({
       mode: requestedMode || CONFIG.modes.individual,
       student,
@@ -1189,12 +1202,15 @@ function handleDraftInput(student) {
 }
 
 function scheduleDraftInput(student) {
-  if (draftInputDebounceTimer) {
-    clearTimeout(draftInputDebounceTimer);
-  }
+  // El contenido debe entrar al state en el mismo evento de escritura. Antes
+  // quedaba una ventana de 140 ms: si llegaba una actualización asíncrona del
+  // historial, autenticación o guardado previo, el render reactivo restauraba
+  // el borrador anterior y aparentaba una recarga de página.
+  handleDraftInput(student);
 
+  if (draftInputDebounceTimer) clearTimeout(draftInputDebounceTimer);
   draftInputDebounceTimer = setTimeout(() => {
-    handleDraftInput(student);
+    renderDraftMetaBlock(student);
     draftInputDebounceTimer = null;
   }, DRAFT_INPUT_DEBOUNCE_MS);
 }
@@ -3804,6 +3820,9 @@ function updateGroupStudentProcess(student, studentId, processKey) {
   nextOverrides[safeStudentId] = {
     ...currentOverride,
     processKey: safeProcessKey,
+    // Sólo una selección manual puede separar a este estudiante del proceso
+    // general de una bitácora grupal.
+    enabled: true,
   };
 
   updateDraft({
@@ -3814,27 +3833,11 @@ function updateGroupStudentProcess(student, studentId, processKey) {
 
 function buildGroupStudentOverridesForPayload(draft = {}, studentIds = [], allStudents = []) {
   const normalizedIds = normalizeStudentIds(studentIds);
-  const overrides = normalizeStudentOverrides(draft.studentOverrides, normalizedIds);
-  const next = { ...overrides };
-
-  normalizedIds.forEach((studentId) => {
-    const student = findStudentById(allStudents, studentId);
-    const processes = normalizeStudentProcesses(student || {});
-    const existing = getStudentOverrideForDraft({ studentOverrides: next }, studentId);
-    const process =
-      resolveStudentProcess(student || {}, existing.processKey || draft.processKey) ||
-      processes[0] ||
-      null;
-    const processKey = toStringSafe(existing.processKey || process?.processKey);
-    if (!processKey) return;
-
-    next[studentId] = {
-      ...existing,
-      processKey,
-    };
-  });
-
-  return normalizeStudentOverrides(next, normalizedIds);
+  // El proceso de la bitácora grupal ya se guarda en draft.processKey. No
+  // duplicamos automáticamente el proceso por estudiante: esas copias hacían
+  // que un cambio posterior al proceso general quedara oculto por un valor
+  // heredado (por ejemplo, Percusión sobre Ensamble).
+  return normalizeStudentOverrides(draft.studentOverrides, normalizedIds);
 }
 
 function renderSelectedStudentsChips(

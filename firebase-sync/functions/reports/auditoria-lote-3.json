@@ -1,0 +1,157 @@
+{
+  "appliedAt": "2026-07-16T04:55:48.483Z",
+  "personas": 24,
+  "escrituras": 30,
+  "audit": [
+    {
+      "id": "stu_angel_daniel_porras_pedraza_9617",
+      "previo": null,
+      "nuevo": "stu_angel_daniel_porras_pedraza_9116"
+    },
+    {
+      "id": "stu_angel_matias_avella_rodriguez_17146",
+      "previo": null,
+      "nuevo": "stu_angel_matias_avella_rodriguez_17144"
+    },
+    {
+      "id": "stu_camila_koepp_medina_10119",
+      "previo": null,
+      "nuevo": "stu_camila_koepp_medina_9618"
+    },
+    {
+      "id": "stu_dalia_curet_afanador_24170",
+      "previo": null,
+      "nuevo": "stu_dalia_curet_afanador_23668"
+    },
+    {
+      "id": "stu_daniel_celis_giraldo_6104",
+      "previo": null,
+      "nuevo": "stu_daniel_celis_giraldo_5603"
+    },
+    {
+      "id": "stu_dayana_alejandra_guayacundo_alvarez_15138",
+      "previo": null,
+      "nuevo": "stu_dayana_alejandra_guayacundo_alvarez_15136"
+    },
+    {
+      "id": "stu_emociones_productora_1144",
+      "previo": null,
+      "nuevo": "stu_emociones_productora_1140"
+    },
+    {
+      "id": "stu_emociones_productora_1151",
+      "previo": null,
+      "nuevo": "stu_emociones_productora_1140"
+    },
+    {
+      "id": "stu_geronimo_mejia_mesias_10120",
+      "previo": null,
+      "nuevo": "stu_geronimo_mejia_mesias_10621"
+    },
+    {
+      "id": "stu_juan_sebastian_garcia_beltran_8111",
+      "previo": null,
+      "nuevo": "stu_juan_sebastian_garcia_beltran_7610"
+    },
+    {
+      "id": "stu_julieta_caicedo_illera_14134",
+      "previo": null,
+      "nuevo": "stu_julieta_caicedo_illera_14132"
+    },
+    {
+      "id": "stu_luciana_amaya_rodriguez_14636",
+      "previo": null,
+      "nuevo": "stu_luciana_amaya_rodriguez_14634"
+    },
+    {
+      "id": "stu_maia_sofia_angola_tejada_16142",
+      "previo": null,
+      "nuevo": "stu_maia_sofia_angola_tejada_16140"
+    },
+    {
+      "id": "stu_mariapaz_jimenez_bolanos_5602",
+      "previo": null,
+      "nuevo": "stu_mariapaz_jimenez_bolanos_5101"
+    },
+    {
+      "id": "stu_martin_herrera_ordonez_7108",
+      "previo": null,
+      "nuevo": "stu_martin_herrera_ordonez_6607"
+    },
+    {
+      "id": "stu_mia_patino_pachon_15640",
+      "previo": null,
+      "nuevo": "stu_mia_patino_pachon_15638"
+    },
+    {
+      "id": "stu_safe_mode_1145",
+      "previo": null,
+      "nuevo": "stu_safe_mode_1141"
+    },
+    {
+      "id": "stu_safe_mode_1152",
+      "previo": null,
+      "nuevo": "stu_safe_mode_1141"
+    },
+    {
+      "id": "stu_samuel_sanchez_barrera_8613",
+      "previo": null,
+      "nuevo": "stu_samuel_sanchez_barrera_8112"
+    },
+    {
+      "id": "stu_sofia_ortiz_rodriguez_60",
+      "previo": null,
+      "nuevo": "stu_sofia_ortiz_rodriguez_59"
+    },
+    {
+      "id": "stu_sofia_ortiz_rodriguez_62",
+      "previo": null,
+      "nuevo": "stu_sofia_ortiz_rodriguez_59"
+    },
+    {
+      "id": "stu_sophia_zonszain_9115",
+      "previo": null,
+      "nuevo": "stu_sophia_zonszain_8614"
+    },
+    {
+      "id": "stu_susana_murillo_6606",
+      "previo": null,
+      "nuevo": "stu_susana_murillo_6105"
+    },
+    {
+      "id": "stu_tomas_benavides_34",
+      "previo": null,
+      "nuevo": "stu_tomas_benavides_33"
+    },
+    {
+      "id": "stu_tomas_benavides_35",
+      "previo": null,
+      "nuevo": "stu_tomas_benavides_33"
+    },
+    {
+      "id": "stu_tomas_benavides_38",
+      "previo": null,
+      "nuevo": "stu_tomas_benavides_33"
+    },
+    {
+      "id": "stu_valentina_zambrano_16644",
+      "previo": null,
+      "nuevo": "stu_valentina_zambrano_16642"
+    },
+    {
+      "id": "stu_valeria_martinez_sandoval_13632",
+      "previo": null,
+      "nuevo": "stu_valeria_martinez_sandoval_13630"
+    },
+    {
+      "id": "stu_young_engineers_1146",
+      "previo": null,
+      "nuevo": "stu_young_engineers_1142"
+    },
+    {
+      "id": "stu_young_engineers_1154",
+      "previo": null,
+      "nuevo": "stu_young_engineers_1142"
+    }
+  ]
+}

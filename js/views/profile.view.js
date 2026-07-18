@@ -914,8 +914,6 @@ function buildProfileMarkup(student, state, config) {
               ${renderStudentRepertoireCard(student, access)}
             </div>
           </article>
-          <div id="profile-work-suggestions"></div>
-
           <article class="card profile-quick-actions">
             <header class="panel-header">
               <div>
@@ -2674,7 +2672,8 @@ async function renderStudentWorkSuggestions(student) {
   if (!studentId) return "";
   const suggestions = await listStudentWorkSuggestions(studentId).catch(() => []);
   const pending = suggestions.filter((item) => item.estado === "pendiente");
-  return `<article class="card profile-repertoire-card"><header class="panel-header"><div><p class="panel-header__eyebrow">Desde Estudiantes HUB</p><h2 class="panel-header__title">Obras sugeridas por el estudiante</h2></div></header><div class="profile-repertoire">${pending.length ? pending.map((item) => `<article class="profile-repertoire-item"><div class="profile-repertoire-item__main"><strong>${escapeHtml(toStringSafe(item.nombre))}</strong><span>${escapeHtml(toStringSafe(item.notas) || "Sin nota adicional")}</span></div><div class="profile-repertoire-item__actions"><button class="profile-repertoire-action" data-work-suggestion-accept="${escapeHtml(item.id)}" data-work-suggestion-name="${escapeHtml(toStringSafe(item.nombre))}">Aceptar en Obras</button><button class="profile-repertoire-chip__remove" data-work-suggestion-dismiss="${escapeHtml(item.id)}">Descartar</button></div></article>`).join("") : `<p class="field__hint">No hay sugerencias pendientes.</p>`}</div></article>`;
+  if (!pending.length) return "";
+  return `<div class="profile-repertoire-suggestions"><p class="field__hint"><strong>Propuestas desde Estudiantes HUB</strong> · pendientes de revisión</p>${pending.map((item) => `<article class="profile-repertoire-item profile-repertoire-item--suggested"><div class="profile-repertoire-item__main"><strong>${escapeHtml(toStringSafe(item.nombre))}</strong><span>${escapeHtml(toStringSafe(item.notas) || "Sin nota adicional")}</span></div><div class="profile-repertoire-item__actions"><button class="profile-repertoire-action" data-work-suggestion-accept="${escapeHtml(item.id)}" data-work-suggestion-name="${escapeHtml(toStringSafe(item.nombre))}">Aceptar como quiero tocar</button><button class="profile-repertoire-chip__remove" data-work-suggestion-dismiss="${escapeHtml(item.id)}">Descartar</button></div></article>`).join("")}</div>`;
 }
 
 function renderRepertoireColumn(status, items = [], canEdit = false) {
@@ -2691,6 +2690,7 @@ function renderRepertoireColumn(status, items = [], canEdit = false) {
             ? statusItems.map((item) => renderRepertoireItemCard(item, canEdit)).join("")
             : `<p class="field__hint">${escapeHtml(status.empty)}</p>`
         }
+        ${status.id === "quiere" ? `<div id="profile-work-suggestions" aria-live="polite"></div>` : ""}
       </div>
     </section>
   `;
@@ -6441,7 +6441,14 @@ function getBitacorasFromState(studentOrRef) {
 
     const filtered = items.filter((item) => {
       const groupOverride = getGroupBitacoraOverrideForStudent(item, studentOrRef);
-      if (isGroupBitacoraForStudent(item, studentRef, fallbackId) && groupOverride?.processKey) {
+      // Compatibilidad con registros históricos: los overrides automáticos
+      // guardaban processKey aunque nadie hubiera escogido un proceso distinto.
+      // Sólo un override marcado como manual puede ganar al proceso general.
+      if (
+        isGroupBitacoraForStudent(item, studentRef, fallbackId) &&
+        groupOverride?.processKey &&
+        groupOverride.enabled === true
+      ) {
         return !safeProcessKey || groupOverride.processKey === safeProcessKey;
       }
 
