@@ -581,7 +581,7 @@ service cloud.firestore {
       // aparecen en ninguna allowlist y permanecen exclusivas del backend.
       allow update: if
         (isAdmin() && validAdminPedagogicalUpdate()) ||
-        (teacherCanEditStudent() && validTeacherPedagogicalUpdate());
+        (isTeacher() && validTeacherPedagogicalUpdate());
 
       allow create, delete: if false;
     }
