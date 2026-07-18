@@ -538,10 +538,6 @@ service cloud.firestore {
           request.resource.data.repertoire &&
         request.resource.data.repertorioProceso ==
           request.resource.data.repertoireProgress &&
-        validRepertoirePayload(
-          request.resource.data.repertorioEscogido,
-          request.resource.data.repertorioProceso
-        ) &&
         validFixedPedagogicalAudit('profile_repertoire');
     }
 
