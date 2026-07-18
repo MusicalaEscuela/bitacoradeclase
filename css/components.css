@@ -837,6 +837,23 @@
   box-shadow: 0 8px 18px rgba(35, 22, 92, 0.05);
 }
 
+.profile-repertoire-suggestions {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed rgba(106, 81, 208, 0.28);
+}
+
+.profile-repertoire-suggestions .field__hint {
+  margin: 0;
+}
+
+.profile-repertoire-item--suggested {
+  border-color: rgba(106, 81, 208, 0.42);
+  background: linear-gradient(135deg, rgba(242, 239, 255, 0.9), rgba(255, 255, 255, 0.96));
+}
+
 .profile-repertoire-item__main {
   display: grid;
   gap: 0.28rem;
@@ -2693,6 +2710,29 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+.identity-link-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.75rem 0 0.25rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.6rem;
+  background: rgba(99, 102, 241, 0.1);
+  color: #4338ca;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.identity-link-progress__spinner {
+  flex: 0 0 auto;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  border: 2px solid rgba(99, 102, 241, 0.35);
+  border-top-color: #6366f1;
+  animation: spin 0.7s linear infinite;
 }
 
 .student-modal__grid {
