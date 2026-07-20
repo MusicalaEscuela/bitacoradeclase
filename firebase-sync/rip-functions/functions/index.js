@@ -500,6 +500,9 @@ exports.syncStudentStatus = onDocumentWritten(
     region: "us-central1",
     timeoutSeconds: 60,
     memory: "256MiB",
+    // Esta proyección escribe en Bitácoras y Lista: debe usar la cuenta
+    // explícita que tiene permisos entre proyectos, no la cuenta por defecto.
+    serviceAccount: RUNTIME_SERVICE_ACCOUNT,
     // Reintentos seguros del runtime: la versión determinista y los merges
     // idempotentes garantizan que reintentar no duplica ni retrocede estado.
     retry: true,
@@ -604,6 +607,8 @@ exports.backfillStudentStatus = onRequest(
     region: "us-central1",
     timeoutSeconds: 540,
     memory: "512MiB",
+    // El backfill realiza las mismas escrituras cruzadas que el trigger.
+    serviceAccount: RUNTIME_SERVICE_ACCOUNT,
   },
   async (req, res) => {
     try {
