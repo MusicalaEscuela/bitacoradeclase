@@ -1313,7 +1313,7 @@ export function setDraftMode(mode) {
   updateDraft(nextDraft);
 }
 
-export function updateDraft(partialDraft = {}) {
+export function updateDraft(partialDraft = {}, options = {}) {
   const merged = {
     ...state.bitacoras.currentDraft,
     ...partialDraft,
@@ -1354,9 +1354,20 @@ export function updateDraft(partialDraft = {}) {
     });
   }
 
-  patchSlice("bitacoras", {
-    currentDraft: normalizedDraft,
-  });
+  // Al escribir, el editor puede actualizar el borrador muchas veces por
+  // segundo. Conservamos el dato de inmediato, pero evitamos notificar a toda
+  // la app en cada pulsación: esa notificación vuelve a pintar el historial y
+  // hacía que los textarea se sintieran lentos.
+  if (options?.notify === false) {
+    state = finalizeState({
+      ...state,
+      bitacoras: deepMerge(state.bitacoras, { currentDraft: normalizedDraft }),
+    });
+  } else {
+    patchSlice("bitacoras", {
+      currentDraft: normalizedDraft,
+    });
+  }
 
   persistCurrentDraft(normalizedDraft);
 }
