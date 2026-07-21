@@ -95,7 +95,7 @@ let groupSearchDebounceTimer = null;
 let currentEditingBitacoraId = "";
 let currentHistorySearchQuery = "";
 
-const DRAFT_INPUT_DEBOUNCE_MS = 140;
+const DRAFT_INPUT_DEBOUNCE_MS = 220;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
 const RECENT_PICKERS_KEY = "bitacoras_recent_pickers_v1";
 const RECENT_PICKERS_LIMIT = 12;
@@ -1169,9 +1169,11 @@ function placeTasksAndCategoriesAfterComponents() {
   }
 }
 
-function handleDraftInput(student) {
-  const draft = updateDraftFromForm(student);
-  renderDraftMetaBlock(student);
+function handleDraftInput(student, options = {}) {
+  const draft = updateDraftFromForm(student, options);
+  if (options.renderMeta !== false) {
+    renderDraftMetaBlock(student);
+  }
   return draft;
 }
 
@@ -1179,9 +1181,16 @@ function scheduleDraftInput(student) {
   if (draftInputDebounceTimer) {
     clearTimeout(draftInputDebounceTimer);
   }
+  // El contenido debe entrar al state en el mismo evento de escritura. Antes
+  // quedaba una ventana de 140 ms: si llegaba una actualización asíncrona del
+  // historial, autenticación o guardado previo, el render reactivo restauraba
+  // el borrador anterior y aparentaba una recarga de página.
+  // El valor queda protegido sin provocar el repintado reactivo completo. El
+  // DOM nativo conserva así una respuesta fluida incluso con historiales grandes.
+  handleDraftInput(student, { notify: false, renderMeta: false });
 
   draftInputDebounceTimer = setTimeout(() => {
-    handleDraftInput(student);
+    renderDraftMetaBlock(student);
     draftInputDebounceTimer = null;
   }, DRAFT_INPUT_DEBOUNCE_MS);
 }
@@ -1803,7 +1812,11 @@ async function handleSubmit(student) {
   setAppSaving(true);
   updateSaveButtonState(true);
 
-  let loadingToastId = null;
+  // La confirmación visual debe aparecer antes de validar duplicados: esa
+  // consulta puede tardar y antes dejaba al usuario sin saber si el clic tomó.
+  let loadingToastId = showLoadingToast("Estamos preparando la bitácora.", {
+    title: "Guardando",
+  });
 
   try {
     let editingBitacoraId = toStringSafe(
@@ -1824,12 +1837,14 @@ async function handleSubmit(student) {
     }
 
     const isUpdating = Boolean(editingBitacoraId);
-    loadingToastId = showLoadingToast(
-      isUpdating
-        ? "Estamos actualizando la bitácora."
-        : "Estamos guardando la bitácora.",
-      { title: isUpdating ? "Actualizando" : "Guardando" }
-    );
+    if (loadingToastId) {
+      updateToast(loadingToastId, {
+        title: isUpdating ? "Actualizando" : "Guardando",
+        message: isUpdating
+          ? "Estamos actualizando la bitácora."
+          : "Estamos guardando la bitácora.",
+      });
+    }
 
     const hasPendingFiles = (Array.isArray(draft?.archivos) ? draft.archivos : []).some(
       (item) => item?.sourceFile instanceof File && !item?.url
@@ -2815,9 +2830,11 @@ function collectStudentOverridesFromForm(selectedStudents = []) {
   return next;
 }
 
-function updateDraftFromForm(student) {
+function updateDraftFromForm(student, options = {}) {
   const studentRef = getStudentIdentity(student);
   const existingDraft = getDraftForContext(student);
+  // Evita clonar el estado completo varias veces durante la misma pulsación.
+  const allStudents = getAllStudentsFromState(getState());
 
   const requestedMode = getAllowedMode(
     viewRoot?.querySelector('input[name="modoBitacora"]:checked')?.value ||
@@ -2831,7 +2848,7 @@ function updateDraftFromForm(student) {
       mode: requestedMode,
     },
     student,
-    getAllStudentsFromState(getState())
+    allStudents
   );
   const preservedGroupIds = normalizeStudentIds(existingDraft.studentIds || []);
   const nextMode =
@@ -2850,7 +2867,7 @@ function updateDraftFromForm(student) {
           : existingDraft.studentIds,
     },
     student,
-    getAllStudentsFromState(getState())
+    allStudents
   );
 
   const structuredFields = {
@@ -2915,7 +2932,7 @@ function updateDraftFromForm(student) {
     contentInput.value = nextContenido;
   }
 
-  updateDraft(nextDraft);
+  updateDraft(nextDraft, options);
   currentEditorMode = nextDraft.mode;
   syncModeInputs();
   return nextDraft;
