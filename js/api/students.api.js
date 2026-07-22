@@ -23,8 +23,8 @@ import {
 import {
   getLogicalStudentLinkedIds,
   resolveLogicalStudents,
-} from "../utils/student-resolver.js?v=20260713.3";
-import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260713.3";
+} from "../utils/student-resolver.js?v=20260716.1";
+import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260716.1";
 
 const DEFAULT_TIMEOUT =
   Number.isFinite(CONFIG?.api?.timeoutMs) && CONFIG.api.timeoutMs > 0
@@ -335,9 +335,15 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     .map((process, index) => normalizeProcessForWrite(process, index))
     .filter(Boolean);
 
-  const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
-  const snapshot = await getDoc(ref);
-  if (!snapshot.exists()) {
+  const targetIds = [...new Set([
+    safeStudentId,
+    ...(Array.isArray(options.linkedStudentIds) ? options.linkedStudentIds : []),
+  ].map(normalizeStudentIdentifier).filter(Boolean))];
+  const snapshots = await Promise.all(
+    targetIds.map(async (id) => ({ id, snapshot: await getDoc(doc(db, STUDENTS_COLLECTION, id)) }))
+  );
+  const existingTargets = snapshots.filter(({ snapshot }) => snapshot.exists());
+  if (!existingTargets.length) {
     throw createApiError("No se encontro el estudiante en Firebase para actualizar areas.", {
       code: "STUDENT_NOT_FOUND",
       studentId: safeStudentId,
@@ -354,7 +360,13 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     updatedBy: normalizeScalar(options.updatedBy) || "profile_processes",
   };
 
-  await updateDoc(ref, payload);
+  // Un perfil puede tener registros canónicos y legados. Mantener sus procesos
+  // alineados evita que una recarga desde otro alias borre visualmente docente.
+  const batch = writeBatch(db);
+  existingTargets.forEach(({ id }) => {
+    batch.update(doc(db, STUDENTS_COLLECTION, id), payload);
+  });
+  await batch.commit();
 
   return {
     id: safeStudentId,
@@ -838,10 +850,15 @@ function sortStudents(students = []) {
 }
 
 async function listStudentsFromFirestore() {
-  const [snapshot, identityLinks] = await Promise.all([
-    getDocs(collection(db, STUDENTS_COLLECTION)),
-    listStudentIdentityLinkRecords({ includeReviews: true }),
-  ]);
+  // La búsqueda nunca debe quedar vacía por una falla en la bandeja auxiliar
+  // de identidad. Los estudiantes son la fuente principal; los links sólo
+  // enriquecen cómo se agrupan sus aliases.
+  const snapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
+  const identityLinks = await listStudentIdentityLinkRecords({ includeReviews: true })
+    .catch((error) => {
+      console.warn("No se pudieron cargar los vínculos de identidad; se muestran los estudiantes sin agrupar.", error);
+      return [];
+    });
   const rawRecords = snapshot.docs.map((docSnap) => ({
     ...docSnap.data(),
     __documentId: docSnap.id,

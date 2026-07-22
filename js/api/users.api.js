@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   query,
   where,
 } from "../firebase.client.js";
@@ -158,4 +159,27 @@ export async function listStudentAccessUsers() {
     .sort((a, b) =>
       a.displayName.localeCompare(b.displayName, "es", { sensitivity: "base" })
     );
+}
+
+/**
+ * Observa el mismo directorio de accesos que consume el HUB. Esta funciÃ³n
+ * no escribe ni recalcula permisos: la identidad la publica el backend y RIP
+ * conserva la propiedad de los campos de estado.
+ */
+export function subscribeStudentAccessUsers(onChange, onError) {
+  return onSnapshot(
+    collection(db, USERS_COLLECTION),
+    (snapshot) => {
+      const users = dedupeUserAccessProfiles(snapshot.docs.map(normalizeUserAccess))
+        .filter((user) => STUDENT_ROLE_ALIASES.has(user.role))
+        .sort((a, b) =>
+          a.displayName.localeCompare(b.displayName, "es", { sensitivity: "base" })
+        );
+
+      if (typeof onChange === "function") onChange(users);
+    },
+    (error) => {
+      if (typeof onError === "function") onError(error);
+    }
+  );
 }

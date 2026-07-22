@@ -17,6 +17,7 @@ import {
   removeBitacoraForStudent,
   updateDraft,
   resetDraft,
+  hydrateDraftForStudent,
   setUploadQueue,
   setUploading,
   addUploadedFiles,
@@ -94,6 +95,7 @@ let draftInputDebounceTimer = null;
 let groupSearchDebounceTimer = null;
 let currentEditingBitacoraId = "";
 let currentHistorySearchQuery = "";
+const bitacorasLoadPromises = new Map();
 
 const DRAFT_INPUT_DEBOUNCE_MS = 220;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
@@ -154,11 +156,25 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
     resolveStudentProcess(student, requestedProcessRef)?.processKey || "";
 
   await ensureCatalogsLoaded();
-  await ensureBitacorasLoaded(student);
+  // El formulario aparece de inmediato; el historial se completa en segundo
+  // plano en vez de bloquear la creación de una nueva bitácora.
+  void ensureBitacorasLoaded(student);
 
   const draft = getCurrentDraft();
 
   if (!draftBelongsToContext(draft, student)) {
+    // Tras una recarga accidental el estado en memoria empieza vacío. Antes de
+    // crear un borrador nuevo, recuperamos el de esta misma pestaña si existe.
+    hydrateDraftForStudent(
+      student,
+      requestedMode || CONFIG.modes.individual
+    );
+    const recoveredDraft = getCurrentDraft();
+    if (draftBelongsToContext(recoveredDraft, student)) {
+      currentEditorMode = recoveredDraft.mode || CONFIG.modes.individual;
+      return;
+    }
+
     resetDraftForContext({
       mode: requestedMode || CONFIG.modes.individual,
       student,
@@ -292,19 +308,29 @@ async function ensureBitacorasLoaded(student) {
   const currentItems = getBitacorasFromState(student);
   if (currentItems.length > 0) return;
 
-  setBitacorasLoading(true);
+  const loadKey = [...getStudentLinkedIds(student)].sort().join("|") || studentRef;
+  if (bitacorasLoadPromises.has(loadKey)) return bitacorasLoadPromises.get(loadKey);
 
-  try {
-    const items = await safeLoadBitacoras(student);
-    getStudentLinkedIds(student).forEach((linkedStudentId) => {
-      setBitacorasForStudent(linkedStudentId, items);
+  setBitacorasLoading(true);
+  const loadPromise = safeLoadBitacoras(student)
+    .then((items) => {
+      getStudentLinkedIds(student).forEach((linkedStudentId) => {
+        setBitacorasForStudent(linkedStudentId, items);
+      });
+      return items;
+    })
+    .catch((error) => {
+      console.error("Error cargando bitacoras del estudiante:", error);
+      setAppError(error?.message || "No se pudieron cargar las bitacoras.");
+      return [];
+    })
+    .finally(() => {
+      bitacorasLoadPromises.delete(loadKey);
+      setBitacorasLoading(false);
     });
-  } catch (error) {
-    console.error("Error cargando bitacoras del estudiante:", error);
-    setAppError(error?.message || "No se pudieron cargar las bitacoras.");
-  } finally {
-    setBitacorasLoading(false);
-  }
+
+  bitacorasLoadPromises.set(loadKey, loadPromise);
+  return loadPromise;
 }
 
 function buildEditorMarkup({
@@ -1189,6 +1215,7 @@ function scheduleDraftInput(student) {
   // DOM nativo conserva así una respuesta fluida incluso con historiales grandes.
   handleDraftInput(student, { notify: false, renderMeta: false });
 
+  if (draftInputDebounceTimer) clearTimeout(draftInputDebounceTimer);
   draftInputDebounceTimer = setTimeout(() => {
     renderDraftMetaBlock(student);
     draftInputDebounceTimer = null;
@@ -1940,6 +1967,7 @@ function updateSaveButtonState(isSaving) {
   );
   button.disabled = Boolean(isSaving) || button.hasAttribute("data-disabled-by-access");
   button.classList.toggle("is-loading", Boolean(isSaving));
+  button.classList.toggle("is-busy", Boolean(isSaving));
   button.setAttribute("aria-busy", isSaving ? "true" : "false");
   button.textContent = isSaving
     ? "Guardando..."
@@ -2074,7 +2102,7 @@ async function findPotentialDuplicateBitacora(student, payload = {}) {
   items = dedupeBitacorasById(items);
   if (!items.length) {
     try {
-      items = await safeLoadBitacoras(student);
+      items = await ensureBitacorasLoaded(student);
     } catch (error) {
       console.warn("No se pudo consultar historial para validar duplicados:", error);
       return null;
@@ -2643,7 +2671,7 @@ function buildBitacoraPayload(student, draft) {
     normalizeStudentProcesses(student)[0] ||
     null;
 
-  const studentIds =
+  const memberStudentIds =
     mode === CONFIG.modes.group
       ? selectedStudents.map((item) => item.id)
       : [studentRef];
@@ -2671,6 +2699,10 @@ function buildBitacoraPayload(student, draft) {
   const linkedStudentIds = normalizeStudentIds(
     studentAcademicRefs.flatMap((item) => item.linkedStudentIds)
   );
+  const studentIds = normalizeStudentIds([
+    ...memberStudentIds,
+    ...linkedStudentIds,
+  ]);
   const primaryAcademicRef =
     studentAcademicRefs.find((item) => item.canonicalStudentId === studentRef) ||
     studentAcademicRefs[0] ||
@@ -2708,7 +2740,7 @@ function buildBitacoraPayload(student, draft) {
     archivos: normalizeFiles(draft.archivos),
     studentOverrides:
       mode === CONFIG.modes.group
-        ? buildGroupStudentOverridesForPayload(draft, studentIds, allStudents)
+        ? buildGroupStudentOverridesForPayload(draft, memberStudentIds, allStudents)
         : normalizeStudentOverrides(draft.studentOverrides, studentIds),
     processKey: activeProcess?.processKey || "",
     process: {
@@ -3803,6 +3835,9 @@ function updateGroupStudentProcess(student, studentId, processKey) {
   nextOverrides[safeStudentId] = {
     ...currentOverride,
     processKey: safeProcessKey,
+    // Sólo una selección manual puede separar a este estudiante del proceso
+    // general de una bitácora grupal.
+    enabled: true,
   };
 
   updateDraft({
@@ -3813,27 +3848,11 @@ function updateGroupStudentProcess(student, studentId, processKey) {
 
 function buildGroupStudentOverridesForPayload(draft = {}, studentIds = [], allStudents = []) {
   const normalizedIds = normalizeStudentIds(studentIds);
-  const overrides = normalizeStudentOverrides(draft.studentOverrides, normalizedIds);
-  const next = { ...overrides };
-
-  normalizedIds.forEach((studentId) => {
-    const student = findStudentById(allStudents, studentId);
-    const processes = normalizeStudentProcesses(student || {});
-    const existing = getStudentOverrideForDraft({ studentOverrides: next }, studentId);
-    const process =
-      resolveStudentProcess(student || {}, existing.processKey || draft.processKey) ||
-      processes[0] ||
-      null;
-    const processKey = toStringSafe(existing.processKey || process?.processKey);
-    if (!processKey) return;
-
-    next[studentId] = {
-      ...existing,
-      processKey,
-    };
-  });
-
-  return normalizeStudentOverrides(next, normalizedIds);
+  // El proceso de la bitácora grupal ya se guarda en draft.processKey. No
+  // duplicamos automáticamente el proceso por estudiante: esas copias hacían
+  // que un cambio posterior al proceso general quedara oculto por un valor
+  // heredado (por ejemplo, Percusión sobre Ensamble).
+  return normalizeStudentOverrides(draft.studentOverrides, normalizedIds);
 }
 
 function renderSelectedStudentsChips(
