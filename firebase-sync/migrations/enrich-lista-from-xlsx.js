@@ -181,6 +181,9 @@ async function main() {
   await forEachDoc(db, COLLECTION, 300, async (doc) => {
     const data = doc.data() || {};
     report.scannedExisting += 1;
+    // Los archivados por la unificación de duplicados no reciben datos ni
+    // cuentan para el cruce: su canónico es quien debe quedar completo.
+    if (data.identityMergeStatus === "archived_duplicate") return;
     existingDocs.push({ id: doc.id, data });
     byId.set(doc.id, data);
     const emails = [
