@@ -329,13 +329,17 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
     );
   }
 
-  if (mode === CONFIG.modes.group && studentIds.length < 2) {
+  // studentIds puede incluir alias de acceso (correo, id legado, etc.). La
+  // cardinalidad pedagógica se determina por los integrantes canónicos.
+  const logicalStudentCount = new Set(studentRefs.map((ref) => ref.id).filter(Boolean)).size;
+
+  if (mode === CONFIG.modes.group && logicalStudentCount < 2) {
     throw createApiError(CONFIG.text.emptyGroup, {
       code: "GROUP_BITACORA_REQUIRES_MULTIPLE_STUDENTS",
     });
   }
 
-  if (mode === CONFIG.modes.individual && studentIds.length > 1) {
+  if (mode === CONFIG.modes.individual && logicalStudentCount > 1) {
     throw createApiError(
       "Una bitácora individual no debería tener varios estudiantes.",
       {
@@ -670,19 +674,13 @@ export async function createBitacora(bitacoraData, options = {}) {
     updatedAt: serverTimestamp(),
   });
 
-  const created = await getBitacoraById(docRef.id);
+  // addDoc ya confirma la escritura; no hace falta esperar una segunda lectura.
+  const now = new Date().toISOString();
+  return normalizeBitacoraRecord({
+    id: docRef.id,
+    data: () => ({ ...payload, createdAt: now, updatedAt: now }),
+  });
 
-  if (!created) {
-    throw createApiError(
-      "La bitácora se creó, pero no se pudo leer después del guardado.",
-      {
-        code: "BITACORA_CREATED_BUT_NOT_READABLE",
-        bitacoraId: docRef.id,
-      }
-    );
-  }
-
-  return created;
 }
 
 /**

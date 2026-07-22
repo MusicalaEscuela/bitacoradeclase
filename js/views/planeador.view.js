@@ -49,6 +49,8 @@ import {
   buildAreaCatalog,
   getCatalogTeachers,
 } from "../api/planeador.api.js";
+import { getTeacherListStudents } from "../api/students.api.js";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js";
 
 import {
   ARTES,
@@ -83,6 +85,8 @@ const pState = {
   loading: false,
   planeaciones: [],
   postits: [],
+  students: [],
+  participantHistory: {},
   draft: null,
   draftId: null,
   detailId: null,
@@ -149,12 +153,17 @@ async function loadData() {
   try {
     await loadCatalogsForPlaneador();
     const owner = ownerScope();
-    const [planeaciones, postits] = await Promise.all([
+    const [planeaciones, postits, students] = await Promise.all([
       listPlaneaciones(owner),
       listPostits(owner),
+      getTeacherListStudents().catch((error) => {
+        console.warn("[Planeador] No se pudo cargar el listado de estudiantes:", error);
+        return [];
+      }),
     ]);
     pState.planeaciones = planeaciones;
     pState.postits = postits;
+    pState.students = students;
   } catch (error) {
     console.error("[Planeador] Error cargando datos:", error);
     showError(error?.message || "No se pudieron cargar las planeaciones.");
@@ -413,6 +422,11 @@ function renderForm() {
         </div>
       </section>
 
+      <section class="planeacion-block">
+        ${blockHead("1.1", "Estudiantes de la clase", "Conecta la planeación con quienes realmente asistirán. El historial mostrado es una ayuda docente; las observaciones privadas no se copian aquí.")}
+        ${renderParticipantesEditor(d)}
+      </section>
+
       <!-- 2. Componente artístico (mismo lenguaje que las bitácoras) -->
       <section class="planeacion-block">
         ${blockHead(2, "Componente artístico", "Elige el área y registra los mismos componentes de las bitácoras: corporal, técnico, teórico y de repertorio.")}
@@ -510,6 +524,62 @@ function renderForm() {
     </form>`;
 }
 
+function normalizeParticipantes(draft) {
+  const count = Math.max(0, Math.min(30, Number(draft.cantidadEstudiantes) || 0));
+  const current = Array.isArray(draft.participantes) ? draft.participantes : [];
+  draft.cantidadEstudiantes = count;
+  draft.participantes = Array.from({ length: count }, (_, index) => ({
+    studentId: toStringSafe(current[index]?.studentId),
+    nombre: toStringSafe(current[index]?.nombre),
+    observacionEspecial: toStringSafe(current[index]?.observacionEspecial),
+  }));
+  return draft.participantes;
+}
+
+function bitacoraSuggestion(item) {
+  const content = toStringSafe(item?.content).replace(/\s+/g, " ").trim();
+  if (!content) return "Tiene historial, sin detalle disponible.";
+  return content.length > 180 ? `${content.slice(0, 177)}...` : content;
+}
+
+function renderParticipantesEditor(draft) {
+  const participantes = normalizeParticipantes(draft);
+  const selected = new Set(participantes.map((p) => p.studentId).filter(Boolean));
+  const studentOptions = pState.students
+    .map((student) => ({ id: toStringSafe(student.id), nombre: toStringSafe(student.nombre) }))
+    .filter((student) => student.id && student.nombre);
+  const optionHtml = (currentId) => studentOptions.map((student) =>
+    `<option value="${escapeHtml(student.id)}" ${currentId === student.id ? "selected" : ""} ${selected.has(student.id) && currentId !== student.id ? "disabled" : ""}>${escapeHtml(student.nombre)}</option>`
+  ).join("");
+
+  return `
+    <div class="field-grid">
+      ${field("Cantidad de estudiantes", `<input type="number" min="0" max="30" step="1" data-field="cantidadEstudiantes" value="${participantes.length}" inputmode="numeric" />`)}
+    </div>
+    ${participantes.length ? `
+      <div class="planeador-participantes__mode chip-set">
+        <button type="button" class="chip-toggle ${draft.modoObservaciones !== "personalizado" ? "is-active" : ""}" data-action="set-modo-observaciones" data-value="todos">Lo mismo aplica para todos</button>
+        <button type="button" class="chip-toggle ${draft.modoObservaciones === "personalizado" ? "is-active" : ""}" data-action="set-modo-observaciones" data-value="personalizado">Personalizar por estudiante</button>
+      </div>
+      ${draft.modoObservaciones !== "personalizado"
+        ? field("Observación o ajuste para todo el grupo (opcional)", `<textarea data-field="observacionesGrupo" placeholder="Ej.: priorizar escucha activa y alternar turnos breves.">${escapeHtml(draft.observacionesGrupo)}</textarea>`)
+        : ""}
+      <div class="planeador-participantes__list">
+        ${participantes.map((participant, index) => {
+          const history = pState.participantHistory[participant.studentId];
+          return `<article class="planeador-participante-card">
+            <label class="field"><span>Estudiante ${index + 1}</span>
+              <select data-participant-index="${index}"><option value="">Selecciona del listado real</option>${optionHtml(participant.studentId)}</select>
+            </label>
+            ${participant.studentId ? `<p class="planeador-participante-card__history"><strong>Última bitácora:</strong> ${escapeHtml(history === undefined ? "Cargando contexto..." : history ? bitacoraSuggestion(history) : "Aún no tiene bitácoras registradas.")}</p>` : ""}
+            ${draft.modoObservaciones === "personalizado" ? field("Observación especial (opcional)", `<textarea data-participant-note="${index}" placeholder="Ej.: necesita una variación, reto o seguimiento concreto.">${escapeHtml(participant.observacionEspecial)}</textarea>`) : ""}
+          </article>`;
+        }).join("")}
+      </div>`
+      : `<p class="chip-hint">Indica cuántos vienen para elegirlos desde el listado de estudiantes o dejar la planeación como referencia general.</p>`}
+  `;
+}
+
 // Campo multivalor estilo bitácoras: chips seleccionados (clic para quitar),
 // input libre (Enter para agregar) con datalist, y chips sugeridos del catálogo.
 function renderMultiCatalogField(key, label, placeholder, selected = [], options = []) {
@@ -565,6 +635,21 @@ function harvestForm() {
     } else {
       d[key] = value;
     }
+  });
+
+  normalizeParticipantes(d);
+  form.querySelectorAll("[data-participant-index]").forEach((el) => {
+    const index = Number(el.dataset.participantIndex);
+    const student = pState.students.find((item) => toStringSafe(item.id) === el.value);
+    d.participantes[index] = {
+      ...d.participantes[index],
+      studentId: toStringSafe(student?.id),
+      nombre: toStringSafe(student?.nombre),
+    };
+  });
+  form.querySelectorAll("[data-participant-note]").forEach((el) => {
+    const index = Number(el.dataset.participantNote);
+    if (d.participantes[index]) d.participantes[index].observacionEspecial = el.value;
   });
 
   // Componentes/categorías: rescata texto pendiente en los inputs de agregar.
@@ -639,6 +724,7 @@ function renderDetail() {
       </section>
 
       ${p.objetivo ? `<section class="detalle-section"><h3>🎯 Objetivo</h3><p>${escapeHtml(p.objetivo)}</p></section>` : ""}
+      ${renderParticipantesDetail(p)}
       ${renderComponentesDetail(p)}
       ${momentos ? `<section class="detalle-section"><h3>Momentos de clase</h3>${momentos}</section>` : ""}
       ${renderAdaptacionesDetail(p)}
@@ -667,6 +753,17 @@ function renderComponentesDetail(p) {
   if (!rows.length) return "";
   return `<section class="detalle-section"><h3>🎨 Componentes (${escapeHtml(arteMeta(p.arte).label)})</h3>
     ${rows.map(([k, v]) => `<div class="detalle-momento"><strong>${escapeHtml(k)}:</strong><div class="chip-set">${chips(v)}</div></div>`).join("")}
+  </section>`;
+}
+
+function renderParticipantesDetail(p) {
+  const participants = toArraySafe(p.participantes).filter((item) => toStringSafe(item?.nombre));
+  const count = Number(p.cantidadEstudiantes) || participants.length;
+  if (!count && !participants.length && !toStringSafe(p.observacionesGrupo)) return "";
+  return `<section class="detalle-section"><h3>Estudiantes de la clase${count ? ` (${count})` : ""}</h3>
+    ${participants.length ? `<div class="chip-set">${participants.map((item) => `<span class="postit__chip" style="background:var(--bg-muted)">${escapeHtml(item.nombre)}</span>`).join("")}</div>` : ""}
+    ${toStringSafe(p.observacionesGrupo) ? `<p><strong>Para todo el grupo:</strong> ${escapeHtml(p.observacionesGrupo)}</p>` : ""}
+    ${participants.filter((item) => toStringSafe(item.observacionEspecial)).map((item) => `<p><strong>${escapeHtml(item.nombre)}:</strong> ${escapeHtml(item.observacionEspecial)}</p>`).join("")}
   </section>`;
 }
 
@@ -717,6 +814,7 @@ function buildResumen(p) {
 Fecha: ${formatDisplayDate(p.fechaClase) || "—"}
 Docente: ${p.docenteNombre || "—"}
 Grupo: ${p.grupoNombre || "—"}
+Estudiantes: ${Number(p.cantidadEstudiantes) || toArraySafe(p.participantes).length || "—"}${toArraySafe(p.participantes).filter((item) => item?.nombre).length ? ` (${toArraySafe(p.participantes).filter((item) => item?.nombre).map((item) => item.nombre).join(", ")})` : ""}
 Sede: ${p.sede || "—"}
 Área artística: ${comp.label}
 Tipo de clase: ${tipo}${p.esReemplazo ? " [REEMPLAZO]" : ""}
@@ -854,6 +952,19 @@ function bindEvents() {
     });
   });
 
+  viewRoot.querySelectorAll("[data-participant-index]").forEach((el) => {
+    el.addEventListener("change", async () => {
+      harvestForm();
+      await refreshParticipantHistory();
+      renderActive();
+    });
+  });
+
+  viewRoot.querySelector("[data-field=\"cantidadEstudiantes\"]")?.addEventListener("change", () => {
+    harvestForm();
+    renderActive();
+  });
+
   // Drag & drop del tablero
   bindBoardDnD();
 }
@@ -936,6 +1047,12 @@ async function handleAction(action, el) {
     case "set-reemplazo":
       harvestForm();
       pState.draft.esReemplazo = el.dataset.value === "1";
+      renderActive();
+      break;
+
+    case "set-modo-observaciones":
+      harvestForm();
+      pState.draft.modoObservaciones = el.dataset.value === "personalizado" ? "personalizado" : "todos";
       renderActive();
       break;
 
@@ -1074,6 +1191,30 @@ function addComponenteValue(key, rawValue) {
 function defaultTeacherName() {
   const user = getState()?.auth?.user;
   return toStringSafe(user?.name || user?.email);
+}
+
+async function refreshParticipantHistory() {
+  const ids = [...new Set(toArraySafe(pState.draft?.participantes).map((item) => toStringSafe(item?.studentId)).filter(Boolean))];
+  if (!ids.length) return;
+  try {
+    const bitacoras = await getBitacorasByStudentIds(ids, { limit: 0 });
+    const latestByStudent = {};
+    bitacoras.forEach((bitacora) => {
+      [...new Set([...toArraySafe(bitacora.studentIds), toStringSafe(bitacora.studentId)].filter(Boolean))].forEach((studentId) => {
+        if (!ids.includes(studentId)) return;
+        const current = latestByStudent[studentId];
+        if (!current || toStringSafe(bitacora.fechaClase).localeCompare(toStringSafe(current.fechaClase)) > 0) {
+          latestByStudent[studentId] = bitacora;
+        }
+      });
+    });
+    ids.forEach((id) => {
+      if (!(id in latestByStudent)) latestByStudent[id] = null;
+    });
+    pState.participantHistory = { ...pState.participantHistory, ...latestByStudent };
+  } catch (error) {
+    console.warn("[Planeador] No se pudo cargar el contexto de bitácoras:", error);
+  }
 }
 
 async function savePlaneacion(mode) {

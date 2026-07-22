@@ -409,18 +409,32 @@ export function resolveLogicalStudents(records = [], identityLinkRecords = []) {
     );
     const canonicalItems = candidates.filter((item) => !item.isStu);
     const stuItems = candidates.filter((item) => item.isStu);
-    if (!canonicalItems.length || !stuItems.length) return;
+
+    /*
+      Caso A (identidad oficial disponible): hay al menos un canónico y un STU
+      con el mismo nombre. Se sugiere vincular el STU al canónico.
+
+      Caso B (duplicado sin identidad oficial): dos o más STU del mismo nombre
+      y NINGÚN canónico (ej. Daniel: dos filas de la hoja sin cédula/email).
+      El motor no puede elegir un oficial; se marca como pendiente para que un
+      admin lo revise (registrar en Formulario/RIP o unir provisionalmente).
+    */
+    const officialAvailable = canonicalItems.length > 0;
+    if (officialAvailable && !stuItems.length) return;
+    if (!officialAvailable && stuItems.length < 2) return;
 
     const available = candidates.filter((item) => {
       if (!item.isStu) return true;
+      if (!officialAvailable) return true;
       return canonicalItems.some(
         (canonical) =>
           !rejectedPairs.has([canonical.id, item.id].sort().join("|"))
       );
     });
     if (!available.some((item) => item.isStu)) return;
+    if (!officialAvailable && available.filter((item) => item.isStu).length < 2) return;
     available.forEach((item) => {
-      suggestionsById.set(item.id, { nameKey, candidates: available });
+      suggestionsById.set(item.id, { nameKey, candidates: available, officialAvailable });
     });
   });
 
@@ -431,8 +445,18 @@ export function resolveLogicalStudents(records = [], identityLinkRecords = []) {
     return {
       ...student,
       identityResolutionStatus: "pending",
-      identityResolutionLabel: "Revisión de identidad pendiente",
-      identityResolutionEvidence: ["name-only-admin-review"],
+      identityResolutionLabel: suggestion.officialAvailable
+        ? "Revisión de identidad pendiente"
+        : "Duplicado sin identidad oficial",
+      identityResolutionOfficialAvailable: suggestion.officialAvailable,
+      identityResolutionKind: suggestion.officialAvailable
+        ? "name-suggestion"
+        : "duplicate-stu",
+      identityResolutionEvidence: [
+        suggestion.officialAvailable
+          ? "name-only-admin-review"
+          : "duplicate-stu-no-canonical",
+      ],
       identityResolutionSuggestionKey: `name:${suggestion.nameKey}`,
       identityResolutionCandidateCount: suggestion.candidates.length,
       identityResolutionCandidates: suggestion.candidates.map((item) => ({

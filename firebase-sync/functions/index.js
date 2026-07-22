@@ -29,6 +29,7 @@ const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/
 const { HttpsError, onCall, onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
+const { buildHistoricalDirectory } = require("./historical-directory");
 
 /*
   Secreto para la huella HMAC del documento de identidad.
@@ -54,6 +55,21 @@ const SYNC_LOGS_COLLECTION = "sync_logs";
 const INTEGRATION_JOBS_COLLECTION = "integration_jobs";
 const REGISTRATION_EVENTS_COLLECTION = "registration_events";
 const RATE_LIMIT_COLLECTION = "registration_rate_limits";
+
+const STUDENT_DIRECTORY_EMAILS = new Set([
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com",
+  "adminmusicala@gmail.com",
+  "musicalaasesor@gmail.com",
+]);
+// La unificación cambia la visibilidad de registros fuente y por eso se
+// restringe a quienes hoy pueden editar el directorio, no a todo lector.
+const STUDENT_DIRECTORY_MERGE_EMAILS = new Set([
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com",
+]);
+const HISTORICAL_DIRECTORY_CACHE_MS = 5 * 60 * 1000;
+let historicalDirectoryCache = { expiresAt: 0, payload: null };
 
 const SCHEMA_VERSION = 2;
 
@@ -350,7 +366,10 @@ function normalizeStudent(raw, sourceDocId) {
     raw.acudienteEmail,
     raw.correo_electronico_envio_de_guias_e_informacion_adicional,
     raw.emails,
-    raw.correos
+    raw.correos,
+    raw.alternateEmails,
+    raw.allEmails,
+    raw.linkedEmails
   );
 
   // Aliases heredados NO SENSIBLES: contactId, IDs Firestore antiguos,
@@ -1096,6 +1115,7 @@ async function mirrorStudentDoc(raw, sourceDocId) {
 
 const BACKFILL_MAX_STUDENTS = 10;
 const BACKFILL_APPLY_CONFIRMATION = "APPLY_EXPLICIT_STUDENT_IDS";
+const BACKFILL_APPLY_ENABLED = process.env.BACKFILL_APPLY_ENABLED === "true";
 const BACKFILL_PILOT_ID = "msQWTSLw0PZwR6JtZOBz";
 const BACKFILL_CREATED_CUTOFF_MS = Date.parse("2026-07-12T05:00:00.000Z");
 const BACKFILL_PLAN_VERSION = 2;
@@ -1190,6 +1210,9 @@ function validateBackfillRequestBody(body, query = {}) {
   }
 
   if (mode === "apply") {
+    if (!BACKFILL_APPLY_ENABLED) {
+      throw new BackfillRequestError("APPLY_DISABLED");
+    }
     if (body.confirmApply !== BACKFILL_APPLY_CONFIRMATION) {
       throw new BackfillRequestError("APPLY_CONFIRMATION_REQUIRED");
     }
@@ -2419,6 +2442,164 @@ exports.diagnoseStudentAccess = onRequest(
         ok: false,
         code: "DIAGNOSTIC_FAILED",
       });
+    }
+  }
+);
+
+/*
+  Unificación manual de inscripciones fuente.
+
+  No borra el duplicado: lo archiva y conserva el vínculo hacia el canónico.
+  Los correos encontrados se guardan en el canónico como alternateEmails y el
+  trigger normal de identidad los replica a los directorios consumidores.
+*/
+exports.mergeStudentDuplicate = onCall(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB" },
+  async (request) => {
+    const email = toText(request.auth && request.auth.token && request.auth.token.email).toLowerCase();
+    if (!request.auth || !STUDENT_DIRECTORY_MERGE_EMAILS.has(email)) {
+      throw new HttpsError("permission-denied", "No tienes permiso para unificar estudiantes.");
+    }
+
+    const canonicalStudentId = toText(request.data && request.data.canonicalStudentId);
+    const duplicateStudentId = toText(request.data && request.data.duplicateStudentId);
+    const confirmedSamePerson = request.data && request.data.confirmedSamePerson === true;
+    if (!canonicalStudentId || !duplicateStudentId || canonicalStudentId === duplicateStudentId) {
+      throw new HttpsError("invalid-argument", "Selecciona dos registros distintos.");
+    }
+    if (!confirmedSamePerson) {
+      throw new HttpsError("failed-precondition", "Debes confirmar que revisaste la identidad.");
+    }
+
+    const [canonicalSnap, duplicateSnap] = await Promise.all([
+      sourceDb.collection(SOURCE_STUDENTS_COLLECTION).doc(canonicalStudentId).get(),
+      sourceDb.collection(SOURCE_STUDENTS_COLLECTION).doc(duplicateStudentId).get(),
+    ]);
+    if (!canonicalSnap.exists || !duplicateSnap.exists) {
+      throw new HttpsError("not-found", "No se encontraron ambos registros en el directorio.");
+    }
+    const canonical = canonicalSnap.data() || {};
+    const duplicate = duplicateSnap.data() || {};
+    if (duplicate.identityMergeStatus === "archived_duplicate") {
+      throw new HttpsError("failed-precondition", "El registro secundario ya fue unificado.");
+    }
+
+    const canonicalName = normalizeText(firstText(canonical.studentName, canonical.nombre, canonical.name));
+    const duplicateName = normalizeText(firstText(duplicate.studentName, duplicate.nombre, duplicate.name));
+    const canonicalDocuments = collectDocumentValues(canonical);
+    const sharesDocument = [...canonicalDocuments].some((value) => collectDocumentValues(duplicate).has(value));
+    if (!sharesDocument && (!canonicalName || canonicalName !== duplicateName)) {
+      throw new HttpsError("failed-precondition", "Los registros no comparten evidencia suficiente para unirlos.");
+    }
+
+    const allEmails = extractEmails(
+      canonical.studentEmail, canonical.email, canonical.correo, canonical.emails,
+      canonical.alternateEmails, canonical.allEmails,
+      duplicate.studentEmail, duplicate.email, duplicate.correo, duplicate.emails,
+      duplicate.alternateEmails, duplicate.allEmails
+    );
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const batch = sourceDb.batch();
+    batch.set(canonicalSnap.ref, {
+      alternateEmails: allEmails.filter((value) => value !== toText(canonical.studentEmail).toLowerCase()),
+      allEmails,
+      mergedSourceStudentIds: uniqueTexts([
+        ...(Array.isArray(canonical.mergedSourceStudentIds) ? canonical.mergedSourceStudentIds : []),
+        duplicateStudentId,
+      ]),
+      identityMerge: { status: "canonical", updatedAt: now, updatedBy: email },
+      updatedAt: now,
+    }, { merge: true });
+    batch.set(duplicateSnap.ref, {
+      identityMergeStatus: "archived_duplicate",
+      canonicalStudentId,
+      archivedFromDirectory: true,
+      archivedAt: now,
+      archivedBy: email,
+      alternateEmails: allEmails,
+      updatedAt: now,
+    }, { merge: true });
+    await batch.commit();
+    historicalDirectoryCache = { expiresAt: 0, payload: null };
+    logger.info("Duplicado de estudiante unificado manualmente.", buildTechnicalLog({
+      eventId: request.rawRequest && request.rawRequest.id,
+      studentId: canonicalStudentId,
+      status: "merged",
+      durationMs: 0,
+      operations: ["identity_sync"],
+      counts: { writes: 2 },
+    }));
+    return { ok: true, canonicalStudentId, archivedStudentId: duplicateStudentId, emailCount: allEmails.length };
+  }
+);
+
+/*
+  Complemento histórico para la Lista de Estudiantes.
+
+  Es callable para que Firebase valide el ID token del proyecto
+  estudiantes-musicala. Solo las cuatro cuentas operativas reciben datos. La
+  función consulta ambas fuentes, resuelve duplicados con evidencia y devuelve
+  exclusivamente filas resumidas de solo lectura. No realiza escrituras.
+*/
+exports.listHistoricalStudents = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 120,
+    memory: "512MiB",
+  },
+  async (request) => {
+    const email = toText(request.auth && request.auth.token && request.auth.token.email).toLowerCase();
+    if (!request.auth || !STUDENT_DIRECTORY_EMAILS.has(email)) {
+      throw new HttpsError("permission-denied", "Cuenta no autorizada para consultar el directorio.");
+    }
+
+    const refreshRequested = request.data && request.data.refresh === true;
+    if (!refreshRequested && historicalDirectoryCache.payload && historicalDirectoryCache.expiresAt > Date.now()) {
+      return historicalDirectoryCache.payload;
+    }
+
+    try {
+      const [sourceSnapshot, bitacorasSnapshot] = await Promise.all([
+        sourceDb.collection(SOURCE_STUDENTS_COLLECTION).get(),
+        bitacorasDb.collection(TARGET_STUDENTS_COLLECTION).get(),
+      ]);
+      const sourceRecords = sourceSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      const bitacorasRecords = bitacorasSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      const result = buildHistoricalDirectory(sourceRecords, bitacorasRecords);
+
+      logger.info("Directorio historico consultado.", buildTechnicalLog({
+        eventId: request.rawRequest && request.rawRequest.id,
+        status: "ok",
+        operations: ["read_only_historical_directory"],
+        counts: {
+          writes: 0,
+          sourceDocuments: result.counts.sourceDocuments,
+          historicalStudents: result.counts.historicalStudents,
+        },
+      }));
+
+      const payload = {
+        ok: true,
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        students: result.students,
+        counts: result.counts,
+        writes: 0,
+      };
+      historicalDirectoryCache = {
+        expiresAt: Date.now() + HISTORICAL_DIRECTORY_CACHE_MS,
+        payload,
+      };
+      return payload;
+    } catch (error) {
+      logger.error("Fallo el directorio historico.", buildTechnicalLog({
+        eventId: request.rawRequest && request.rawRequest.id,
+        status: "failed",
+        operations: ["read_only_historical_directory"],
+        code: safeTechnicalCode(error),
+        counts: { writes: 0 },
+      }));
+      throw new HttpsError("internal", "No se pudo consultar el directorio historico.");
     }
   }
 );
