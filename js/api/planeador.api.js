@@ -79,6 +79,13 @@ function normalizePlaneacion(record) {
     componenteTecnico: toArraySafe(normalized.componenteTecnico),
     componenteTeorico: toArraySafe(normalized.componenteTeorico),
     componenteObras: toArraySafe(normalized.componenteObras),
+    participantes: Array.isArray(normalized.participantes)
+      ? normalized.participantes.map((item) => ({
+          studentId: toStringSafe(item?.studentId || item?.id),
+          nombre: toStringSafe(item?.nombre || item?.name),
+          observacionEspecial: toStringSafe(item?.observacionEspecial),
+        }))
+      : [],
     comentariosCoordinacion: toArraySafe(normalized.comentariosCoordinacion),
     id: record.id,
   };
@@ -88,6 +95,7 @@ function buildSearchText(planeacion = {}) {
   return [
     planeacion.docenteNombre,
     planeacion.grupoNombre,
+    ...toArraySafe(planeacion.participantes).map((item) => item?.nombre),
     planeacion.sede,
     planeacion.programa,
     planeacion.arte,

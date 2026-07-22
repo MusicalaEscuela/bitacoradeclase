@@ -33,3 +33,9 @@ firebase-sync/migrations/reports/
 # Snapshots de rollback: siempre cifrados y fuera de Git.
 *.backfill-snapshot.dpapi
 .backfill-snapshots/
+
+# Datos personales de estudiantes: NUNCA versionar (documentos, salud, contacto).
+# Se manejan solo localmente / en almacenamiento seguro, fuera de Git.
+firebase-sync/functions/reports/
+firebase-sync/migrations/input-estudiantes*.json
+**/input-estudiantes*.json

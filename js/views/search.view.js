@@ -15,14 +15,14 @@ import {
   setStudentsLoading,
   getSelectedStudentIds,
 } from "../state.js";
-import { getStudents } from "../api/students.api.js?v=20260713.3";
-import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260713.3";
+import { getStudents } from "../api/students.api.js?v=20260716.1";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260716.1";
 import {
   getCachedStudentIdentityLinkRecords,
   listStudentIdentityLinkRecords,
   manageStudentIdentityLink,
   maskStudentIdentityId,
-} from "../api/identity-links.api.js?v=20260713.3";
+} from "../api/identity-links.api.js?v=20260716.2";
 import {
   escapeHtml,
   getReadableValue,
@@ -37,6 +37,7 @@ import {
   resolveStudentRefFromPayload,
   toStringSafe,
 } from "../utils/shared.js";
+import { formatDate } from "../utils/format.js";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -50,6 +51,7 @@ let currentIdentityLinkStudentId = null;
 let identityLinkSelection = null;
 let identityLinkCounts = new Map();
 let identityLinkBusy = false;
+let identityLinkStage = "";
 let identityTrayOpen = false;
 
 const SEARCH_INPUT_DEBOUNCE_MS = 120;
@@ -909,9 +911,13 @@ function renderStudentCard(student, isSelected = false, isChecked = false) {
         .slice(0, 3)
     : [];
 
+  const isDuplicateStu = student.identityResolutionKind === "duplicate-stu";
   const badges = [
     student.identityResolutionStatus === "pending"
-      ? "Revisión de identidad pendiente"
+      ? (student.identityResolutionLabel ||
+          (isDuplicateStu
+            ? "Duplicado sin identidad oficial"
+            : "Revisión de identidad pendiente"))
       : "",
     student.estado,
     student.modalidad,
@@ -982,7 +988,7 @@ function renderStudentCard(student, isSelected = false, isChecked = false) {
           class="btn btn--secondary btn--sm"
           data-student-action="identity-link"
         >
-          Vincular expediente histórico
+          ${isDuplicateStu ? "Revisar duplicado" : "Vincular expediente histórico"}
         </button>`
             : ""
         }
@@ -1387,10 +1393,11 @@ function candidateProcesses(candidate = {}) {
 }
 
 function candidateDateRange(candidate = {}) {
-  return [candidate.createdAt, candidate.updatedAt]
-    .map((value) => toStringSafe(value?.toDate?.()?.toISOString?.() || value))
-    .filter(Boolean)
-    .join(" → ") || "No disponible";
+  const labels = [candidate.createdAt, candidate.updatedAt]
+    .map((value) => formatDate(value))
+    .filter((label) => label && label !== "—");
+  if (!labels.length) return "No disponible";
+  return [...new Set(labels)].join(" → ");
 }
 
 function renderCandidateComparison(label, candidate) {
@@ -1410,6 +1417,53 @@ function renderCandidateComparison(label, candidate) {
     </section>`;
 }
 
+function renderDuplicateStuDiagnostic(modalRoot, stuRecords = []) {
+  const name = getStudentName(stuRecords[0]) || "Estudiante";
+  const rows = stuRecords
+    .map(
+      (item) => `
+      <section class="panel">
+        <h4>${escapeHtml(getStudentName(item))}</h4>
+        <dl class="student-modal__grid">
+          ${renderDetailItem("ID (STU)", item.id)}
+          ${renderDetailItem("Estado", getReadableValue(item.estado || item.status))}
+          ${renderDetailItem("Áreas e instrumentos", candidateProcesses(item))}
+          ${renderDetailItem("Bitácoras", String(countLogsForId(item.id)))}
+          ${renderDetailItem("Fechas disponibles", candidateDateRange(item))}
+        </dl>
+      </section>`
+    )
+    .join("");
+
+  modalRoot.classList.remove("is-hidden");
+  modalRoot.innerHTML = `
+    <div class="student-modal-backdrop" data-modal-close="backdrop">
+      <article class="student-modal" role="dialog" aria-modal="true" aria-labelledby="identity-dup-title">
+        <header class="student-modal__header">
+          <div><p class="student-modal__eyebrow">Diagnóstico de identidad</p><h3 id="identity-dup-title">Duplicado sin identidad oficial</h3></div>
+          <button type="button" class="btn btn--ghost btn--sm" data-modal-close="button">Cerrar</button>
+        </header>
+        <p class="empty-state__text">
+          <strong>${escapeHtml(name)}</strong> aparece en <strong>${stuRecords.length}</strong> registros históricos (STU) que
+          <strong>no tienen un ID oficial</strong> del directorio de estudiantes (Formulario/RIP).
+          Esto suele pasar cuando las filas de origen llegaron sin cédula ni correo,
+          así que el sistema no pudo reconocer que son la misma persona.
+        </p>
+        <div class="search-layout">${rows}</div>
+        <p class="empty-state__text">
+          <strong>Qué hacer:</strong> estos registros no tienen identidad oficial, así que
+          <strong>no se deben fusionar entre sí</strong> (sería arreglar sobre un error). La
+          identidad oficial nace en el <strong>Formulario de inscripción</strong>.
+          <br>• Si la persona <strong>debe estar activa</strong>: inscríbela por el Formulario para
+          generar su ID canónico. Al aparecer, se podrá vincular este expediente a esa identidad y
+          quedará como una sola ficha en los 5 proyectos.
+          <br>• Si es un <strong>doble registro por error</strong> (sin bitácoras): déjalo marcado;
+          la limpieza definitiva se hará desde el origen, no colgándolo de otro histórico.
+        </p>
+      </article>
+    </div>`;
+}
+
 function renderIdentityLinkModal(modalRoot) {
   const { candidates, canonical, academic } = selectedIdentityCandidates();
   if (!candidates.length) {
@@ -1419,6 +1473,13 @@ function renderIdentityLinkModal(modalRoot) {
   }
   const canonicalOptions = candidates.filter((item) => !/^stu_/i.test(item.id));
   const academicOptions = candidates.filter((item) => /^stu_/i.test(item.id));
+
+  // Diagnóstico de duplicado sin identidad oficial: dos+ STU, ningún canónico.
+  if (!canonicalOptions.length && academicOptions.length >= 2) {
+    renderDuplicateStuDiagnostic(modalRoot, academicOptions);
+    return;
+  }
+
   const option = (item, selected) => `<option value="${escapeHtml(item.id)}" ${item.id === selected ? "selected" : ""}>${escapeHtml(getStudentName(item))} · ${escapeHtml(item.id)}</option>`;
   modalRoot.classList.remove("is-hidden");
   modalRoot.innerHTML = `
@@ -1431,10 +1492,15 @@ function renderIdentityLinkModal(modalRoot) {
         <div class="field"><label>Registro canónico<select id="identity-canonical-select" class="field__input">${canonicalOptions.map((item) => option(item, canonical?.id)).join("")}</select></label></div>
         <div class="field"><label>Registro STU histórico<select id="identity-academic-select" class="field__input">${academicOptions.map((item) => option(item, academic?.id)).join("")}</select></label></div>
         <div class="search-layout">${renderCandidateComparison("Identidad canónica", canonical)}${renderCandidateComparison("Expediente académico", academic)}</div>
-        <p class="empty-state__text"><strong>Esta acción vincula los registros para visualización y seguimiento. No elimina ni fusiona documentos.</strong></p>
-        <label class="student-card__check"><input id="identity-explicit-confirm" type="checkbox" /> Confirmo que revisé la evidencia y los IDs.</label>
+        <p class="empty-state__text"><strong>Esta acción vincula los registros para visualización y seguimiento. No elimina ni fusiona documentos, y es reversible con "Rechazar".</strong></p>
+        <label class="student-card__check"><input id="identity-explicit-confirm" type="checkbox" ${identityLinkBusy ? "disabled" : ""} /> Confirmo que revisé la evidencia y los IDs.</label>
+        ${identityLinkBusy ? `
+        <div class="identity-link-progress" role="status" aria-live="polite">
+          <span class="identity-link-progress__spinner" aria-hidden="true"></span>
+          <span class="identity-link-progress__text">${escapeHtml(identityLinkStage || "Procesando…")}</span>
+        </div>` : ""}
         <div class="student-modal__actions">
-          <button type="button" class="btn btn--primary" data-modal-action="identity-confirm" ${identityLinkBusy ? "disabled" : ""}>Confirmar vínculo</button>
+          <button type="button" class="btn btn--primary" data-modal-action="identity-confirm" ${identityLinkBusy ? "disabled" : ""}>${identityLinkBusy ? "Procesando…" : "Confirmar vínculo"}</button>
           <button type="button" class="btn btn--ghost" data-modal-action="identity-reject" ${identityLinkBusy ? "disabled" : ""}>Rechazar sugerencia</button>
         </div>
       </article>
@@ -1446,6 +1512,20 @@ async function openIdentityLinkModal(student) {
   const candidates = identityCandidates(student);
   const canonical = candidates.find((item) => !/^stu_/i.test(item.id));
   const academic = candidates.find((item) => /^stu_/i.test(item.id));
+
+  // Duplicado sin identidad oficial (dos+ STU, ningún canónico). Todavía no se
+  // puede vincular: se muestra un diagnóstico para que el admin decida.
+  if (!canonical && candidates.filter((item) => /^stu_/i.test(item.id)).length >= 2) {
+    currentIdentityLinkStudentId = getStudentIdentity(student);
+    identityLinkSelection = null;
+    identityTrayOpen = false;
+    currentModalStudentId = null;
+    renderStudentModal(getState());
+    await loadIdentityLogCounts([student]).catch(() => {});
+    renderStudentModal(getState());
+    return;
+  }
+
   if (!canonical || !academic) {
     setAppError("El caso no contiene un par canónico/STU válido.");
     return;
@@ -1483,6 +1563,9 @@ async function handleIdentityDecision(action) {
     return;
   }
   identityLinkBusy = true;
+  identityLinkStage = action === "reject"
+    ? "Guardando rechazo de la sugerencia…"
+    : "Guardando el vínculo…";
   renderStudentModal(getState());
   try {
     await manageStudentIdentityLink({
@@ -1496,6 +1579,8 @@ async function handleIdentityDecision(action) {
     });
     currentIdentityLinkStudentId = null;
     identityLinkSelection = null;
+    identityLinkStage = "Actualizando la lista de estudiantes…";
+    renderStudentModal(getState());
     await refreshStudents();
     clearAppError();
   } catch (error) {
@@ -1503,6 +1588,7 @@ async function handleIdentityDecision(action) {
     setAppError(error?.message || "No se pudo resolver el vínculo de identidad.");
   } finally {
     identityLinkBusy = false;
+    identityLinkStage = "";
     renderStudentModal(getState());
   }
 }

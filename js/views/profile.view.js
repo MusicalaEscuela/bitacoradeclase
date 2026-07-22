@@ -1720,14 +1720,17 @@ async function persistStudentProcesses(student, nextProcesses, successMessage) {
   try {
     clearAppError();
     const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_processes";
-    const updated = await updateStudentProcesses(studentId, nextProcesses, { updatedBy });
+    const updated = await updateStudentProcesses(studentId, nextProcesses, {
+      updatedBy,
+      linkedStudentIds: getStudentLinkedIds(student),
+    });
     const refreshedProfile = await getStudentProfile(
       getStudentIdentity(student),
       { refresh: true }
     ).catch(() => null);
     const nextStudent = mergePedagogicalUpdate(student, {
-      ...updated,
       ...(refreshedProfile || {}),
+      ...updated,
     });
     updateStudentProfile(nextStudent);
     setSelectedStudent(nextStudent);
@@ -2688,6 +2691,7 @@ function renderRepertoireColumn(status, items = [], canEdit = false) {
             ? statusItems.map((item) => renderRepertoireItemCard(item, canEdit)).join("")
             : `<p class="field__hint">${escapeHtml(status.empty)}</p>`
         }
+        ${status.id === "quiere" ? `<div id="profile-work-suggestions" aria-live="polite"></div>` : ""}
       </div>
     </section>
   `;
@@ -6437,8 +6441,16 @@ function getBitacorasFromState(studentOrRef) {
     );
 
     const filtered = items.filter((item) => {
-      if (isGroupBitacoraForStudent(item, studentRef, fallbackId)) {
-        return true;
+      const groupOverride = getGroupBitacoraOverrideForStudent(item, studentOrRef);
+      // Compatibilidad con registros históricos: los overrides automáticos
+      // guardaban processKey aunque nadie hubiera escogido un proceso distinto.
+      // Sólo un override marcado como manual puede ganar al proceso general.
+      if (
+        isGroupBitacoraForStudent(item, studentRef, fallbackId) &&
+        groupOverride?.processKey &&
+        groupOverride.enabled === true
+      ) {
+        return !safeProcessKey || groupOverride.processKey === safeProcessKey;
       }
 
       const itemProcessKey = toStringSafe(
@@ -6517,6 +6529,20 @@ function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") 
   return Boolean(isGroup && belongsToStudent);
 }
 
+function getGroupBitacoraOverrideForStudent(item = {}, student = {}) {
+  const overrides = item?.studentOverrides || item?.overrides || {};
+  const aliases = normalizeStudentIds([
+    getStudentIdentity(student), getStudentFallbackId(student), student?.id,
+    student?.studentId, student?.studentKey, student?.canonicalStudentId,
+    ...(Array.isArray(student?.linkedStudentIds) ? student.linkedStudentIds : []),
+  ]);
+  for (const alias of aliases) {
+    const override = overrides[alias];
+    if (override && typeof override === "object") return override;
+  }
+  return null;
+}
+
 function normalizeBitacorasResponse(response) {
   return normalizeBitacorasResponseShared(response, normalizeBitacora);
 }
@@ -6571,6 +6597,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       const source = value && typeof value === "object" ? value : {};
     const normalized = {
       enabled: Boolean(source.enabled),
+      processKey: toStringSafe(source.processKey),
       tareas: repairVisibleText(source.tareas),
       etiquetas: normalizeTags(source.etiquetas || []).map(repairVisibleText),
       componenteCorporal: normalizeTags(source.componenteCorporal || []).map(repairVisibleText),
@@ -6581,6 +6608,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
 
       if (
         !normalized.enabled &&
+        !normalized.processKey &&
         !normalized.tareas &&
         !normalized.etiquetas.length &&
         !normalized.componenteCorporal.length &&

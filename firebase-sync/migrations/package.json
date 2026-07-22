@@ -1,0 +1,17 @@
+{
+  "name": "musicala-migrations",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Migraciones idempotentes (dry-run/apply) para consolidar el studentId canónico.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lista:dry": "node migrate-lista.js --dry-run",
+    "rip:dry": "node migrate-rip.js --dry-run",
+    "bitacoras:dry": "node migrate-bitacoras.js --dry-run"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}
