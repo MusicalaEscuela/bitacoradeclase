@@ -715,10 +715,40 @@
 }
 
 .settings-art-matrix {
-  display: grid;
-  gap: 0.45rem;
+  display: block;
   overflow-x: auto;
   padding-bottom: 0.25rem;
+}
+
+/* Contenedor de ancho fijo para que el encabezado y las filas compartan las
+   mismas columnas y hagan scroll horizontal juntos. */
+.settings-art-matrix__inner {
+  min-width: 940px;
+}
+
+/* Ventana de scroll vertical: solo se ven ~una pantalla de filas a la vez; el
+   resto es alto virtual (sizer) para que la barra refleje la lista completa. */
+.settings-art-matrix__scroll {
+  position: relative;
+  max-height: 520px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-top: 0.45rem;
+  border-radius: 12px;
+}
+
+.settings-art-matrix__sizer {
+  position: relative;
+  width: 100%;
+}
+
+.settings-art-matrix__window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-auto-rows: 56px; /* debe coincidir con ART_MATRIX_ROW_HEIGHT en JS */
 }
 
 .settings-art-search {
@@ -794,16 +824,22 @@
 }
 
 .settings-art-matrix__row {
-  padding: 0.45rem;
+  padding: 0.4rem 0.45rem;
+  margin: 3px 2px;
   border: 1px solid rgba(29, 79, 145, 0.08);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.92);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .settings-art-matrix__item {
   color: var(--text-strong);
   font-weight: 750;
   line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-art-check {

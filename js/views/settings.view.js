@@ -51,10 +51,13 @@ let currentStudentSyncReport = null;
 let currentBitacoraImportPlan = null;
 let currentArtCatalogSearchQuery = "";
 const expandedSettingsPanels = new Set();
-const ART_MATRIX_VISIBLE_LIMIT = 160;
-const ART_MATRIX_PAGE_SIZE = 200;
-const ART_MATRIX_MAX_RENDER = 400;
-const artMatrixVisibleLimits = {};
+// Virtualizacion de la matriz de artes: en lugar de pintar miles de filas
+// (cada una con checkboxes + select) y congelar la pagina, solo se renderizan
+// las filas visibles en el scroll. El resto es alto "virtual" (un sizer) para
+// que la barra de scroll tenga el tamano real de la lista completa.
+const ART_MATRIX_ROW_HEIGHT = 56; // px por fila; debe coincidir con el CSS.
+const ART_MATRIX_OVERSCAN = 6; // filas extra arriba/abajo para que el scroll sea fluido.
+const artMatrixState = {}; // catalogKey -> { items, assignedSets, showAutoCategory, categoryOptions }
 
 const STRING_CATALOGS = [
   { key: "categorias", label: "Categorías" },
@@ -566,21 +569,6 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
   const filteredItems = query
     ? items.filter((item) => normalizeText(item).includes(query))
     : items;
-  // Tope duro: aunque se pida "ver todo", nunca pintamos mas de
-  // ART_MATRIX_MAX_RENDER filas de golpe (cada fila trae checkboxes + select y
-  // miles a la vez congelan la pagina). El buscador cubre el resto.
-  const visibleLimit = Math.min(getArtMatrixVisibleLimit(catalogKey), ART_MATRIX_MAX_RENDER);
-  const visibleItems = filteredItems.slice(0, visibleLimit);
-  const hiddenCount = Math.max(filteredItems.length - visibleItems.length, 0);
-
-  // Precalcula una sola vez los items asignados por area (normalizados) para
-  // no reconstruir y reordenar las listas completas por cada checkbox.
-  const assignedSetsByArea = ART_AREAS.map((area) => ({
-    area,
-    assigned: new Set(
-      getArtCatalogGroup(catalogKey, area.key).map((value) => normalizeText(value))
-    ),
-  }));
 
   // La columna de categoria automatica aplica a los componentes, no al propio
   // catalogo de categorias.
@@ -588,6 +576,17 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
   const categoryOptions = Array.isArray(currentCatalogs.categorias)
     ? currentCatalogs.categorias
     : [];
+
+  // Guardamos todo lo que el scroll virtual necesita para pintar cualquier
+  // ventana de filas sin volver a recalcular la lista completa.
+  artMatrixState[catalogKey] = {
+    items: filteredItems,
+    assignedSets: buildArtAssignedSets(catalogKey),
+    showAutoCategory,
+    categoryOptions,
+  };
+
+  const totalHeight = filteredItems.length * ART_MATRIX_ROW_HEIGHT;
 
   return `
     <label class="field settings-art-search">
@@ -601,61 +600,102 @@ function renderArtCatalogMatrix(catalogKey, items = []) {
         autocomplete="off"
       />
       <small class="field__hint">
-        Mostrando ${escapeHtml(String(visibleItems.length))} de ${escapeHtml(String(filteredItems.length))} items.
-        ${hiddenCount ? `Usa los botones de abajo para ver mas o filtra escribiendo.` : ""}
+        ${escapeHtml(String(filteredItems.length))} items en la lista. Desplazate para verlos todos; el buscador filtra al instante.
       </small>
     </label>
     <div class="settings-art-matrix ${showAutoCategory ? "settings-art-matrix--with-category" : ""}" role="table" aria-label="Asignacion por arte">
-      <div class="settings-art-matrix__header" role="row">
-        <span role="columnheader">Item</span>
-        ${ART_AREAS.map((area) => renderArtMatrixHeaderCell(catalogKey, area)).join("")}
-        ${showAutoCategory ? `<span role="columnheader">Categoria automatica</span>` : ""}
-      </div>
-      ${visibleItems
-        .map(
-          (item) => `
-            <div class="settings-art-matrix__row" role="row">
-              <span class="settings-art-matrix__item" role="cell">${escapeHtml(item)}</span>
-              ${assignedSetsByArea
-                .map(({ area, assigned }) =>
-                  renderArtAssignmentCheckbox(
-                    catalogKey,
-                    area,
-                    item,
-                    assigned.has(normalizeText(item))
-                  )
-                )
-                .join("")}
-              ${showAutoCategory ? renderAutoCategorySelect(catalogKey, item, getAutoCategory(catalogKey, item), categoryOptions) : ""}
-            </div>
-          `
-        )
-        .join("")}
-    </div>
-    ${
-      hiddenCount
-        ? `
-          <div class="settings-form-actions">
-            <button type="button" class="btn btn--secondary btn--sm" data-art-show-more="${escapeHtml(catalogKey)}">
-              Mostrar ${escapeHtml(String(Math.min(ART_MATRIX_PAGE_SIZE, hiddenCount)))} mas
-            </button>
-            ${
-              filteredItems.length <= ART_MATRIX_MAX_RENDER
-                ? `<button type="button" class="btn btn--ghost btn--sm" data-art-show-all="${escapeHtml(catalogKey)}">
-                    Ver lista completa (${escapeHtml(String(filteredItems.length))})
-                  </button>`
-                : `<small class="field__hint">Hay ${escapeHtml(String(filteredItems.length))} items. Para no congelar la pagina se muestran maximo ${escapeHtml(String(ART_MATRIX_MAX_RENDER))}; usa el buscador para llegar al resto.</small>`
-            }
+      <div class="settings-art-matrix__inner">
+        <div class="settings-art-matrix__header" role="row">
+          <span role="columnheader">Item</span>
+          ${ART_AREAS.map((area) => renderArtMatrixHeaderCell(catalogKey, area)).join("")}
+          ${showAutoCategory ? `<span role="columnheader">Categoria automatica</span>` : ""}
+        </div>
+        <div class="settings-art-matrix__scroll" data-art-scroll="${escapeHtml(catalogKey)}">
+          <div class="settings-art-matrix__sizer" style="height:${totalHeight}px">
+            <div class="settings-art-matrix__window"></div>
           </div>
-        `
-        : ""
-    }
+        </div>
+      </div>
+    </div>
   `;
 }
 
-function getArtMatrixVisibleLimit(catalogKey) {
-  const limit = artMatrixVisibleLimits[catalogKey];
-  return Number.isFinite(limit) || limit === Infinity ? limit : ART_MATRIX_VISIBLE_LIMIT;
+// Reconstruye, por area, el conjunto (normalizado) de items asignados. Se usa
+// como cache para que el scroll virtual sepa que checkbox va marcado sin
+// recorrer los catalogos en cada fila.
+function buildArtAssignedSets(catalogKey) {
+  const sets = {};
+  ART_AREAS.forEach((area) => {
+    sets[area.key] = new Set(
+      getArtCatalogGroup(catalogKey, area.key).map((value) => normalizeText(value))
+    );
+  });
+  return sets;
+}
+
+function updateArtAssignmentCache(catalogKey, artKey, item, checked) {
+  const set = artMatrixState[catalogKey]?.assignedSets?.[artKey];
+  if (!set) return;
+  const normalized = normalizeText(item);
+  if (checked) set.add(normalized);
+  else set.delete(normalized);
+}
+
+// Pinta solo las filas visibles del contenedor de scroll y ajusta el alto
+// virtual + el desplazamiento de la ventana.
+function renderArtMatrixWindow(scrollEl) {
+  if (!scrollEl) return;
+  const catalogKey = scrollEl.getAttribute("data-art-scroll");
+  const state = artMatrixState[catalogKey];
+  const sizer = scrollEl.querySelector(".settings-art-matrix__sizer");
+  const win = scrollEl.querySelector(".settings-art-matrix__window");
+  if (!state || !sizer || !win) return;
+
+  const total = state.items.length;
+  sizer.style.height = `${total * ART_MATRIX_ROW_HEIGHT}px`;
+
+  const viewportHeight = scrollEl.clientHeight || ART_MATRIX_ROW_HEIGHT * 10;
+  const start = Math.max(
+    0,
+    Math.floor(scrollEl.scrollTop / ART_MATRIX_ROW_HEIGHT) - ART_MATRIX_OVERSCAN
+  );
+  const visibleCount =
+    Math.ceil(viewportHeight / ART_MATRIX_ROW_HEIGHT) + ART_MATRIX_OVERSCAN * 2;
+  const end = Math.min(total, start + visibleCount);
+
+  win.style.transform = `translateY(${start * ART_MATRIX_ROW_HEIGHT}px)`;
+  win.innerHTML = state.items
+    .slice(start, end)
+    .map((item) =>
+      buildArtMatrixRowHtml(
+        catalogKey,
+        item,
+        state.assignedSets,
+        state.showAutoCategory,
+        state.categoryOptions
+      )
+    )
+    .join("");
+}
+
+function buildArtMatrixRowHtml(catalogKey, item, assignedSets, showAutoCategory, categoryOptions) {
+  const normalized = normalizeText(item);
+  const checks = ART_AREAS.map((area) =>
+    renderArtAssignmentCheckbox(
+      catalogKey,
+      area,
+      item,
+      Boolean(assignedSets[area.key]?.has(normalized))
+    )
+  ).join("");
+
+  return `
+    <div class="settings-art-matrix__row" role="row">
+      <span class="settings-art-matrix__item" role="cell">${escapeHtml(item)}</span>
+      ${checks}
+      ${showAutoCategory ? renderAutoCategorySelect(catalogKey, item, getAutoCategory(catalogKey, item), categoryOptions) : ""}
+    </div>
+  `;
 }
 
 function renderArtMatrixHeaderCell(catalogKey, area) {
@@ -962,24 +1002,40 @@ function bindEvents(state) {
     });
   });
 
-  viewRoot.querySelectorAll("[data-art-show-more]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const catalogKey = button.getAttribute("data-art-show-more");
-      if (!catalogKey) return;
-      artMatrixVisibleLimits[catalogKey] =
-        getArtMatrixVisibleLimit(catalogKey) + ART_MATRIX_PAGE_SIZE;
-      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
-      renderView(getState());
-    });
-  });
+  // Scroll virtual de la matriz de artes: pinta la ventana inicial y engancha
+  // el listener de scroll + la delegacion de eventos (los checkboxes/selects se
+  // reciclan al desplazarse, asi que no se pueden atar uno por uno).
+  viewRoot.querySelectorAll("[data-art-scroll]").forEach((scrollEl) => {
+    const catalogKey = scrollEl.getAttribute("data-art-scroll");
+    renderArtMatrixWindow(scrollEl);
 
-  viewRoot.querySelectorAll("[data-art-show-all]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const catalogKey = button.getAttribute("data-art-show-all");
-      if (!catalogKey) return;
-      artMatrixVisibleLimits[catalogKey] = Infinity;
-      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
-      renderView(getState());
+    scrollEl.addEventListener(
+      "scroll",
+      () => {
+        window.requestAnimationFrame(() => renderArtMatrixWindow(scrollEl));
+      },
+      { passive: true }
+    );
+
+    scrollEl.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!target || !catalogKey) return;
+
+      if (target.matches('input[type="checkbox"][data-art-item]')) {
+        const artKey = target.getAttribute("data-art-key");
+        const item = target.getAttribute("data-art-item");
+        if (!artKey || !item) return;
+        setCatalogItemArtAssignment(catalogKey, artKey, item, target.checked);
+        updateArtAssignmentCache(catalogKey, artKey, item, target.checked);
+        updateArtAssignmentInput(target);
+        updateArtCatalogCount(catalogKey);
+        expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
+      } else if (target.matches("select[data-art-category-item]")) {
+        const item = target.getAttribute("data-art-category-item");
+        if (!item) return;
+        setAutoCategory(catalogKey, item, target.value);
+        expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
+      }
     });
   });
 
@@ -1247,30 +1303,9 @@ function bindEvents(state) {
     });
   });
 
-  viewRoot.querySelectorAll("[data-art-catalog]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const catalogKey = input.getAttribute("data-art-catalog");
-      const artKey = input.getAttribute("data-art-key");
-      const item = input.getAttribute("data-art-item");
-      if (!catalogKey || !artKey || !item) return;
-
-      setCatalogItemArtAssignment(catalogKey, artKey, item, input.checked);
-      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
-      updateArtAssignmentInput(input);
-      updateArtCatalogCount(catalogKey);
-    });
-  });
-
-  viewRoot.querySelectorAll("[data-art-category-catalog]").forEach((select) => {
-    select.addEventListener("change", () => {
-      const catalogKey = select.getAttribute("data-art-category-catalog");
-      const item = select.getAttribute("data-art-category-item");
-      if (!catalogKey || !item) return;
-
-      setAutoCategory(catalogKey, item, select.value);
-      expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
-    });
-  });
+  // Nota: los cambios de checkbox (data-art-item) y de categoria automatica
+  // (data-art-category-item) se manejan por delegacion en el contenedor
+  // [data-art-scroll] porque las filas se reciclan con el scroll virtual.
 
   viewRoot.querySelectorAll("[data-art-bulk]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1285,7 +1320,17 @@ function bindEvents(state) {
         : [];
       setAllCatalogItemsArtAssignment(catalogKey, artKey, items, checked);
       expandedSettingsPanels.add(`${getArtCatalogKey(catalogKey)}-matrix`);
-      updateArtBulkInputs(catalogKey, artKey, checked);
+      // Refresca la cache del area y repinta la ventana visible del scroll
+      // virtual (solo hay filas visibles en el DOM, no todas).
+      if (artMatrixState[catalogKey]?.assignedSets) {
+        artMatrixState[catalogKey].assignedSets[artKey] = new Set(
+          getArtCatalogGroup(catalogKey, artKey).map((value) => normalizeText(value))
+        );
+      }
+      const scrollEl = viewRoot.querySelector(
+        `[data-art-scroll="${cssEscape(catalogKey)}"]`
+      );
+      if (scrollEl) renderArtMatrixWindow(scrollEl);
       updateArtCatalogCount(catalogKey);
     });
   });
@@ -1556,18 +1601,6 @@ function updateArtAssignmentInput(input) {
     text.textContent = input.checked ? "Si" : "No";
   }
   label?.classList.toggle("is-checked", Boolean(input?.checked));
-}
-
-function updateArtBulkInputs(catalogKey, artKey, checked) {
-  if (!viewRoot) return;
-  viewRoot
-    .querySelectorAll(
-      `input[type="checkbox"][data-art-catalog="${cssEscape(catalogKey)}"][data-art-key="${cssEscape(artKey)}"]`
-    )
-    .forEach((input) => {
-      input.checked = checked;
-      updateArtAssignmentInput(input);
-    });
 }
 
 function updateArtCatalogCount(catalogKey) {
