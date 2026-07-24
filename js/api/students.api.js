@@ -196,14 +196,30 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
     });
   }
 
-  await updateDoc(ref, {
+  const repertoirePayload = {
     repertorioEscogido,
     repertoire: repertorioEscogido,
     repertorioProceso,
     repertoireProgress: repertorioProceso,
     updatedAt: serverTimestamp(),
     updatedBy: "profile_repertoire",
-  });
+  };
+
+  // El registro pedagógico puede ser un alias `stu_*`, mientras que el
+  // estudiante inicia sesión sobre su documento canónico. Guardamos el mismo
+  // repertorio en ambos dentro de un batch para que el portal no dependa de
+  // consultas de identidad adicionales ni muestre datos atrasados.
+  const canonicalStudentId = normalizeStudentIdentifier(
+    snapshot.data()?.canonicalStudentId
+  );
+  if (canonicalStudentId && canonicalStudentId !== safeStudentId) {
+    const batch = writeBatch(db);
+    batch.update(ref, repertoirePayload);
+    batch.update(doc(db, STUDENTS_COLLECTION, canonicalStudentId), repertoirePayload);
+    await batch.commit();
+  } else {
+    await updateDoc(ref, repertoirePayload);
+  }
 
   return {
     id: safeStudentId,
