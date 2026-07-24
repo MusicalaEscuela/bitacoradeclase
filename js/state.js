@@ -1359,10 +1359,18 @@ export function updateDraft(partialDraft = {}, options = {}) {
   // la app en cada pulsación: esa notificación vuelve a pintar el historial y
   // hacía que los textarea se sintieran lentos.
   if (options?.notify === false) {
-    state = finalizeState({
+    // Esta es la ruta caliente del editor. El estado y el borrador ya fueron
+    // normalizados arriba; volver a ejecutar finalizeState aquí recorría todo
+    // el historial de bitácoras por cada tecla, aunque no se notificara a la
+    // vista. Eso hacía que los textarea respondieran con retraso cuando el
+    // estudiante tenía muchas clases registradas.
+    state = {
       ...state,
-      bitacoras: deepMerge(state.bitacoras, { currentDraft: normalizedDraft }),
-    });
+      bitacoras: {
+        ...state.bitacoras,
+        currentDraft: normalizedDraft,
+      },
+    };
   } else {
     patchSlice("bitacoras", {
       currentDraft: normalizedDraft,

@@ -7,6 +7,7 @@ import {
   getSelectedStudentId,
   getSelectedStudentBitacoras,
   getCurrentDraft,
+  getAllStudents,
   setCurrentView,
   setAppError,
   clearAppError,
@@ -94,6 +95,7 @@ let draftInputDebounceTimer = null;
 let groupSearchDebounceTimer = null;
 let currentEditingBitacoraId = "";
 let currentHistorySearchQuery = "";
+let lastSaveNotice = "";
 
 const DRAFT_INPUT_DEBOUNCE_MS = 220;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
@@ -1181,6 +1183,7 @@ function scheduleDraftInput(student) {
   if (draftInputDebounceTimer) {
     clearTimeout(draftInputDebounceTimer);
   }
+  lastSaveNotice = "";
   // El contenido debe entrar al state en el mismo evento de escritura. Antes
   // quedaba una ventana de 140 ms: si llegaba una actualización asíncrona del
   // historial, autenticación o guardado previo, el render reactivo restauraba
@@ -1887,6 +1890,9 @@ async function handleSubmit(student) {
     });
 
     refillFormFromDraft(student);
+    lastSaveNotice = editingBitacoraId
+      ? "Bitácora actualizada y subida a Firebase."
+      : "Bitácora guardada y subida a Firebase.";
     renderGroupSelectionBlocks(student);
     renderFilesPreviewBlock(student);
     renderDraftMetaBlock(student);
@@ -1904,6 +1910,7 @@ async function handleSubmit(student) {
       loadingToastId = null;
     }
   } catch (error) {
+    lastSaveNotice = "";
     console.error("Error guardando bitacora:", error);
     setAppError(
       error?.message ||
@@ -2610,7 +2617,7 @@ function normalizeCreatedBitacora(response, fallbackPayload) {
 }
 
 function buildBitacoraPayload(student, draft) {
-  const allStudents = getAllStudentsFromState(getState());
+  const allStudents = getAllStudents();
   const selectedStudents = getSelectedStudentsForDraft(draft, student, allStudents);
 
   // Si la bitacora grupal se abrio en blanco (placeholder), el "estudiante
@@ -2833,14 +2840,19 @@ function collectStudentOverridesFromForm(selectedStudents = []) {
 function updateDraftFromForm(student, options = {}) {
   const studentRef = getStudentIdentity(student);
   const existingDraft = getDraftForContext(student);
-  // Evita clonar el estado completo varias veces durante la misma pulsación.
-  const allStudents = getAllStudentsFromState(getState());
 
   const requestedMode = getAllowedMode(
     viewRoot?.querySelector('input[name="modoBitacora"]:checked')?.value ||
       existingDraft.mode ||
       CONFIG.modes.individual
   );
+  // El historial puede tener cientos de registros. Para una bitácora
+  // individual no necesitamos clonarlo ni recorrer todos los estudiantes por
+  // cada pulsación; el estudiante activo basta para reconstruir el draft.
+  const allStudents =
+    requestedMode === CONFIG.modes.group || existingDraft.mode === CONFIG.modes.group
+      ? getAllStudents()
+      : [student];
 
   const selectedStudentsForRequestedMode = getSelectedStudentsForDraft(
     {
@@ -2974,7 +2986,7 @@ function getDraftForContext(student) {
       mode: normalizedMode,
     },
     student,
-    getAllStudentsFromState(getState())
+    normalizedMode === CONFIG.modes.group ? getAllStudents() : [student]
   );
 
   return {
@@ -3198,7 +3210,7 @@ function renderDraftMetaBlock(student) {
   container.innerHTML = renderDraftMeta(
     draft,
     student,
-    getAllStudentsFromState(getState())
+    getAllStudents()
   );
 }
 
@@ -3228,6 +3240,11 @@ function renderDraftMeta(draft, student, allStudents = []) {
       ${
         mode === CONFIG.modes.group
           ? `<span class="draft-meta__item">${overridesLength} ajuste${overridesLength === 1 ? "" : "s"} individual${overridesLength === 1 ? "" : "es"}</span>`
+          : ""
+      }
+      ${
+        lastSaveNotice
+          ? `<span class="draft-meta__item" role="status">${escapeHtml(lastSaveNotice)}</span>`
           : ""
       }
     </div>

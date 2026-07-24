@@ -2846,9 +2846,15 @@ async function saveProfileRepertoire(student, values = []) {
     updateStudentProfile(nextStudent);
     setSelectedStudent(nextStudent);
     renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+    return true;
   } catch (error) {
     console.error("No se pudo guardar repertorio:", error);
-    setAppError(error?.message || "No se pudo guardar el repertorio del estudiante.");
+    setAppError(
+      `No se guardó la canción. ${
+        error?.message || "Firebase no permitió actualizar el repertorio del estudiante."
+      }`
+    );
+    return false;
   }
 }
 
@@ -2871,8 +2877,11 @@ async function addProfileRepertoireItem(student) {
       fechaLogro: "",
     },
   ];
-  if (input) input.value = "";
-  await saveProfileRepertoire(currentStudent, nextValues);
+  const added = await saveProfileRepertoire(currentStudent, nextValues);
+  // No borrar lo escrito hasta que Firebase confirme la operación. Si hay un
+  // error de permisos o conexión, el docente puede corregir o reintentar sin
+  // volver a digitar el nombre de la canción.
+  if (added && input) input.value = "";
 }
 
 async function removeProfileRepertoireItem(student, value) {
