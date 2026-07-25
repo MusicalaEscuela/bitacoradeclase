@@ -1821,6 +1821,11 @@ async function handleSubmit(student) {
     title: "Guardando",
   });
 
+  // Permite que el navegador pinte el estado de guardado antes de recorrer el
+  // historial para buscar duplicados. Sin esta pausa de un frame, un historial
+  // grande puede ocultar la confirmación visual durante varios segundos.
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
   try {
     let editingBitacoraId = toStringSafe(
       draft.editingBitacoraId || currentEditingBitacoraId

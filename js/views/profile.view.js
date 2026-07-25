@@ -93,7 +93,11 @@ let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let currentProfileHistorySearchQuery = "";
+let currentProfileHistoryVisibleCount = 50;
 let historyExpansionState = new Map();
+// Cada bitácora conserva el texto normalizado para búsqueda mientras su objeto
+// exista en el estado. Así no reanalizamos contenido estructurado por letra.
+let profileBitacoraSearchIndex = new WeakMap();
 let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
 // Estado local de observaciones internas privadas (cargadas aparte por seguridad).
@@ -108,6 +112,7 @@ const ROUTE_COMPONENTS = Object.freeze([
 ]);
 
 const ROUTE_EXPERIENCES = Object.freeze([1, 2, 3]);
+const PROFILE_HISTORY_RENDER_LIMIT = 50;
 
 const GUITAR_ROUTE_PRESET = Object.freeze([
   {
@@ -1140,7 +1145,11 @@ function bindProfileEvents(student) {
   if (historySearchInput) {
     historySearchInput.addEventListener("input", () => {
       currentProfileHistorySearchQuery = toStringSafe(historySearchInput.value);
-      renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+      currentProfileHistoryVisibleCount = PROFILE_HISTORY_RENDER_LIMIT;
+      // El campo de búsqueda no necesita repintar todo el perfil (ruta,
+      // repertorio, resumen, etc.). Mantener el input intacto hace que la
+      // escritura siga respondiendo aun con historiales grandes.
+      renderAllBitacorasOnly(student);
     });
   }
 
@@ -1158,6 +1167,12 @@ function bindProfileEvents(student) {
 
       if (action === "open-full-history") {
         toggleHistoryExpanded(student, actionButton, true);
+        return;
+      }
+
+      if (action === "show-more-history") {
+        currentProfileHistoryVisibleCount += PROFILE_HISTORY_RENDER_LIMIT;
+        renderAllBitacorasOnly(student);
         return;
       }
 
@@ -2956,12 +2971,22 @@ function renderAllBitacorasPanel(student, bitacoras = [], config, isAuthenticate
     `;
   }
 
+  const visibleItems = filteredItems.slice(0, currentProfileHistoryVisibleCount);
+  const remainingItems = filteredItems.length - visibleItems.length;
+
   return `
     <div class="teaching-history-list">
-      ${filteredItems
+      ${visibleItems
         .map((item) => renderTeachingHistoryCard(item, student, processOptions))
         .join("")}
       <div class="profile-panel-actions">
+        ${
+          remainingItems > 0
+            ? `<button type="button" class="btn btn--ghost btn--sm" data-history-action="show-more-history">
+                Ver ${Math.min(remainingItems, PROFILE_HISTORY_RENDER_LIMIT)} más (${remainingItems} pendientes)
+              </button>`
+            : ""
+        }
         <button type="button" class="btn btn--primary btn--sm" data-history-action="open-editor">
           Nueva bitácora
         </button>
@@ -2991,7 +3016,30 @@ function filterProfileBitacorasBySearch(items = [], query = "") {
   if (!needle) return items;
 
   return items.filter((item) =>
-    normalizeText(buildProfileBitacoraSearchText(item)).includes(needle)
+    getIndexedProfileBitacoraSearchText(item).includes(needle)
+  );
+}
+
+function getIndexedProfileBitacoraSearchText(item = {}) {
+  if (!item || typeof item !== "object") return "";
+  const cached = profileBitacoraSearchIndex.get(item);
+  if (cached !== undefined) return cached;
+
+  const indexed = normalizeText(buildProfileBitacoraSearchText(item));
+  profileBitacoraSearchIndex.set(item, indexed);
+  return indexed;
+}
+
+function renderAllBitacorasOnly(student) {
+  const allHistoryContainer = viewRoot?.querySelector("#profile-all-history-content");
+  if (!allHistoryContainer) return;
+
+  const state = getState();
+  allHistoryContainer.innerHTML = renderAllBitacorasPanel(
+    student,
+    getBitacorasFromState(student),
+    CONFIG,
+    Boolean(state?.auth?.isAuthenticated)
   );
 }
 
