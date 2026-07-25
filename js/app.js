@@ -33,7 +33,7 @@ import { getUserAccessProfile } from "./api/users.api.js";
 // todos los usuarios carguen la última versión sin limpiar la caché.
 // Debe coincidir con el ?v= de las hojas de estilo y del script en index.html.
 // ============================================================
-export const APP_VERSION = "20260724.3";
+export const APP_VERSION = "20260725.14";
 
 const appModules = {
   views: new Map(),
@@ -871,7 +871,8 @@ function updateAuthButton(state) {
 
   if (isAuthenticated) {
     dom.authButton.dataset.action = "logout-user";
-    dom.authButton.textContent = `Salir (${userLabel})`;
+    dom.authButton.textContent = "🚪 Salir";
+    dom.authButton.title = `Salir (${userLabel})`;
     return;
   }
 

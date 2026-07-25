@@ -93,6 +93,7 @@ let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let currentProfileHistorySearchQuery = "";
+let profileHistorySearchDebounceTimer = null;
 let historyExpansionState = new Map();
 let cachedCatalogs = getEmptyCatalogs();
 let catalogsLoadAttempted = false;
@@ -854,8 +855,8 @@ function buildProfileMarkup(student, state, config) {
             ${escapeHtml(activeProcessLabel)}
           </p>
           <div class="profile-quick-header__actions">
-            <button type="button" class="btn btn--ghost" id="profile-back-btn">
-              Volver a búsqueda
+            <button type="button" class="btn btn--ghost btn--sm" id="profile-back-btn">
+              ← Volver
             </button>
             ${
               access.role === CONFIG.roles.admin
@@ -873,58 +874,40 @@ function buildProfileMarkup(student, state, config) {
 
       <section class="profile-workspace">
         <section class="profile-dashboard" aria-label="Resumen de trabajo rápido">
-          <article class="card profile-last-bitacora">
-            <header class="panel-header">
-              <div>
-                <p class="panel-header__eyebrow">Última bitácora</p>
-                <h2 class="panel-header__title" id="profile-history-title">Registro más reciente</h2>
-              </div>
-            </header>
+          <details class="card profile-last-bitacora collapsible-card">
+            <summary class="panel-header collapsible-card__summary">
+              <h2 class="panel-header__title" id="profile-history-title">🎵 Última bitácora</h2>
+            </summary>
             <div id="profile-history-content">
               ${renderLastBitacoraPreview(student, bitacoras, config, isAuthenticated)}
             </div>
-          </article>
+          </details>
 
-          <article class="card profile-route-preview">
-            <header class="panel-header">
-              <div>
-                <p class="panel-header__eyebrow">Ruta actual</p>
-                <h2 class="panel-header__title">Objetivos actuales</h2>
-                <p class="panel__description">
-                  Proceso activo: <strong>${escapeHtml(activeProcessLabel)}</strong>
-                </p>
-              </div>
-            </header>
+          <details class="card profile-route-preview collapsible-card" open>
+            <summary class="panel-header collapsible-card__summary">
+              <h2 class="panel-header__title">🎯 Objetivos actuales</h2>
+            </summary>
             <div id="profile-route-preview-content">
               ${renderCurrentRoutePreview(student)}
             </div>
-          </article>
+          </details>
 
-          <article class="card profile-repertoire-card">
-            <header class="panel-header">
-              <div>
-                <p class="panel-header__eyebrow">Proyecto final</p>
-                <h2 class="panel-header__title">Repertorio del proceso</h2>
-                <p class="panel__description">
-                  Canciones que el estudiante quiere tocar, está sacando o ya logró.
-                </p>
-              </div>
-            </header>
+          <details class="card profile-repertoire-card collapsible-card">
+            <summary class="panel-header collapsible-card__summary">
+              <h2 class="panel-header__title">🎼 Repertorio del proceso</h2>
+            </summary>
             <div id="profile-repertoire-content">
               ${renderStudentRepertoireCard(student, access)}
             </div>
-          </article>
+          </details>
           <div id="profile-work-suggestions"></div>
 
-          <article class="card profile-quick-actions">
-            <header class="panel-header">
-              <div>
-                <p class="panel-header__eyebrow">Accesos rápidos</p>
-                <h2 class="panel-header__title">Profundizar</h2>
-              </div>
-            </header>
+          <details class="card profile-quick-actions collapsible-card">
+            <summary class="panel-header collapsible-card__summary">
+              <h2 class="panel-header__title">⚡ Profundizar</h2>
+            </summary>
             ${renderQuickActions(access)}
-          </article>
+          </details>
         </section>
 
         <section class="profile-panels" id="profile-panels" aria-live="polite">
@@ -1140,7 +1123,11 @@ function bindProfileEvents(student) {
   if (historySearchInput) {
     historySearchInput.addEventListener("input", () => {
       currentProfileHistorySearchQuery = toStringSafe(historySearchInput.value);
-      renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+      if (profileHistorySearchDebounceTimer) clearTimeout(profileHistorySearchDebounceTimer);
+      profileHistorySearchDebounceTimer = setTimeout(() => {
+        renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+        profileHistorySearchDebounceTimer = null;
+      }, 120);
     });
   }
 
@@ -2987,12 +2974,21 @@ function renderProfileHistorySearchControl(value = "") {
 }
 
 function filterProfileBitacorasBySearch(items = [], query = "") {
-  const needle = normalizeText(query);
-  if (!needle) return items;
+  return items.filter((item) => matchesProfileBitacoraSearch(item, query));
+}
 
-  return items.filter((item) =>
-    normalizeText(buildProfileBitacoraSearchText(item)).includes(needle)
-  );
+const profileBitacoraSearchTextCache = new WeakMap();
+
+function matchesProfileBitacoraSearch(item = {}, query = "") {
+  const needle = normalizeText(query);
+  if (!needle) return true;
+
+  let searchable = profileBitacoraSearchTextCache.get(item);
+  if (!searchable) {
+    searchable = normalizeText(buildProfileBitacoraSearchText(item));
+    profileBitacoraSearchTextCache.set(item, searchable);
+  }
+  return searchable.includes(needle);
 }
 
 function buildProfileBitacoraSearchText(item = {}) {
@@ -6765,11 +6761,30 @@ function getStudentFromState(state, preferredStudentRef = null) {
   );
 }
 
+function getFieldIcon(label = "") {
+  const normalized = String(label).toLowerCase();
+  if (normalized.includes("estado")) return "📌";
+  if (normalized.includes("edad")) return "🎂";
+  if (normalized.includes("condici")) return "🩺";
+  if (normalized.includes("proceso")) return "🎨";
+  if (normalized.includes("área") || normalized.includes("area") || normalized.includes("instrumento")) return "🎵";
+  if (normalized.includes("modalidad")) return "🏫";
+  if (normalized.includes("docente")) return "🧑‍🏫";
+  if (normalized.includes("sede")) return "📍";
+  if (normalized.includes("acudiente")) return "👤";
+  if (normalized.includes("direcci")) return "🏠";
+  if (normalized.includes("interes")) return "⭐";
+  return "";
+}
+
 function renderProfileItem(label, value) {
+  const icon = getFieldIcon(label);
   return `
     <div class="profile-grid__item">
       <dt class="profile-grid__label">${escapeHtml(label)}</dt>
-      <dd class="profile-grid__value">${escapeHtml(String(value ?? ""))}</dd>
+      <dd class="profile-grid__value">${
+        icon ? `<span class="field-ic" aria-hidden="true">${icon}</span> ` : ""
+      }${escapeHtml(String(value ?? ""))}</dd>
     </div>
   `;
 }
@@ -6828,6 +6843,10 @@ function cleanupView() {
   if (unsubscribeView) {
     unsubscribeView();
     unsubscribeView = null;
+  }
+  if (profileHistorySearchDebounceTimer) {
+    clearTimeout(profileHistorySearchDebounceTimer);
+    profileHistorySearchDebounceTimer = null;
   }
 
   viewRoot = null;

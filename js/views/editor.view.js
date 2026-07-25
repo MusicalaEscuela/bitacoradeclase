@@ -94,11 +94,19 @@ let catalogsLoadAttempted = false;
 let draftInputDebounceTimer = null;
 let groupSearchDebounceTimer = null;
 let currentEditingBitacoraId = "";
+let currentEditingUpdatedAt = 0;
 let currentHistorySearchQuery = "";
 let lastSaveNotice = "";
+let historySearchDebounceTimer = null;
+let activeAudioRecorder = null;
+let activeAudioStream = null;
+let activeAudioChunks = [];
+let activeAudioSeconds = 0;
+let activeAudioTimer = null;
 
 const DRAFT_INPUT_DEBOUNCE_MS = 220;
 const GROUP_SEARCH_DEBOUNCE_MS = 100;
+const HISTORY_SEARCH_DEBOUNCE_MS = 120;
 const RECENT_PICKERS_KEY = "bitacoras_recent_pickers_v1";
 const RECENT_PICKERS_LIMIT = 12;
 // Maximo de opciones que se pintan a la vez en el panel del picker. Evita que
@@ -343,17 +351,17 @@ function buildEditorMarkup({
         <div class="view-header__actions">
           <button
             type="button"
-            class="btn btn--ghost"
+            class="btn btn--ghost btn--sm"
             id="editor-back-search-btn"
           >
-            Volver a busqueda
+            ← Volver
           </button>
           <button
             type="button"
-            class="btn btn--secondary"
+            class="btn btn--ghost btn--sm"
             id="editor-open-profile-btn"
           >
-            Ver perfil
+            👤 Ver perfil
           </button>
         </div>
       </header>
@@ -528,7 +536,7 @@ function buildEditorMarkup({
               </label>
 
               <label class="field">
-                <span class="field__label">Archivos de apoyo</span>
+                <span class="field__label">Adjuntar evidencias</span>
                 <input
                   id="bitacora-archivos"
                   name="archivos"
@@ -539,10 +547,20 @@ function buildEditorMarkup({
                   capture="environment"
                 />
                 <small class="field__hint">
-                  Pueden adjuntar imagenes, video, audio o PDF. Si el flujo de uploads
-                  todavia no esta completo, al menos queda registro local en el draft.
+                  Seleccionen imágenes, fotos, videos, audios o PDF desde el dispositivo.
                 </small>
               </label>
+
+              <section class="audio-recorder" aria-labelledby="audio-recorder-title">
+                <div>
+                  <p id="audio-recorder-title" class="audio-recorder__title">Grabar audio directamente</p>
+                  <p id="audio-recorder-status" class="audio-recorder__status">El audio quedará adjunto y se subirá al guardar la bitácora.</p>
+                </div>
+                <div class="audio-recorder__actions">
+                  <button type="button" class="btn btn--ghost" id="bitacora-audio-start-btn">● Grabar audio</button>
+                  <button type="button" class="btn btn--ghost" id="bitacora-audio-stop-btn" disabled>Detener</button>
+                </div>
+              </section>
 
               <div id="bitacora-files-preview" class="files-preview">
                 ${renderFilesPreview(draft.archivos || [])}
@@ -619,6 +637,8 @@ function bindEditorEvents(student) {
   const contenidoInput = viewRoot.querySelector("#bitacora-contenido");
   const archivosInput = viewRoot.querySelector("#bitacora-archivos");
   const videosInput = viewRoot.querySelector("#bitacora-videos");
+  const audioStartBtn = viewRoot.querySelector("#bitacora-audio-start-btn");
+  const audioStopBtn = viewRoot.querySelector("#bitacora-audio-stop-btn");
   const resetBtn = viewRoot.querySelector("#bitacora-reset-btn");
   const refreshBtn = viewRoot.querySelector("#bitacora-refresh-btn");
   const historySearchInput = viewRoot.querySelector("#bitacoras-history-search");
@@ -858,6 +878,14 @@ function bindEditorEvents(student) {
     );
   }
 
+  if (audioStartBtn) {
+    audioStartBtn.addEventListener("click", () => startAudioRecording(student));
+  }
+
+  if (audioStopBtn) {
+    audioStopBtn.addEventListener("click", stopAudioRecording);
+  }
+
   const multiInputKeys = [
     "docentes",
     "etiquetas",
@@ -1034,6 +1062,12 @@ function bindEditorEvents(student) {
         student
       );
     });
+
+    filesPreview.addEventListener("error", (event) => {
+      const player = event.target.closest?.(".file-chip__audio-preview");
+      if (!player) return;
+      setAppError("No se pudo preparar este audio para escucharlo. Elimínalo y grábalo nuevamente.");
+    }, true);
   }
 
   if (resetBtn) {
@@ -1059,7 +1093,13 @@ function bindEditorEvents(student) {
   if (historySearchInput) {
     historySearchInput.addEventListener("input", () => {
       currentHistorySearchQuery = toStringSafe(historySearchInput.value);
-      renderHistoryBlock(student);
+      // No se vuelve a construir todo el historial mientras llega cada tecla:
+      // así el campo conserva respuesta inmediata incluso con muchas bitácoras.
+      if (historySearchDebounceTimer) clearTimeout(historySearchDebounceTimer);
+      historySearchDebounceTimer = setTimeout(() => {
+        renderHistoryBlock(student);
+        historySearchDebounceTimer = null;
+      }, HISTORY_SEARCH_DEBOUNCE_MS);
     });
   }
 
@@ -1277,6 +1317,138 @@ function handleFilesChange(event, student, kind = "support") {
   renderDraftMetaBlock(student);
 }
 
+function setAudioRecorderUi({ recording = false, message = "" } = {}) {
+  const startButton = viewRoot?.querySelector("#bitacora-audio-start-btn");
+  const stopButton = viewRoot?.querySelector("#bitacora-audio-stop-btn");
+  const status = viewRoot?.querySelector("#audio-recorder-status");
+
+  if (startButton) startButton.disabled = recording;
+  if (stopButton) stopButton.disabled = !recording;
+  if (status && message) status.textContent = message;
+}
+
+function formatRecordingTime(totalSeconds = 0) {
+  const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function stopAudioTimer() {
+  if (activeAudioTimer) clearInterval(activeAudioTimer);
+  activeAudioTimer = null;
+}
+
+function startAudioTimer() {
+  stopAudioTimer();
+  activeAudioSeconds = 0;
+  setAudioRecorderUi({
+    recording: true,
+    message: `⏺ Grabando: ${formatRecordingTime(activeAudioSeconds)}. Pulsa Detener cuando termines.`,
+  });
+  activeAudioTimer = setInterval(() => {
+    activeAudioSeconds += 1;
+    setAudioRecorderUi({
+      recording: true,
+      message: `⏺ Grabando: ${formatRecordingTime(activeAudioSeconds)}. Pulsa Detener cuando termines.`,
+    });
+  }, 1000);
+}
+
+function releaseAudioStream() {
+  stopAudioTimer();
+  activeAudioStream?.getTracks?.().forEach((track) => track.stop());
+  activeAudioStream = null;
+}
+
+function stopAudioRecording() {
+  if (activeAudioRecorder?.state === "recording") {
+    stopAudioTimer();
+    setAudioRecorderUi({
+      recording: true,
+      message: `Finalizando la grabación (${formatRecordingTime(activeAudioSeconds)})…`,
+    });
+    activeAudioRecorder.requestData?.();
+    activeAudioRecorder.stop();
+  }
+}
+
+async function startAudioRecording(student) {
+  if (activeAudioRecorder?.state === "recording") return;
+
+  if (!navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    setAppError("Este navegador no permite grabar audio directamente. Puedes adjuntar un archivo de audio.");
+    return;
+  }
+
+  try {
+    activeAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const preferredType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]
+      .find((type) => MediaRecorder.isTypeSupported?.(type));
+    activeAudioChunks = [];
+    activeAudioRecorder = preferredType
+      ? new MediaRecorder(activeAudioStream, { mimeType: preferredType })
+      : new MediaRecorder(activeAudioStream);
+
+    activeAudioRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size) activeAudioChunks.push(event.data);
+    });
+
+    activeAudioRecorder.addEventListener("stop", () => {
+      const recorderMimeType = activeAudioRecorder?.mimeType || preferredType || "audio/webm";
+      const mimeType = recorderMimeType.split(";")[0] || "audio/webm";
+      const extension = mimeType.includes("ogg") ? "ogg" : "webm";
+      const audioBlob = new Blob(activeAudioChunks, { type: mimeType });
+      if (!audioBlob.size) {
+        releaseAudioStream();
+        activeAudioRecorder = null;
+        activeAudioChunks = [];
+        setAudioRecorderUi({ recording: false, message: "No se detectó audio. Revisa el permiso y vuelve a grabar." });
+        setAppError("La grabación quedó vacía. Verifica que el micrófono tenga permiso y vuelve a intentarlo.");
+        return;
+      }
+      const file = new File(
+        [audioBlob],
+        `grabacion-bitacora-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`,
+        { type: mimeType }
+      );
+      const previewUrl = URL.createObjectURL(audioBlob);
+      const currentDraft = getDraftForContext(student);
+      updateDraft({
+        ...currentDraft,
+        archivos: [
+          ...(currentDraft.archivos || []),
+          {
+            ...mapFileToDraftItem(file, "audio"),
+            // Se conserva la URL exacta del Blob que acaba de generar el
+            // grabador para poder escucharlo antes de cualquier subida.
+            previewUrl,
+          },
+        ],
+      });
+      renderFilesPreviewBlock(student);
+      renderDraftMetaBlock(student);
+      releaseAudioStream();
+      activeAudioRecorder = null;
+      activeAudioChunks = [];
+      setAudioRecorderUi({
+        recording: false,
+        message: `Grabación de ${formatRecordingTime(activeAudioSeconds)} adjunta. Escúchala abajo antes de guardar.`,
+      });
+    }, { once: true });
+
+    activeAudioRecorder.start(1000);
+    startAudioTimer();
+  } catch (error) {
+    releaseAudioStream();
+    activeAudioRecorder = null;
+    setAudioRecorderUi({ recording: false, message: "No se pudo iniciar el micrófono." });
+    setAppError(error?.name === "NotAllowedError"
+      ? "Necesitamos permiso para usar el micrófono. Puedes permitirlo o adjuntar un audio."
+      : "No se pudo iniciar la grabación de audio.");
+  }
+}
+
 function removeDraftFile(index, student) {
   if (!Number.isInteger(index) || index < 0) return;
 
@@ -1351,10 +1523,11 @@ function renderMultiValueSelection(key, values = []) {
   const container = viewRoot?.querySelector(`[data-multi-values="${key}"]`);
   if (!container) return;
 
-  container.innerHTML = renderMultiValueChips(key, values);
-
   // Mostrar el buscador de chips solo cuando hay varios, y re-aplicar el filtro.
-  const safeValues = normalizeListValues(values);
+  const safeValues = key === "docentes"
+    ? normalizeTeacherValues(values, { splitCommas: true })
+    : normalizeListValues(values);
+  container.innerHTML = renderMultiValueChips(key, safeValues);
   const searchWrap = viewRoot?.querySelector(`[data-chip-search-wrap="${key}"]`);
   if (searchWrap) {
     searchWrap.classList.toggle(
@@ -1399,10 +1572,15 @@ function addMultiValueSelection(key, rawValue, student) {
 
   if (key === "docentes") docentesTouched = true;
 
-  const nextValues = normalizeListValues([
-    ...getMultiValueSelection(key),
-    ...valuesToAdd,
-  ]);
+  const nextValues = key === "docentes"
+    ? normalizeTeacherValues([
+        ...getMultiValueSelection(key),
+        ...valuesToAdd,
+      ], { splitCommas: true })
+    : normalizeListValues([
+        ...getMultiValueSelection(key),
+        ...valuesToAdd,
+      ]);
 
   renderMultiValueSelection(key, nextValues);
   if (input) input.value = "";
@@ -1709,6 +1887,7 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
   currentEditorMode = nextMode;
   currentEditorProcessKey = normalized.processKey || normalized.process?.processKey || "";
   currentEditingBitacoraId = safeBitacoraId;
+  currentEditingUpdatedAt = getTimestamp(source.updatedAt);
   // Edicion de bitacora guardada: respetar sus docentes, no inyectar sugerido.
   docentesTouched = true;
   clearAppError();
@@ -1825,6 +2004,7 @@ async function handleSubmit(student) {
     let editingBitacoraId = toStringSafe(
       draft.editingBitacoraId || currentEditingBitacoraId
     );
+    let editingExpectedUpdatedAt = editingBitacoraId ? currentEditingUpdatedAt : 0;
 
     if (!editingBitacoraId) {
       const duplicatePayload = buildBitacoraPayload(student, draft);
@@ -1836,6 +2016,8 @@ async function handleSubmit(student) {
 
         editingBitacoraId = toStringSafe(duplicate.id || duplicate.bitacoraId);
         currentEditingBitacoraId = editingBitacoraId;
+        editingExpectedUpdatedAt = getTimestamp(duplicate.updatedAt);
+        currentEditingUpdatedAt = editingExpectedUpdatedAt;
       }
     }
 
@@ -1866,7 +2048,10 @@ async function handleSubmit(student) {
     };
     const payload = buildBitacoraPayload(student, draft);
     const saved = editingBitacoraId
-      ? await updateBitacora(editingBitacoraId, payload)
+      ? await updateBitacora(editingBitacoraId, payload, {
+          fullPayload: true,
+          expectedUpdatedAt: editingExpectedUpdatedAt,
+        })
       : await createBitacora(payload);
     const normalized = normalizeCreatedBitacora(saved, payload);
 
@@ -2589,6 +2774,7 @@ function normalizeBitacora(item) {
       normalizeStudentIds(item.studentIds || [item.studentId])
     ),
     createdAt: item.createdAt || item.created_at || item.fechaRegistro || "",
+    updatedAt: item.updatedAt || item.updated_at || "",
     author: item.author || null,
     process: item.process || {},
     processKey:
@@ -3142,6 +3328,7 @@ function resetDraftForContext({ mode = CONFIG.modes.individual, student } = {}) 
   resetDraft(nextDraft);
   clearUploads();
   currentEditingBitacoraId = "";
+  currentEditingUpdatedAt = 0;
   currentEditorMode = getAllowedMode(mode);
   // Reinicio del formulario / cambio de proceso: vuelve a permitir el docente sugerido.
   docentesTouched = false;
@@ -3178,13 +3365,18 @@ function renderFilesPreview(files = []) {
                 <p class="file-chip__meta">
                   ${escapeHtml(
                     [
-                      file.kind === "video" ? "Video" : "Archivo",
+                      getAttachmentTypeLabel(file),
                       formatFileSize(file.size || 0),
                     ]
                       .filter(Boolean)
                       .join("  -  ")
                   )}
                 </p>
+                ${
+                  isAudioAttachment(file)
+                    ? `<audio class="file-chip__audio-preview" controls preload="auto" playsinline aria-label="Escuchar ${escapeHtml(file.name || "audio adjunto")}"><source src="${escapeHtml(getRenderableFileUrl(file))}" type="${escapeHtml(getFileMimeType(file) || "audio/webm")}" />Tu navegador no puede reproducir este audio.</audio>`
+                    : ""
+                }
               </div>
               <button
                 type="button"
@@ -3364,7 +3556,8 @@ function renderBitacorasHistory(
   }
 
   const sortedItems = sortBitacorasByDate(items);
-  const filteredItems = filterBitacorasBySearch(sortedItems, searchQuery);
+  const indexedItems = sortedItems.map((item, index) => ({ item, index }));
+  const filteredItems = indexedItems.filter(({ item }) => matchesBitacoraSearch(item, searchQuery));
 
   if (searchQuery && !filteredItems.length) {
     return `
@@ -3380,26 +3573,28 @@ function renderBitacorasHistory(
   return `
     <div class="bitacoras-list">
       ${filteredItems
-        .map((item) => {
-          const originalIndex = sortedItems.findIndex(
-            (candidate) => toStringSafe(candidate.id) === toStringSafe(item.id)
-          );
-          return renderBitacoraCard(
-            item,
-            originalIndex >= 0 ? originalIndex : 0,
-            sortedItems.length
-          );
-        })
+        .map(({ item, index }) => renderBitacoraCard(item, index, sortedItems.length))
         .join("")}
     </div>
   `;
 }
 
 function filterBitacorasBySearch(items = [], query = "") {
-  const needle = normalizeText(query);
-  if (!needle) return items;
+  return items.filter((item) => matchesBitacoraSearch(item, query));
+}
 
-  return items.filter((item) => normalizeText(buildBitacoraSearchText(item)).includes(needle));
+const bitacoraSearchTextCache = new WeakMap();
+
+function matchesBitacoraSearch(item = {}, query = "") {
+  const needle = normalizeText(query);
+  if (!needle) return true;
+
+  let searchable = bitacoraSearchTextCache.get(item);
+  if (!searchable) {
+    searchable = normalizeText(buildBitacoraSearchText(item));
+    bitacoraSearchTextCache.set(item, searchable);
+  }
+  return searchable.includes(needle);
 }
 
 function buildBitacoraSearchText(item = {}) {
@@ -4555,6 +4750,20 @@ function isVideoAttachment(file = {}) {
   return /\.(mp4|webm|ogg|mov|m4v)$/i.test(String(file?.name || file?.url || ""));
 }
 
+function isAudioAttachment(file = {}) {
+  const mime = getFileMimeType(file);
+  if (mime.startsWith("audio/")) return true;
+  return /\.(mp3|m4a|aac|wav|ogg|webm)$/i.test(String(file?.name || file?.url || ""));
+}
+
+function getAttachmentTypeLabel(file = {}) {
+  if (isAudioAttachment(file)) return "Audio";
+  if (isVideoAttachment(file)) return "Video";
+  if (isImageAttachment(file)) return "Imagen";
+  if (getFileMimeType(file) === "application/pdf") return "Documento PDF";
+  return "Archivo";
+}
+
 function renderFileThumbnail(file = {}, className = "") {
   const url = getRenderableFileUrl(file);
   if (!url) {
@@ -4567,6 +4776,10 @@ function renderFileThumbnail(file = {}, className = "") {
 
   if (isVideoAttachment(file)) {
     return `<video class="${escapeHtml(className)}" src="${escapeHtml(url)}" muted playsinline preload="metadata" aria-label="${escapeHtml(file?.name || "Video adjunto")}"></video>`;
+  }
+
+  if (isAudioAttachment(file)) {
+    return `<div class="${escapeHtml(className)} file-chip__audio-icon" aria-hidden="true">🎙️</div>`;
   }
 
   return `<div class="${escapeHtml(className)} is-empty" aria-hidden="true">ðŸ“Ž</div>`;
@@ -4902,8 +5115,8 @@ function buildMusicalaEditorMarkup({
                 })}
               </div>
 
-              <label class="field">
-                <span class="field__label">Tareas / Observaciones</span>
+              <label class="field field--observaciones">
+                <span class="field__label"><span class="field-ic" aria-hidden="true">📝</span> Tareas / Observaciones</span>
                 <textarea
                   id="bitacora-tareas"
                   name="tareas"
@@ -4958,7 +5171,7 @@ function buildMusicalaEditorMarkup({
 
               <div class="editor-form-grid editor-form-grid--2">
                 <label class="field">
-                  <span class="field__label">Archivos / Imagenes (opcional)</span>
+                  <span class="field__label">Fotos, imágenes, documentos y audios (opcional)</span>
                   <input
                     id="bitacora-archivos"
                     name="archivos"
@@ -4968,6 +5181,7 @@ function buildMusicalaEditorMarkup({
                     accept="image/*,application/pdf,audio/*"
                     capture="environment"
                   />
+                  <small class="field__hint">Aquí puedes subir fotos, imágenes, archivos PDF o audios que ya tengas guardados.</small>
                 </label>
                 <label class="field">
                   <span class="field__label">Videos (opcional)</span>
@@ -4980,8 +5194,20 @@ function buildMusicalaEditorMarkup({
                     accept="video/*"
                     capture="environment"
                   />
+                  <small class="field__hint">Aquí puedes subir videos desde tu celular o computador.</small>
                 </label>
               </div>
+
+              <section class="audio-recorder" aria-labelledby="audio-recorder-title">
+                <div>
+                  <p id="audio-recorder-title" class="audio-recorder__title">¿Quieres grabar un audio ahora?</p>
+                  <p id="audio-recorder-status" class="audio-recorder__status">Pulsa “Grabar audio”, permite el micrófono y luego “Detener”. Quedará adjunto para guardar con la bitácora.</p>
+                </div>
+                <div class="audio-recorder__actions">
+                  <button type="button" class="btn btn--primary" id="bitacora-audio-start-btn">● Grabar audio</button>
+                  <button type="button" class="btn btn--ghost" id="bitacora-audio-stop-btn" disabled>Detener grabación</button>
+                </div>
+              </section>
 
               <div id="bitacora-files-preview" class="files-preview">
                 ${renderFilesPreview(draft.archivos || [])}
@@ -5004,7 +5230,7 @@ function buildMusicalaEditorMarkup({
                 </div>
                 <div class="editor-form__actions">
                   <button type="button" class="btn btn--ghost" id="bitacora-reset-btn">
-                    Limpiar
+                    🧹 Limpiar
                   </button>
                   <button
                     type="submit"
@@ -5014,7 +5240,7 @@ function buildMusicalaEditorMarkup({
                     ${!isAuthenticated ? 'data-disabled-by-access="true"' : ""}
                     aria-busy="false"
                   >
-                    Guardar bitacora
+                    💾 Guardar bitácora
                   </button>
                 </div>
               </div>
@@ -5397,11 +5623,16 @@ function prioritizePickerOptions(key, options = []) {
 }
 
 function getDraftTeachers(draft = {}, structured = {}, student = {}) {
-  return normalizeListValues([
-    ...(Array.isArray(draft.docentes) ? draft.docentes : []),
-    draft.docente,
-    structured.docente,
-  ]);
+  // `draft.docentes` es la fuente estructurada. `draft.docente` y el texto
+  // DOCENTE: son compatibilidad con registros antiguos; no se deben sumar a
+  // una lista existente porque esa combinación se duplicaba en cada render.
+  const selected = normalizeTeacherValues(draft.docentes, { splitCommas: true });
+  if (selected.length) return selected;
+
+  return normalizeTeacherValues(
+    [draft.docente, structured.docente],
+    { splitCommas: true }
+  );
 }
 
 function renderDatalist(id, values = []) {
@@ -6169,6 +6400,16 @@ function normalizeListValues(values = []) {
   ];
 }
 
+function normalizeTeacherValues(values = [], { splitCommas = false } = {}) {
+  const raw = normalizeListValues(values);
+  const entries = splitCommas
+    ? raw.flatMap((value) => value.split(/\s*,\s*/g))
+    : raw;
+  // Se compara sin acentos/mayúsculas para impedir, por ejemplo, que
+  // “Sanchez” y “Sánchez” se acumulen como docentes diferentes.
+  return uniqueByNormalized(entries);
+}
+
 function buildEmptyStudentOverride() {
   return {
     enabled: false,
@@ -6255,6 +6496,10 @@ function cleanupView() {
     clearTimeout(groupSearchDebounceTimer);
     groupSearchDebounceTimer = null;
   }
+  if (historySearchDebounceTimer) {
+    clearTimeout(historySearchDebounceTimer);
+    historySearchDebounceTimer = null;
+  }
 
   viewRoot = null;
   currentNavigateTo = null;
@@ -6263,4 +6508,5 @@ function cleanupView() {
   currentEditorMode = CONFIG?.modes?.individual || "individual";
   currentEditorProcessKey = "";
   currentEditingBitacoraId = "";
+  currentEditingUpdatedAt = 0;
 }

@@ -1743,6 +1743,62 @@
   gap: 0.7rem;
 }
 
+.audio-recorder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color, #e8e4f4);
+  border-radius: 14px;
+  background: rgba(247, 245, 255, 0.65);
+}
+
+.audio-recorder__title {
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.audio-recorder__status {
+  margin: 0;
+  color: var(--text-muted, #68728d);
+  font-size: 0.9rem;
+}
+
+.audio-recorder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.file-chip__audio {
+  object-fit: contain;
+  background: #f4f1ff;
+}
+
+.file-chip__audio-icon {
+  display: grid;
+  place-items: center;
+  font-size: 1.65rem;
+  background: #f4f1ff;
+}
+
+.file-chip__audio-preview {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: 34px;
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .audio-recorder {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .file-chip {
   min-width: 0;
   max-width: 100%;
@@ -2218,7 +2274,7 @@
 }
 
 .nav-chip:hover {
-  background: rgba(29, 79, 145, 0.08);
+  background: rgba(91, 48, 230, 0.08);
   color: var(--text-strong);
 }
 
@@ -2413,9 +2469,9 @@
 }
 
 .student-card.is-selected {
-  border-color: rgba(29, 79, 145, 0.3);
-  background: linear-gradient(180deg, rgba(29, 79, 145, 0.05), #ffffff);
-  box-shadow: 0 12px 28px rgba(29, 79, 145, 0.08);
+  border-color: rgba(91, 48, 230, 0.3);
+  background: linear-gradient(180deg, rgba(91, 48, 230, 0.05), #ffffff);
+  box-shadow: 0 12px 28px rgba(91, 48, 230, 0.08);
 }
 
 .student-preview__content,
@@ -3014,7 +3070,7 @@
   padding: 1.15rem 1.2rem;
   border-radius: 22px;
   background:
-    radial-gradient(circle at top right, rgba(11, 114, 133, 0.08), transparent 32%),
+    radial-gradient(circle at top right, rgba(36, 179, 156, 0.08), transparent 32%),
     linear-gradient(135deg, rgba(239, 245, 250, 0.96), rgba(255, 255, 255, 0.98));
   border: 1px solid rgba(17, 37, 61, 0.08);
 }
@@ -3263,8 +3319,8 @@
   gap: 0.14rem;
   padding: 0.55rem 0.68rem;
   border-radius: 12px;
-  background: linear-gradient(135deg, rgba(29, 79, 145, 0.07), rgba(255, 255, 255, 0.98));
-  border: 1px solid rgba(29, 79, 145, 0.12);
+  background: linear-gradient(135deg, rgba(91, 48, 230, 0.07), rgba(255, 255, 255, 0.98));
+  border: 1px solid rgba(91, 48, 230, 0.12);
 }
 
 .bitacora-card__lead-text {
@@ -3301,8 +3357,8 @@
   gap: 0.9rem;
   padding: 1rem;
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(29, 79, 145, 0.08), rgba(216, 140, 47, 0.08));
-  border: 1px solid rgba(29, 79, 145, 0.12);
+  background: linear-gradient(135deg, rgba(91, 48, 230, 0.08), rgba(216, 140, 47, 0.08));
+  border: 1px solid rgba(91, 48, 230, 0.12);
 }
 
 .route-overview__kicker,
@@ -3639,8 +3695,8 @@
   margin-top: 0.9rem;
   padding: 0.85rem 0.9rem;
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(29, 79, 145, 0.06), rgba(255, 255, 255, 0.98));
-  border: 1px solid rgba(29, 79, 145, 0.12);
+  background: linear-gradient(135deg, rgba(91, 48, 230, 0.06), rgba(255, 255, 255, 0.98));
+  border: 1px solid rgba(91, 48, 230, 0.12);
   cursor: pointer;
 }
 
@@ -3959,8 +4015,8 @@
 }
 
 .bitacora-card__section--lead {
-  background: linear-gradient(135deg, rgba(29, 79, 145, 0.07), rgba(255, 255, 255, 0.98));
-  border-color: rgba(29, 79, 145, 0.12);
+  background: linear-gradient(135deg, rgba(91, 48, 230, 0.07), rgba(255, 255, 255, 0.98));
+  border-color: rgba(91, 48, 230, 0.12);
 }
 
 .bitacora-card__section--meta {
@@ -4355,4 +4411,88 @@
     width: 100%;
     max-width: none;
   }
+}
+
+/* =========================================================
+   MUSICALA · Rediseño amable de tarjetas y chips
+   Estilo del mockup: tarjetas muy redondeadas, barra de acento
+   lateral, chips en pastel de marca rotando color, hover suave.
+   Solo CSS — no cambia el HTML ni las funciones.
+   ========================================================= */
+.student-card,
+.result-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg, 26px);
+  border: 1px solid var(--border, #e8e4f5);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfaff 100%);
+  box-shadow: var(--shadow-card);
+  padding-left: 1.25rem;
+  transition:
+    transform var(--transition-fast, 0.18s ease),
+    box-shadow var(--transition-base, 0.25s ease),
+    border-color var(--transition-fast, 0.18s ease);
+}
+
+/* Barra de acento lateral con degradado de marca */
+.student-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  border-radius: var(--radius-lg, 26px) 0 0 var(--radius-lg, 26px);
+  background: linear-gradient(180deg, var(--primary, #5b30e6), var(--accent, #e21585));
+  opacity: 0.9;
+}
+
+.student-card:hover,
+.result-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(91, 48, 230, 0.28);
+  box-shadow: var(--shadow-elevated);
+}
+
+.student-card.is-selected::before {
+  width: 7px;
+  background: linear-gradient(180deg, var(--mint, #24b39c), var(--primary, #5b30e6));
+}
+
+.student-card__name {
+  font-family: var(--font-accent);
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+}
+
+/* Chips de estado en pastel rotando color, como el rediseño */
+.student-card__badges .badge {
+  border: 0;
+  padding: 0.42rem 0.7rem;
+  font-weight: 700;
+}
+.student-card__badges .badge:nth-child(4n + 1) {
+  background: var(--tint-violet, #efeaff);
+  color: var(--primary-deep, #7a1fd0);
+}
+.student-card__badges .badge:nth-child(4n + 2) {
+  background: var(--tint-mint, #e2f6f1);
+  color: var(--mint-strong, #1f9d88);
+}
+.student-card__badges .badge:nth-child(4n + 3) {
+  background: var(--tint-amber, #fff2dd);
+  color: #b96b00;
+}
+.student-card__badges .badge:nth-child(4n + 4) {
+  background: var(--tint-pink, #ffe7f1);
+  color: var(--accent, #e21585);
+}
+
+/* Botón principal de la tarjeta con gradiente de marca */
+.student-card__actions .btn--primary {
+  background: linear-gradient(135deg, var(--primary, #5b30e6), var(--accent, #e21585));
+  border: 0;
+}
+.student-card__actions .btn--primary:hover {
+  filter: brightness(1.04);
 }

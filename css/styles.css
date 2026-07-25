@@ -564,50 +564,92 @@ select:focus-visible {
 }
 
 /* =========================================================
-   UI REFINEMENT OVERRIDES
+   MUSICALA UI · Paleta viva y amable (alineada al rediseño)
+   Más visual, intuitiva y bonita. Colores de marca Musicala:
+   violeta, magenta, menta/teal y naranja cálido sobre fondos
+   pastel suaves y tarjetas muy redondeadas.
    ========================================================= */
 :root {
-  --primary: #1d4f91;
-  --primary-dark: #112d4e;
-  --primary-deep: #17406f;
-  --primary-blue: #0b7285;
-  --accent: #2f7d69;
-  --secondary: #de8f36;
-  --bg-app: #f3f5f8;
-  --bg-app-soft: #eef2f6;
-  --bg-panel-soft: #f9fbfd;
-  --bg-muted: #eef4f8;
-  --bg-highlight: rgba(29, 79, 145, 0.08);
-  --border: #dbe3ec;
-  --border-soft: #e8eef4;
-  --border-strong: #c8d3df;
-  --text-strong: #11253d;
-  --text-main: #243244;
-  --text-muted: #5f7084;
-  --text-soft: #8090a3;
-  --text-light: #98a6b8;
-  --shadow-soft: 0 12px 32px rgba(17, 37, 61, 0.06);
-  --shadow-card: 0 8px 24px rgba(17, 37, 61, 0.05);
-  --shadow-elevated: 0 18px 42px rgba(17, 37, 61, 0.1);
-  --shadow-focus: 0 0 0 4px rgba(29, 79, 145, 0.12);
-  --font-base: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-accent: "Inter", system-ui, sans-serif;
+  /* ===== Marca ===== */
+  --primary: #5b30e6;            /* Violeta Musicala */
+  --primary-dark: #241058;       /* Índigo profundo */
+  --primary-deep: #7a1fd0;       /* Violeta Beethoven */
+  --primary-blue: #2455d6;       /* Azul Mozart */
+  --accent: #e21585;             /* Magenta Brahms */
+  --secondary: #f5a63c;          /* Naranja cálido */
+
+  /* ===== Acentos amables del rediseño ===== */
+  --mint: #24b39c;               /* Menta/teal */
+  --mint-strong: #1f9d88;
+  --pink: #ff5c96;
+
+  /* Superficies tintadas suaves (tarjetas por categoría) */
+  --tint-violet: #efeaff;
+  --tint-mint: #e2f6f1;
+  --tint-pink: #ffe7f1;
+  --tint-amber: #fff2dd;
+  --tint-blue: #e7eefe;
+
+  /* ===== Fondos ===== */
+  --bg-app: #f7f6fd;
+  --bg-app-soft: #f2f0fb;
+  --bg-panel-soft: #fbfaff;
+  --bg-muted: #f3f0ff;
+  --bg-highlight: rgba(91, 48, 230, 0.08);
+
+  /* ===== Bordes ===== */
+  --border: #e8e4f5;
+  --border-soft: #f0edfa;
+  --border-strong: #ddd6ef;
+
+  /* ===== Texto ===== */
+  --text-strong: #241058;
+  --text-main: #2d2a3d;
+  --text-muted: #6b6880;
+  --text-soft: #948fa8;
+  --text-light: #b3adc6;
+
+  /* ===== Sombras (tinte violeta suave) ===== */
+  --shadow-soft: 0 14px 38px rgba(60, 30, 140, 0.08);
+  --shadow-card: 0 10px 28px rgba(60, 30, 140, 0.07);
+  --shadow-elevated: 0 20px 48px rgba(60, 30, 140, 0.14);
+  --shadow-focus: 0 0 0 4px rgba(91, 48, 230, 0.14);
+
+  /* ===== Radios más redondeados y amables ===== */
+  --radius-sm: 14px;
+  --radius-md: 20px;
+  --radius-lg: 26px;
+  --radius-xl: 32px;
+
+  /* ===== Tipografía amable (ya precargada en index.html) ===== */
+  --font-base: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-accent: "Sora", "Plus Jakarta Sans", system-ui, sans-serif;
+
+  --selection-bg: rgba(91, 48, 230, 0.18);
+  --scrollbar-thumb: rgba(91, 48, 230, 0.24);
+  --scrollbar-thumb-hover: rgba(91, 48, 230, 0.42);
 }
 
 body {
   background:
-    radial-gradient(circle at 10% 10%, rgba(29, 79, 145, 0.07), transparent 24%),
-    radial-gradient(circle at 86% 5%, rgba(47, 125, 105, 0.05), transparent 18%),
-    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    radial-gradient(circle at 8% 8%, rgba(91, 48, 230, 0.09), transparent 26%),
+    radial-gradient(circle at 92% 4%, rgba(226, 21, 133, 0.06), transparent 20%),
+    radial-gradient(circle at 78% 90%, rgba(36, 179, 156, 0.06), transparent 24%),
+    linear-gradient(180deg, #fbfaff 0%, #f4f2fc 100%);
 }
 
 body::before {
   background:
-    radial-gradient(circle at 18% 22%, rgba(11, 114, 133, 0.05), transparent 28%),
-    radial-gradient(circle at 78% 8%, rgba(222, 143, 54, 0.05), transparent 24%),
-    radial-gradient(circle at 70% 72%, rgba(29, 79, 145, 0.05), transparent 22%);
+    radial-gradient(circle at 16% 20%, rgba(36, 179, 156, 0.06), transparent 28%),
+    radial-gradient(circle at 82% 10%, rgba(245, 166, 60, 0.06), transparent 24%),
+    radial-gradient(circle at 68% 74%, rgba(91, 48, 230, 0.06), transparent 24%);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-accent);
+  letter-spacing: -0.02em;
 }
 
 :focus-visible {
-  outline: 2px solid rgba(29, 79, 145, 0.45);
+  outline: 2px solid rgba(91, 48, 230, 0.45);
 }

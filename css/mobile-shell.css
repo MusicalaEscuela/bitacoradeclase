@@ -1263,3 +1263,865 @@ body::before {
     display: none !important;
   }
 }
+
+/* =========================================================
+   MUSICALA · Menos ruido visual (interfaz calmada)
+   Objetivo: aire, tarjetas blancas planas, un solo acento por
+   bloque. Quita glows de fondo, capas translúcidas apiladas y
+   títulos gigantes. Alineado al rediseño limpio del mockup.
+   ========================================================= */
+
+/* 1) Fondo limpio: sin blobs flotantes ni degradados intensos */
+.app-shell::before,
+.app-shell::after {
+  display: none !important;
+}
+body {
+  background: linear-gradient(180deg, #fbfbfe 0%, #f6f5fc 100%) !important;
+}
+body::before {
+  display: none !important;
+}
+
+/* 2) Spotlight superior: banda delgada y casi plana (no un muro morado) */
+.route-spotlight {
+  padding: 0.85rem 1rem !important;
+  border-radius: 20px !important;
+  border: 1px solid var(--border-soft, #f0edfa) !important;
+  background: #ffffff !important;
+  box-shadow: 0 6px 18px rgba(60, 30, 140, 0.05) !important;
+}
+.route-spotlight::after {
+  display: none !important;
+}
+.route-spotlight__title {
+  font-size: clamp(1rem, 1.6vw, 1.25rem) !important;
+}
+
+/* 3) Paneles planos: blanco, borde fino, sombra sutil, sin gradientes */
+.view-header__content,
+.search-toolbar,
+.search-results-panel,
+.panel,
+.app-hero,
+.identity-review-panel {
+  background: #ffffff !important;
+  border: 1px solid var(--border, #e8e4f5) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 6px 18px rgba(60, 30, 140, 0.05) !important;
+}
+
+/* 4) Títulos a una escala cómoda (menos peso visual) */
+.view-title {
+  font-size: clamp(1.35rem, 2.2vw, 1.9rem) !important;
+  letter-spacing: -0.03em !important;
+}
+.route-spotlight__text,
+.view-description {
+  font-size: 0.9rem !important;
+}
+
+/* 5) Chips de tarjeta calmados: dos tintes suaves en vez de arcoíris */
+.student-card__badges .badge:nth-child(4n + 1),
+.student-card__badges .badge:nth-child(4n + 3) {
+  background: var(--tint-violet, #efeaff) !important;
+  color: var(--primary-deep, #7a1fd0) !important;
+}
+.student-card__badges .badge:nth-child(4n + 2),
+.student-card__badges .badge:nth-child(4n + 4) {
+  background: #f4f5f9 !important;
+  color: var(--text-muted, #6b6880) !important;
+}
+
+/* 6) Barra de acento de tarjeta más discreta */
+.student-card::before {
+  width: 4px !important;
+  opacity: 0.75 !important;
+}
+
+/* =========================================================
+   MUSICALA · Cabecera compacta tipo menú
+   Se elimina el bloque grande "Flujo rápido" (redundante con el
+   título de cada vista) y la cabecera se vuelve una barra de
+   menú delgada: marca a la izquierda, usuario y navegación
+   como menú horizontal. Menos altura, más foco en el contenido.
+   ========================================================= */
+
+/* Ocultar el spotlight grande en todas las vistas */
+.route-spotlight {
+  display: none !important;
+}
+
+/* Cabecera como barra: marca + usuario arriba, menú horizontal debajo */
+.topbar {
+  padding: 0.55rem 1rem !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-bottom: 1px solid var(--border-soft, #f0edfa) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.topbar__inner {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.55rem !important;
+}
+/* Fila de marca: logo+título a la izquierda, usuario+salir a la derecha */
+.topbar__brand-row {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+}
+.topbar__brand {
+  flex: 0 1 auto !important;
+}
+.topbar__utility {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 0.6rem !important;
+}
+
+/* Chip de usuario (badge de estado reutilizado) compacto */
+.status-badge {
+  min-height: 38px !important;
+  padding: 0.35rem 0.85rem !important;
+  box-shadow: none !important;
+  border: 1px solid var(--border, #e8e4f5) !important;
+  background: #ffffff !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 640px) {
+  .topbar__brand-row {
+    flex-wrap: wrap !important;
+  }
+  .topbar__utility {
+    width: 100% !important;
+    justify-content: flex-start !important;
+  }
+}
+
+/* Marca compacta: sin subtítulo largo, logo y título más chicos */
+.brand__subtitle {
+  display: none !important;
+}
+.brand__logo-wrap {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 14px !important;
+  box-shadow: 0 6px 16px rgba(60, 30, 140, 0.12) !important;
+}
+.brand__logo {
+  width: 28px !important;
+  height: 28px !important;
+}
+.brand__title {
+  font-size: clamp(1.05rem, 1.6vw, 1.35rem) !important;
+  line-height: 1.1 !important;
+}
+.brand__eyebrow {
+  font-size: 0.7rem !important;
+  margin-bottom: 0.1rem !important;
+}
+
+/* Botón de salir compacto (ya no ancho completo) */
+.topbar__auth-button {
+  min-height: 38px !important;
+  padding: 0.35rem 0.9rem !important;
+  font-size: 0.85rem !important;
+  box-shadow: none !important;
+}
+
+/* Navegación como menú horizontal delgado */
+.topbar__actions {
+  width: 100% !important;
+}
+.topbar__nav {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  width: 100% !important;
+  gap: 0.25rem !important;
+  padding: 0.3rem !important;
+  border-radius: 16px !important;
+  background: var(--bg-muted, #f3f0ff) !important;
+  border: 1px solid var(--border-soft, #f0edfa) !important;
+  box-shadow: none !important;
+}
+.nav-chip {
+  min-height: 40px !important;
+  padding: 0.45rem 0.85rem !important;
+  font-size: 0.9rem !important;
+}
+.nav-chip__icon {
+  width: 1.7rem !important;
+  height: 1.7rem !important;
+}
+
+/* Recuperar altura natural del contenido (sin estirar paneles vacíos) */
+.view-shell--search,
+.view-shell--profile,
+.view-shell--editor,
+.view-shell--settings {
+  min-height: 0 !important;
+}
+
+/* =========================================================
+   MUSICALA · Cabecera en una sola línea (escritorio)
+   Logo a la izquierda · menú al centro · usuario a la derecha.
+   Una barra de app compacta. En móvil se mantiene apilado.
+   ========================================================= */
+@media (min-width: 992px) {
+  .topbar__inner {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 1.25rem !important;
+  }
+
+  /* Se disuelve el contenedor de marca para alinear todo en la barra */
+  .topbar__brand-row {
+    display: contents !important;
+  }
+
+  .topbar__brand {
+    order: 1 !important;
+    flex: 0 0 auto !important;
+  }
+
+  .topbar__actions {
+    order: 2 !important;
+    width: auto !important;
+    flex: 1 1 auto !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+
+  .topbar__nav {
+    width: auto !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .topbar__utility {
+    order: 3 !important;
+    flex: 0 0 auto !important;
+  }
+}
+
+/* =========================================================
+   MUSICALA · Estilo unificado (como el Planeador) + menos texto
+   Tarjetas blancas limpias con borde superior de color, chips
+   suaves y pills de estado. Se ocultan párrafos y etiquetas de
+   relleno: la interfaz habla por sí sola.
+   ========================================================= */
+
+/* --- 1) Menos texto: fuera descripciones y etiquetas redundantes --- */
+.view-description,
+.panel__description,
+.section-text,
+.view-eyebrow,
+.section-eyebrow,
+.panel-header__eyebrow,
+.card-eyebrow,
+.brand__eyebrow,
+.empty-state__text {
+  display: none !important;
+}
+
+/* --- 2) Tarjetas al estilo Planeador (borde superior de color) --- */
+.student-card,
+.result-card {
+  border: 1px solid var(--border-soft, #f0edfa) !important;
+  border-top: 4px solid var(--primary, #5b30e6) !important;
+  border-radius: var(--radius-lg, 26px) !important;
+  background: #ffffff !important;
+  box-shadow: var(--shadow-card) !important;
+  padding-left: 1rem !important;
+}
+.student-card::before {
+  display: none !important;   /* fuera la barra lateral anterior */
+}
+.student-card.is-selected {
+  border-top-color: var(--mint, #24b39c) !important;
+}
+.student-card:hover,
+.result-card:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: var(--shadow-elevated) !important;
+}
+
+/* Chip principal (docente/persona) en violeta suave como el owner-chip */
+.student-card__badges .badge:nth-child(4n + 1),
+.student-card__badges .badge:nth-child(4n + 3) {
+  background: var(--bg-highlight, #efeaff) !important;
+  color: var(--primary-deep, #7a1fd0) !important;
+}
+
+/* --- 3) Botones de acción coherentes con el gradiente de marca --- */
+.student-card__actions .btn--primary {
+  background: linear-gradient(135deg, var(--primary, #5b30e6), var(--accent, #e21585)) !important;
+  border: 0 !important;
+}
+
+/* --- 4) Sin botones repetidos de "Entrar con Google" --- */
+/* La píldora de estado es redundante (el botón "Salir" ya dice quién eres) */
+.topbar__status,
+.status-badge {
+  display: none !important;
+}
+/* El botón superior sobra en la pantalla de login (queda el de la tarjeta).
+   Con sesión iniciada su acción es "logout-user", así que "Salir" sí se ve. */
+.topbar__auth-button[data-action="login-google"] {
+  display: none !important;
+}
+
+/* --- 5) Botones de la barra de búsqueda a tamaño natural (no gigantes) --- */
+.search-toolbar__actions,
+.search-toolbar__bulk-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.5rem !important;
+  width: auto !important;
+  justify-content: flex-start !important;
+}
+.search-toolbar__actions .btn,
+.search-toolbar__bulk-actions .btn {
+  width: auto !important;
+  min-height: 42px !important;
+  padding: 0.5rem 1.15rem !important;
+  font-size: 0.9rem !important;
+}
+
+/* --- 6) Móvil: todo más compacto (menos altura, botones chiquitos) --- */
+@media (max-width: 640px) {
+  /* "Salir" pequeño y a la derecha, no de ancho completo */
+  .topbar__utility {
+    width: auto !important;
+    justify-content: flex-end !important;
+    margin-left: auto !important;
+  }
+  .topbar__brand-row {
+    flex-wrap: nowrap !important;
+  }
+  .topbar__auth-button {
+    width: auto !important;
+    max-width: none !important;
+    min-height: 34px !important;
+    padding: 0.3rem 0.7rem !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Título de vista más pequeño y tarjeta más delgada */
+  .view-header__content {
+    padding: 0.6rem 0.85rem !important;
+  }
+  .view-title {
+    font-size: 1.15rem !important;
+  }
+
+  /* Barra de búsqueda: botones chicos en fila */
+  .search-toolbar {
+    padding: 0.8rem !important;
+  }
+  .search-toolbar__actions .btn,
+  .search-toolbar__bulk-actions .btn {
+    min-height: 38px !important;
+    padding: 0.4rem 0.8rem !important;
+    font-size: 0.82rem !important;
+  }
+}
+
+/* =========================================================
+   MUSICALA · Fuera duplicados (títulos y navegación repetida)
+   ========================================================= */
+
+/* 1) El título grande de estas vistas repite lo que ya dice el menú:
+      "Búsqueda de estudiantes" = pestaña Buscar, etc. Se oculta el
+      bloque de título (los botones de acción, aparte, se conservan). */
+.view-shell--search .view-header__content,
+.view-shell--settings .view-header__content,
+.view-shell--compare .view-header__content {
+  display: none !important;
+}
+.view-shell--search .view-header {
+  display: none !important;   /* en búsqueda el header solo tenía título */
+}
+
+/* 2) En móvil sobra el menú de arriba: la barra inferior ya navega.
+      Se deja solo la marca + Salir arriba, y el menú abajo. */
+@media (max-width: 900px) {
+  .topbar__actions {
+    display: none !important;
+  }
+}
+
+/* =========================================================
+   MUSICALA · Escritorio con caja cómoda (no estirar a lo ancho)
+   En pantallas grandes el contenido se centra con un ancho
+   máximo y el buscador deja de parecer "para 10.000 nombres".
+   ========================================================= */
+@media (min-width: 992px) {
+  .topbar__inner,
+  .workspace,
+  .view-shell,
+  .view-shell--search,
+  .view-shell--profile,
+  .view-shell--editor,
+  .view-shell--settings,
+  .view-shell--compare {
+    max-width: 1120px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  /* El campo de búsqueda con ancho de buscador real, no de página */
+  .search-toolbar__field {
+    max-width: 560px !important;
+  }
+
+  /* El menú pegado a la marca (no centrado con huecos enormes) */
+  .topbar__actions {
+    flex: 0 1 auto !important;
+    justify-content: flex-start !important;
+    margin-left: 0.5rem !important;
+    margin-right: auto !important;
+  }
+}
+
+/* =========================================================
+   MUSICALA · Perfil compacto (menos scroll)
+   Los datos del estudiante en cuadrícula de 2 columnas en vez
+   de tarjetas apiladas a todo lo ancho. Etiquetas y valores
+   más pequeños. Corta el scroll casi a la mitad.
+   ========================================================= */
+.profile-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.5rem !important;
+}
+.profile-grid__item,
+.preview-grid__item,
+.student-summary__item,
+.summary-item {
+  padding: 0.5rem 0.65rem !important;
+  border-radius: 12px !important;
+}
+.profile-grid__label {
+  font-size: 0.62rem !important;
+  letter-spacing: 0.05em !important;
+  margin-bottom: 0.1rem !important;
+}
+.profile-grid__value {
+  font-size: 0.85rem !important;
+  line-height: 1.3 !important;
+}
+/* Los campos editables (con input) y los largos ocupan las 2 columnas */
+.profile-grid__item--editable {
+  grid-column: 1 / -1 !important;
+}
+
+/* En pantallas muy angostas, si 2 columnas aprietan, se relaja a 1 */
+@media (max-width: 360px) {
+  .profile-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* =========================================================
+   MUSICALA · Perfil/Editor: acciones integradas + info con íconos
+   ========================================================= */
+
+/* Botones "← Volver" / "👤 Ver perfil" compactos y en fila (no barras) */
+.view-header__actions,
+.profile-quick-header__actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.4rem !important;
+  align-items: center !important;
+}
+.view-header__actions .btn,
+.profile-quick-header__actions .btn {
+  width: auto !important;
+  min-height: 36px !important;
+  padding: 0.35rem 0.85rem !important;
+  font-size: 0.85rem !important;
+}
+
+/* Resumen del estudiante (editor) también en cuadrícula de 2 columnas */
+.student-summary__grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.5rem !important;
+}
+.student-summary__item {
+  padding: 0.5rem 0.65rem !important;
+  border-radius: 12px !important;
+}
+.student-summary__label {
+  font-size: 0.62rem !important;
+  letter-spacing: 0.05em !important;
+  margin-bottom: 0.1rem !important;
+}
+.student-summary__value {
+  font-size: 0.85rem !important;
+  line-height: 1.3 !important;
+}
+
+/* Nombre del estudiante más contenido (ya no gigante) */
+.profile-card__name,
+.student-summary__name {
+  font-size: 1.15rem !important;
+  line-height: 1.2 !important;
+}
+
+/* Ícono de cada campo */
+.field-ic {
+  font-size: 0.9em;
+  margin-right: 0.15rem;
+}
+
+@media (max-width: 360px) {
+  .student-summary__grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* =========================================================
+   MUSICALA · Resumen compacto del estudiante (facts) 2 columnas
+   Este es el que se ve en Perfil/Editor: Área/Docente/Modalidad/
+   Condición. Antes iban apilados enormes; ahora rejilla chica.
+   ========================================================= */
+.student-summary__facts {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.5rem !important;
+  margin: 0 !important;
+}
+.student-summary__fact {
+  padding: 0.5rem 0.65rem !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--border-soft, #f0edfa) !important;
+  background: #ffffff !important;
+}
+.student-summary__fact dt {
+  font-size: 0.6rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  color: var(--text-soft, #948fa8) !important;
+  margin-bottom: 0.1rem !important;
+}
+.student-summary__fact dd {
+  margin: 0 !important;
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+  color: var(--text-strong, #241058) !important;
+}
+
+/* La tarjeta contenedora del resumen, más contenida */
+.student-summary--compact .student-summary__name {
+  font-size: 1.1rem !important;
+}
+
+@media (max-width: 360px) {
+  .student-summary__facts {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* =========================================================
+   MUSICALA · "Tipo de registro" en una sola línea y destacado
+   Es un dato clave: se marca con fondo violeta y va inline
+   (etiqueta + Individual/Grupal en la misma fila).
+   ========================================================= */
+.editor-mode-strip {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0.55rem !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  margin-bottom: 0.75rem !important;
+}
+.editor-mode-strip > legend,
+.editor-mode-strip .field__label {
+  float: none !important;
+  width: auto !important;
+  margin: 0 0.2rem 0 0 !important;
+  padding: 0 !important;
+  font-size: 0.85rem !important;
+  font-weight: 800 !important;
+  color: var(--primary-deep, #7a1fd0) !important;
+}
+/* Individual / Grupal siempre uno al lado del otro (segmentado) */
+.editor-mode-strip,
+.form-grid--modes .field--radio-group {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+}
+.editor-mode-strip .choice-pill,
+.form-grid--modes .field--radio-group .choice-pill {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+/* La etiqueta del grupo no empuja los pills a otra línea */
+.form-grid--modes .field--radio-group > legend,
+.form-grid--modes .field--radio-group > .field__label {
+  flex: 0 0 100% !important;
+  width: 100% !important;
+}
+
+/* =========================================================
+   MUSICALA · Llenar bitácora tipo mockup
+   Cada campo de la bitácora es una tarjeta-sección con ícono en
+   el título y chips de colores por categoría (menta, violeta,
+   ámbar, rosa, azul). Más visual e intuitivo.
+   ========================================================= */
+
+/* Cada campo del formulario = tarjeta suave */
+.bitacora-form .field--multi-value,
+.bitacora-form .field--observaciones {
+  padding: 0.85rem 0.95rem !important;
+  border: 1px solid var(--border-soft, #f0edfa) !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(60, 30, 140, 0.04) !important;
+  margin-bottom: 0.2rem !important;
+}
+
+/* Título de la sección: más notorio, con su ícono */
+.bitacora-form .field--multi-value > .field__label,
+.bitacora-form .field--observaciones > .field__label {
+  font-size: 0.92rem !important;
+  font-weight: 800 !important;
+  color: var(--text-strong, #241058) !important;
+  margin-bottom: 0.4rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.15rem !important;
+}
+.field-ic {
+  font-size: 1em;
+}
+
+/* Chips seleccionados: forma pill amable */
+.multi-value-chip {
+  border-radius: 999px !important;
+  border: 0 !important;
+  font-weight: 700 !important;
+  background: var(--tint-violet, #efeaff) !important;
+  color: var(--primary-deep, #7a1fd0) !important;
+}
+
+/* Color por sección, como el rediseño */
+[data-multi-values="componenteCorporal"] .multi-value-chip {
+  background: var(--tint-mint, #e2f6f1) !important;
+  color: var(--mint-strong, #1f9d88) !important;
+}
+[data-multi-values="componenteTecnico"] .multi-value-chip {
+  background: var(--tint-violet, #efeaff) !important;
+  color: var(--primary-deep, #7a1fd0) !important;
+}
+[data-multi-values="componenteTeorico"] .multi-value-chip {
+  background: var(--tint-amber, #fff2dd) !important;
+  color: #b96b00 !important;
+}
+[data-multi-values="componenteObras"] .multi-value-chip {
+  background: var(--tint-pink, #ffe7f1) !important;
+  color: var(--accent, #e21585) !important;
+}
+[data-multi-values="etiquetas"] .multi-value-chip {
+  background: var(--tint-blue, #e7eefe) !important;
+  color: var(--primary-blue, #2455d6) !important;
+}
+
+/* Botón x del chip integrado al color */
+.multi-value-chip__remove {
+  color: inherit !important;
+  opacity: 0.6;
+}
+.multi-value-chip__remove:hover {
+  opacity: 1;
+}
+
+/* Fuera los textitos de ayuda del formulario (redundantes) */
+.bitacora-form .field__hint,
+.field--multi-value .field__hint,
+.multi-value-list .field__hint {
+  display: none !important;
+}
+
+/* Quitar el resumen final (0/5000 caracteres, etiquetas, archivos, modo) */
+.editor-form__meta {
+  display: none !important;
+}
+
+/* Letra más chica en los chips/listas */
+.multi-value-chip,
+.multi-value-chip__text {
+  font-size: 0.78rem !important;
+}
+
+/* =========================================================
+   MUSICALA · Editor: acciones en fila + historial limpio
+   ========================================================= */
+
+/* Limpiar / Guardar bitácora: en fila, tamaño natural */
+.editor-form__actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.5rem !important;
+  justify-content: flex-end !important;
+}
+.editor-form__actions .btn {
+  width: auto !important;
+  min-height: 42px !important;
+  padding: 0.5rem 1.2rem !important;
+}
+
+/* Cabecera del historial: título + acciones alineados, botones chicos en fila */
+.editor-history__header {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+}
+.editor-history__actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.4rem !important;
+}
+.editor-history__actions .btn {
+  width: auto !important;
+  min-height: 34px !important;
+  padding: 0.3rem 0.75rem !important;
+  font-size: 0.82rem !important;
+}
+#bitacoras-history-title {
+  font-size: 1.05rem !important;
+}
+
+/* La etiqueta "Buscar en bitacoras" sobra: el placeholder ya lo dice */
+.history-search .field__label {
+  display: none !important;
+}
+
+/* =========================================================
+   MUSICALA · Secciones plegables (acordeón) en el perfil
+   Cada tarjeta del dashboard se puede extender/colapsar.
+   ========================================================= */
+.collapsible-card {
+  overflow: hidden;
+}
+.collapsible-card__summary {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: 0.25rem 0 !important;
+}
+/* Ocultar el triángulo nativo y poner nuestro chevron */
+.collapsible-card__summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible-card__summary::after {
+  content: "⌄";
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--primary, #5b30e6);
+  transition: transform var(--transition-fast, 0.18s ease);
+  margin-left: auto;
+}
+.collapsible-card[open] > .collapsible-card__summary::after {
+  transform: rotate(180deg);
+}
+.collapsible-card__summary .panel-header__title {
+  margin: 0 !important;
+  font-size: 1.05rem !important;
+}
+.collapsible-card > *:not(.collapsible-card__summary) {
+  margin-top: 0.6rem;
+  animation: fadeIn 0.2s ease;
+}
+
+/* =========================================================
+   MUSICALA · Ficha rápida del estudiante (modal) más limpia
+   ========================================================= */
+.student-modal__eyebrow {
+  display: none !important;
+}
+.student-modal__title {
+  font-size: 1.3rem !important;
+}
+.student-modal__document {
+  font-size: 0.82rem !important;
+  color: var(--text-soft, #948fa8) !important;
+}
+.student-modal__grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.5rem !important;
+}
+.student-modal__item {
+  padding: 0.5rem 0.65rem !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--border-soft, #f0edfa) !important;
+  background: #ffffff !important;
+}
+.student-modal__label {
+  font-size: 0.6rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  color: var(--text-soft, #948fa8) !important;
+  margin-bottom: 0.1rem !important;
+}
+.student-modal__value {
+  font-size: 0.85rem !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+  color: var(--text-strong, #241058) !important;
+}
+/* Acciones del modal en fila compacta */
+.student-modal__actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.45rem !important;
+  justify-content: flex-start !important;
+}
+.student-modal__actions > *,
+.student-modal__actions .btn {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-height: 38px !important;
+  padding: 0.4rem 0.9rem !important;
+  font-size: 0.85rem !important;
+}
+@media (max-width: 380px) {
+  .student-modal__grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* El proceso activo ya se ve en el selector: quitar el texto repetido */
+.profile-quick-header__process {
+  display: none !important;
+}

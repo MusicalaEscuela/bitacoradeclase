@@ -46,13 +46,14 @@ let currentModalStudentId = null;
 let currentCanUseHub = false;
 let hasRetriedInitialLoad = false;
 let searchInputDebounceTimer = null;
+let pendingSearchInputValue = null;
 let currentIdentityLinkStudentId = null;
 let identityLinkSelection = null;
 let identityLinkCounts = new Map();
 let identityLinkBusy = false;
 let identityTrayOpen = false;
 
-const SEARCH_INPUT_DEBOUNCE_MS = 120;
+const SEARCH_INPUT_DEBOUNCE_MS = 80;
 
 export async function beforeEnter({ payload } = {}) {
   clearAppError();
@@ -289,17 +290,19 @@ function buildSearchViewMarkup(state, config) {
             <button
               type="button"
               id="search-clear-btn"
-              class="btn btn--ghost"
+              class="btn btn--ghost btn--sm"
+              title="Limpiar búsqueda"
             >
-              Limpiar
+              🧹 Limpiar
             </button>
 
             <button
               type="button"
               id="search-refresh-btn"
-              class="btn btn--secondary"
+              class="btn btn--secondary btn--sm"
+              title="Recargar estudiantes"
             >
-              Recargar
+              🔄 Recargar
             </button>
           </div>
         </div>
@@ -309,16 +312,18 @@ function buildSearchViewMarkup(state, config) {
             type="button"
             id="search-clear-selection-btn"
             class="btn btn--ghost btn--sm"
+            title="Limpiar selección grupal"
           >
-            Limpiar selección grupal
+            ✖️ Selección
           </button>
 
           <button
             type="button"
             id="search-open-group-editor-btn"
             class="btn btn--primary btn--sm"
+            title="Crear bitácora grupal"
           >
-            Bitácora grupal
+            📝 Bitácora grupal
           </button>
         </div>
       </section>
@@ -426,6 +431,10 @@ function bindViewEvents() {
 
 function handleSearchInput(event) {
   const query = String(event?.target?.value || "");
+  // El input del navegador ya debe reflejar cada tecla. Mientras se calcula el
+  // filtro, no permitimos que una actualización ajena del estado lo reemplace
+  // por la consulta anterior (causaba la sensación de que la letra llegaba tarde).
+  pendingSearchInputValue = query;
   const state = getState();
   const students = Array.isArray(state?.search?.results)
     ? state.search.results
@@ -437,6 +446,7 @@ function handleSearchInput(event) {
 
   searchInputDebounceTimer = setTimeout(() => {
     applySearchQuery(query, students);
+    pendingSearchInputValue = null;
     searchInputDebounceTimer = null;
   }, SEARCH_INPUT_DEBOUNCE_MS);
 }
@@ -446,6 +456,7 @@ function handleClearSearch() {
     clearTimeout(searchInputDebounceTimer);
     searchInputDebounceTimer = null;
   }
+  pendingSearchInputValue = null;
 
   patchSlice("search", {
     query: "",
@@ -1065,11 +1076,30 @@ function renderEmptyResultsState(state) {
   `;
 }
 
+function getModalFieldIcon(label = "") {
+  const normalized = String(label).toLowerCase();
+  if (normalized.includes("estado")) return "📌";
+  if (normalized.includes("edad")) return "🎂";
+  if (normalized.includes("condici")) return "🩺";
+  if (normalized.includes("proceso")) return "🎨";
+  if (normalized.includes("área") || normalized.includes("area") || normalized.includes("instrumento")) return "🎵";
+  if (normalized.includes("modalidad")) return "🏫";
+  if (normalized.includes("docente")) return "🧑‍🏫";
+  if (normalized.includes("sede")) return "📍";
+  if (normalized.includes("acudiente")) return "👤";
+  if (normalized.includes("direcci")) return "🏠";
+  if (normalized.includes("interes")) return "⭐";
+  return "";
+}
+
 function renderDetailItem(label, value) {
+  const icon = getModalFieldIcon(label);
   return `
     <div class="student-modal__item">
       <dt class="student-modal__label">${escapeHtml(label)}</dt>
-      <dd class="student-modal__value">${escapeHtml(getReadableValue(value))}</dd>
+      <dd class="student-modal__value">${
+        icon ? `<span class="field-ic" aria-hidden="true">${icon}</span> ` : ""
+      }${escapeHtml(getReadableValue(value))}</dd>
     </div>
   `;
 }
@@ -1566,6 +1596,13 @@ function syncInputValue(state) {
   if (!input) return;
 
   const nextValue = String(state?.search?.query || "");
+  if (
+    document.activeElement === input &&
+    pendingSearchInputValue !== null &&
+    input.value === pendingSearchInputValue
+  ) {
+    return;
+  }
   if (input.value !== nextValue) {
     input.value = nextValue;
   }
@@ -1580,6 +1617,7 @@ function cleanupView() {
     clearTimeout(searchInputDebounceTimer);
     searchInputDebounceTimer = null;
   }
+  pendingSearchInputValue = null;
 
   currentModalStudentId = null;
   hasRetriedInitialLoad = false;

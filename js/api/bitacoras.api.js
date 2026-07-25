@@ -18,7 +18,7 @@ import {
   where,
   orderBy,
   limit,
-  updateDoc,
+  runTransaction,
   deleteDoc,
   serverTimestamp,
   normalizeTimestamps,
@@ -670,19 +670,7 @@ export async function createBitacora(bitacoraData, options = {}) {
     updatedAt: serverTimestamp(),
   });
 
-  const created = await getBitacoraById(docRef.id);
-
-  if (!created) {
-    throw createApiError(
-      "La bitácora se creó, pero no se pudo leer después del guardado.",
-      {
-        code: "BITACORA_CREATED_BUT_NOT_READABLE",
-        bitacoraId: docRef.id,
-      }
-    );
-  }
-
-  return created;
+  return { id: docRef.id, ...payload, createdAt: new Date(), updatedAt: new Date() };
 }
 
 /**
@@ -700,45 +688,33 @@ export async function updateBitacora(bitacoraId, updates = {}, options = {}) {
     });
   }
 
-  const current = await getBitacoraById(safeBitacoraId);
-
-  if (!current) {
-    throw createApiError("No existe la bitácora que se intenta actualizar.", {
-      code: "BITACORA_NOT_FOUND",
-      bitacoraId: safeBitacoraId,
-    });
-  }
-
-  const merged = {
-    ...current,
-    ...(isPlainObject(updates) ? updates : {}),
-    id: current.id,
-    createdAt: current.createdAt,
-  };
-
-  const normalized = normalizeBitacoraPayload(merged, options);
-
   const ref = doc(db, BITACORAS_COLLECTION, safeBitacoraId);
+  const expectedUpdatedAt = Number(options.expectedUpdatedAt) || 0;
+  let current = null;
+  let normalized = null;
 
-  await updateDoc(ref, {
-    ...normalized,
-    author: currentUser,
-    updatedAt: serverTimestamp(),
-  });
-
-  const updated = await getBitacoraById(safeBitacoraId);
-
-  if (!updated) {
-    throw createApiError(
-      "La bitácora se actualizó, pero no se pudo leer después del cambio.",
-      {
-        code: "BITACORA_UPDATED_BUT_NOT_READABLE",
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) {
+      throw createApiError("No existe la bitácora que se intenta actualizar.", {
+        code: "BITACORA_NOT_FOUND",
         bitacoraId: safeBitacoraId,
-      }
-    );
-  }
-
-  return updated;
+      });
+    }
+    current = normalizeBitacoraRecord(snapshot);
+    if (expectedUpdatedAt && getTimestamp(current.updatedAt) !== expectedUpdatedAt) {
+      throw createApiError(
+        "Otra persona guardó cambios en esta bitácora. Tu borrador se conserva; recarga el historial antes de volver a guardar.",
+        { code: "BITACORA_CONFLICT", bitacoraId: safeBitacoraId }
+      );
+    }
+    const merged = options.fullPayload
+      ? { ...(isPlainObject(updates) ? updates : {}), author: currentUser, id: current.id, createdAt: current.createdAt }
+      : { ...current, ...(isPlainObject(updates) ? updates : {}), author: currentUser, id: current.id, createdAt: current.createdAt };
+    normalized = normalizeBitacoraPayload(merged, options);
+    transaction.update(ref, { ...normalized, author: currentUser, updatedAt: serverTimestamp() });
+  });
+  return { id: safeBitacoraId, ...normalized, createdAt: current?.createdAt || null, updatedAt: new Date() };
 }
 
 /**
