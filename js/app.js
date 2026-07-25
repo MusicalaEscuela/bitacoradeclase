@@ -33,7 +33,7 @@ import { getUserAccessProfile } from "./api/users.api.js";
 // todos los usuarios carguen la última versión sin limpiar la caché.
 // Debe coincidir con el ?v= de las hojas de estilo y del script en index.html.
 // ============================================================
-export const APP_VERSION = "20260725.2";
+export const APP_VERSION = "20260725.3";
 
 const appModules = {
   views: new Map(),

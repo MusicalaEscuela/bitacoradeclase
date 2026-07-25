@@ -93,7 +93,7 @@ let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let currentProfileHistorySearchQuery = "";
-let currentProfileHistoryVisibleCount = 50;
+let currentProfileHistoryVisibleCount = 10;
 let profileHistorySearchTimer = null;
 let historyExpansionState = new Map();
 // Cada bitácora conserva el texto normalizado para búsqueda mientras su objeto
@@ -113,7 +113,9 @@ const ROUTE_COMPONENTS = Object.freeze([
 ]);
 
 const ROUTE_EXPERIENCES = Object.freeze([1, 2, 3]);
-const PROFILE_HISTORY_RENDER_LIMIT = 50;
+// Las tarjetas de historial son visualmente densas. Limitar el lote inicial
+// mantiene el panel y su buscador ágiles, incluso con años de registros.
+const PROFILE_HISTORY_RENDER_LIMIT = 10;
 const PROFILE_HISTORY_SEARCH_DEBOUNCE_MS = 140;
 
 const GUITAR_ROUTE_PRESET = Object.freeze([

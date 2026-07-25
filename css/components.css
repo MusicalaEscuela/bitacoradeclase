@@ -4178,6 +4178,9 @@
 
 .teaching-history-card {
   display: grid;
+  /* Evita calcular y pintar el contenido pesado de tarjetas fuera de vista. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 520px;
   gap: 0.78rem;
   padding: 1rem;
   border: 1px solid rgba(95, 82, 177, 0.16);
