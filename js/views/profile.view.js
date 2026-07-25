@@ -94,6 +94,7 @@ let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let currentProfileHistorySearchQuery = "";
 let currentProfileHistoryVisibleCount = 50;
+let profileHistorySearchTimer = null;
 let historyExpansionState = new Map();
 // Cada bitácora conserva el texto normalizado para búsqueda mientras su objeto
 // exista en el estado. Así no reanalizamos contenido estructurado por letra.
@@ -113,6 +114,7 @@ const ROUTE_COMPONENTS = Object.freeze([
 
 const ROUTE_EXPERIENCES = Object.freeze([1, 2, 3]);
 const PROFILE_HISTORY_RENDER_LIMIT = 50;
+const PROFILE_HISTORY_SEARCH_DEBOUNCE_MS = 140;
 
 const GUITAR_ROUTE_PRESET = Object.freeze([
   {
@@ -1144,12 +1146,20 @@ function bindProfileEvents(student) {
 
   if (historySearchInput) {
     historySearchInput.addEventListener("input", () => {
-      currentProfileHistorySearchQuery = toStringSafe(historySearchInput.value);
-      currentProfileHistoryVisibleCount = PROFILE_HISTORY_RENDER_LIMIT;
-      // El campo de búsqueda no necesita repintar todo el perfil (ruta,
-      // repertorio, resumen, etc.). Mantener el input intacto hace que la
-      // escritura siga respondiendo aun con historiales grandes.
-      renderAllBitacorasOnly(student);
+      const nextQuery = toStringSafe(historySearchInput.value);
+      if (profileHistorySearchTimer) {
+        clearTimeout(profileHistorySearchTimer);
+      }
+
+      // No filtramos dentro del evento input: el navegador puede pintar la
+      // letra inmediatamente y luego procesar el historial cuando el usuario
+      // hace una pausa corta al escribir.
+      profileHistorySearchTimer = setTimeout(() => {
+        currentProfileHistorySearchQuery = nextQuery;
+        currentProfileHistoryVisibleCount = PROFILE_HISTORY_RENDER_LIMIT;
+        renderAllBitacorasOnly(student);
+        profileHistorySearchTimer = null;
+      }, PROFILE_HISTORY_SEARCH_DEBOUNCE_MS);
     });
   }
 
