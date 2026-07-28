@@ -33,6 +33,7 @@ import {
   uniqueStrings,
   getTimestamp,
 } from "../utils/shared.js";
+import { getBitacoraParticipantIds } from "../utils/bitacora-coverage.js?v=20260727.1";
 
 const BITACORAS_COLLECTION = getBitacorasCollectionName();
 const DEFAULT_LIMIT = 50;
@@ -247,26 +248,19 @@ function normalizeStudentOverridesFromPayload(payload = {}, studentIds = []) {
 }
 
 function normalizeStudentIdsFromPayload(payload = {}) {
-  const fromArray = uniqueStrings(payload.studentIds);
-  const fromSingle = uniqueStrings([
-    payload.studentId,
-    payload.primaryStudentId,
-  ]);
-
-  return uniqueStrings([...fromArray, ...fromSingle]);
+  return uniqueStrings(getBitacoraParticipantIds(payload));
 }
 
 function normalizeStudentRefsFromPayload(payload = {}, studentIds = []) {
   const refs = uniqueStudentRefs(payload.studentRefs);
+  const refsById = new Map(refs.map((ref) => [ref.id, ref]));
 
-  if (refs.length) {
-    return refs;
-  }
-
-  return studentIds.map((id) => ({
-    id,
-    name: "",
-  }));
+  return studentIds.map((id) => (
+    refsById.get(id) || {
+      id,
+      name: "",
+    }
+  ));
 }
 
 function normalizeBitacoraPayload(input = {}, options = {}) {

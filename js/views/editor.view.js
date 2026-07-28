@@ -29,7 +29,7 @@ import {
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20260713.2";
+} from "../api/bitacoras.api.js?v=20260727.1";
 
 import {
   getCatalogs,
@@ -76,6 +76,11 @@ import {
   toStringSafe,
 } from "../utils/shared.js";
 import { applyAutomaticCategoriesFromWorks } from "../utils/bitacoras.js";
+import {
+  bitacoraMatchesStudentProcess,
+  getBitacoraParticipantIds,
+  isGroupBitacora,
+} from "../utils/bitacora-coverage.js?v=20260727.1";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -2075,9 +2080,13 @@ async function handleSubmit(student) {
     });
 
     refillFormFromDraft(student);
-    lastSaveNotice = editingBitacoraId
-      ? "Bitácora actualizada y subida a Firebase."
-      : "Bitácora guardada y subida a Firebase.";
+    const participantCount = getBitacoraParticipantIds(normalized).length;
+    const isGroupSave = isGroupBitacora(normalized) && participantCount > 1;
+    lastSaveNotice = isGroupSave
+      ? `Bitácora grupal ${editingBitacoraId ? "actualizada" : "guardada"} para ${participantCount} estudiantes y subida a Firebase.`
+      : editingBitacoraId
+        ? "Bitácora actualizada y subida a Firebase."
+        : "Bitácora guardada y subida a Firebase.";
     renderGroupSelectionBlocks(student);
     renderFilesPreviewBlock(student);
     renderDraftMetaBlock(student);
@@ -2088,9 +2097,15 @@ async function handleSubmit(student) {
       resolveLoadingToast(loadingToastId, {
         type: "success",
         title: "Listo",
-        message: editingBitacoraId
-          ? "La bitácora se actualizó correctamente."
-          : "La bitácora se guardó correctamente.",
+        message: `${
+          editingBitacoraId
+            ? "La bitácora se actualizó correctamente."
+            : "La bitácora se guardó correctamente."
+        }${
+          isGroupSave
+            ? ` Quedó asociada a ${participantCount} estudiantes.`
+            : ""
+        }`,
       });
       loadingToastId = null;
     }
@@ -2170,15 +2185,13 @@ async function uploadDraftFilesToStorage(student, draft = {}) {
   setUploading(true);
 
   try {
-    const uploaded = [];
+    const uploaded = await Promise.all(
+      pending.map(async (item, index) => {
+        const file = item.sourceFile;
+        const path = buildStorageUploadPath(student, file, item.kind, index);
+        const result = await uploadFileResumable(path, file);
 
-    for (let index = 0; index < pending.length; index += 1) {
-      const item = pending[index];
-      const file = item.sourceFile;
-      const path = buildStorageUploadPath(student, file, item.kind, index);
-      const result = await uploadFileResumable(path, file);
-
-      uploaded.push({
+        return {
         name: result?.name || item?.name || `Archivo ${index + 1}`,
         type: result?.type || item?.type || "",
         size: Number(result?.size || item?.size || 0),
@@ -2186,8 +2199,9 @@ async function uploadDraftFilesToStorage(student, draft = {}) {
         path: result?.path || path,
         kind: item?.kind || "support",
         uploadedAt: new Date().toISOString(),
-      });
-    }
+        };
+      })
+    );
 
     const existing = files
       .filter((item) => item?.url || item?.path)
@@ -2264,14 +2278,10 @@ async function findPotentialDuplicateBitacora(student, payload = {}) {
     ...[...relatedIds].flatMap((studentId) => getBitacorasFromState(studentId)),
   ];
   items = dedupeBitacorasById(items);
-  if (!items.length) {
-    try {
-      items = await safeLoadBitacoras(student);
-    } catch (error) {
-      console.warn("No se pudo consultar historial para validar duplicados:", error);
-      return null;
-    }
-  }
+  // Guardar no debe esperar una consulta de historial completa. Si el
+  // historial aún no llegó a esta pantalla, se conserva el registro nuevo;
+  // las duplicaciones conocidas se siguen detectando con el estado cargado.
+  if (!items.length) return null;
 
   const targetDate = normalizeClassDate(payload.fechaClase);
   const targetTeacher = normalizeDuplicateToken(payload.process?.docente);
@@ -4072,6 +4082,11 @@ function renderSelectedStudentsChips(
             })
         )
         .join("")}
+      ${
+        selectedStudents.length > 1
+          ? `<p class="field__hint">Al guardar, esta clase quedará en el historial y contará para los ${selectedStudents.length} estudiantes seleccionados.</p>`
+          : ""
+      }
     </div>
   `;
 }
@@ -4435,47 +4450,27 @@ function mapSelectionFromRef(ref) {
 }
 
 /**
- * Decide si una bitacora corresponde al proceso activo seleccionado.
- * A diferencia de la version anterior, las bitacoras grupales NO se saltan
- * el filtro: tambien deben coincidir con el proceso activo (por processKey o,
- * en bitacoras antiguas sin processKey, por datos del proceso normalizados).
+ * Decide si una bitácora corresponde al proceso activo DEL estudiante abierto.
+ * En una grupal, el proceso superior es solo el del principal; los demás se
+ * resuelven desde studentOverrides para que su misma clase no desaparezca.
  */
-function bitacoraMatchesActiveProcess(item, selectedProcess) {
+function bitacoraMatchesActiveProcess(item, selectedProcess, studentOrRef) {
   const safeProcessKey = toStringSafe(currentEditorProcessKey);
-  const selectedDetail = normalizeText(
-    selectedProcess?.detalle || selectedProcess?.label || ""
-  );
+  const studentIds =
+    studentOrRef && typeof studentOrRef === "object"
+      ? getStudentLinkedIds(studentOrRef)
+      : [toStringSafe(studentOrRef)];
 
-  // Sin proceso activo claro: no se filtra (se muestra todo el historial).
-  if (!safeProcessKey && !selectedDetail) return true;
-
-  const itemProcessKey = toStringSafe(
-    item?.process?.processKey || item?.processKey
-  );
-
-  // Si hay processKey en ambos lados, la comparacion es estricta.
-  if (safeProcessKey && itemProcessKey) {
-    return itemProcessKey === safeProcessKey;
-  }
-
-  // Bitacora antigua sin processKey: comparar por datos del proceso.
-  if (!selectedDetail) {
-    // Hay proceso activo con key, pero el item no tiene key ni con que comparar.
-    return false;
-  }
-
-  const itemDetails = [
-    item?.process?.processLabel,
-    item?.process?.label,
-    item?.process?.programa,
-    item?.process?.detalle,
-    item?.process?.area,
-  ]
-    .flatMap((value) => String(value || "").split(/,|;|\n/g))
-    .map((value) => normalizeText(value))
-    .filter(Boolean);
-
-  return itemDetails.includes(selectedDetail);
+  return bitacoraMatchesStudentProcess(item, {
+    studentIds,
+    processKey: safeProcessKey,
+    processDetails: [
+      selectedProcess?.detalle,
+      selectedProcess?.label,
+      selectedProcess?.arte,
+    ],
+    normalize: normalizeText,
+  });
 }
 
 /**
@@ -4523,24 +4518,16 @@ function getBitacorasFromState(studentOrRef) {
 
   const rawItems = getRawBitacorasFromState(studentOrRef);
   return rawItems.filter((item) =>
-    bitacoraMatchesActiveProcess(item, selectedProcess)
+    bitacoraMatchesActiveProcess(item, selectedProcess, studentOrRef)
   );
 }
 
 function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") {
-  const studentIds = normalizeStudentIds(item.studentIds || [item.studentId]);
-  const studentRefs = normalizeStudentRefs(item.studentRefs || []);
-  const safeStudentRef = toStringSafe(studentRef);
-  const safeFallbackId = toStringSafe(fallbackId);
-  const belongsToStudent =
-    (safeStudentRef && studentIds.includes(safeStudentRef)) ||
-    (safeFallbackId && studentIds.includes(safeFallbackId));
-  const isGroup =
-    item.mode === CONFIG.modes.group ||
-    studentIds.length > 1 ||
-    studentRefs.length > 1;
-
-  return Boolean(isGroup && belongsToStudent);
+  const aliases = [studentRef, fallbackId].map(toStringSafe).filter(Boolean);
+  return (
+    isGroupBitacora(item) &&
+    getBitacoraParticipantIds(item).some((id) => aliases.includes(id))
+  );
 }
 
 function getStudentFromState(state, preferredStudentRef = null) {

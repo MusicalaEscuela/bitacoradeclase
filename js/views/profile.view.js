@@ -28,7 +28,7 @@ import {
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20260713.2";
+} from "../api/bitacoras.api.js?v=20260727.1";
 import {
   getStudentProfile,
   updateStudentTeacher,
@@ -80,6 +80,10 @@ import {
   toStringSafe,
 } from "../utils/shared.js";
 import { applyAutomaticCategoriesFromWorks } from "../utils/bitacoras.js";
+import {
+  getBitacoraParticipantIds,
+  isGroupBitacora,
+} from "../utils/bitacora-coverage.js?v=20260727.1";
 import {
   normalizeLinkList,
   parseBitacoraSheetText,
@@ -6507,19 +6511,11 @@ function getBitacorasFromState(studentOrRef) {
 }
 
 function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") {
-  const studentIds = normalizeStudentIds(item.studentIds || [item.studentId]);
-  const studentRefs = normalizeStudentRefs(item.studentRefs || []);
-  const safeStudentRef = toStringSafe(studentRef);
-  const safeFallbackId = toStringSafe(fallbackId);
-  const belongsToStudent =
-    (safeStudentRef && studentIds.includes(safeStudentRef)) ||
-    (safeFallbackId && studentIds.includes(safeFallbackId));
-  const isGroup =
-    item.mode === CONFIG.modes.group ||
-    studentIds.length > 1 ||
-    studentRefs.length > 1;
-
-  return Boolean(isGroup && belongsToStudent);
+  const aliases = [studentRef, fallbackId].map(toStringSafe).filter(Boolean);
+  return (
+    isGroupBitacora(item) &&
+    getBitacoraParticipantIds(item).some((id) => aliases.includes(id))
+  );
 }
 
 function normalizeBitacorasResponse(response) {
