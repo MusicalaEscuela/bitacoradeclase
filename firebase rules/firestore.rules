@@ -477,7 +477,7 @@ service cloud.firestore {
               request.resource.data.processes[0].label
           )
         ) &&
-        validActorPedagogicalAudit();
+        validFixedPedagogicalAudit('profile_processes');
     }
 
     function validProfileFieldsUpdate() {

@@ -39,7 +39,7 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20260724.3";
+} from "../api/students.api.js?v=20260729.1";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -1710,8 +1710,7 @@ async function persistStudentProcesses(student, nextProcesses, successMessage) {
 
   try {
     clearAppError();
-    const updatedBy = toStringSafe(getState()?.auth?.user?.email) || "profile_processes";
-    const updated = await updateStudentProcesses(studentId, nextProcesses, { updatedBy });
+    const updated = await updateStudentProcesses(studentId, nextProcesses);
     const refreshedProfile = await getStudentProfile(
       getStudentIdentity(student),
       { refresh: true }
