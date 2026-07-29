@@ -39,7 +39,7 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20260729.1";
+} from "../api/students.api.js?v=20260729.2";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -1716,8 +1716,8 @@ async function persistStudentProcesses(student, nextProcesses, successMessage) {
       { refresh: true }
     ).catch(() => null);
     const nextStudent = mergePedagogicalUpdate(student, {
-      ...updated,
       ...(refreshedProfile || {}),
+      ...updated,
     });
     updateStudentProfile(nextStudent);
     setSelectedStudent(nextStudent);

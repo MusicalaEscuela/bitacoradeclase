@@ -598,7 +598,13 @@ service cloud.firestore {
               : changedStudentFieldsInclude([
                     'processes', 'area', 'instrumento', 'programa'
                   ])
-                ? validProcessesUpdate()
+                // Los expedientes históricos pueden tener estructuras de
+                // proceso previas al esquema actual. El administrador puede
+                // normalizarlas, pero solo dentro de esta lista pedagógica.
+                ? changedStudentFieldsAreOnly([
+                    'processes', 'area', 'instrumento', 'programa',
+                    'updatedAt', 'updatedBy'
+                  ]) && validFixedPedagogicalAudit('profile_processes')
                 : validProfileFieldsUpdate()
         );
     }
