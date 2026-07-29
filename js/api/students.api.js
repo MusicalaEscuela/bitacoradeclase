@@ -367,7 +367,9 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     instrumento: normalizeScalar(firstProcess?.detalle),
     programa: normalizeScalar(firstProcess?.label),
     updatedAt: serverTimestamp(),
-    updatedBy: normalizeScalar(options.updatedBy) || "profile_processes",
+    // El marcador fijo permite que la regla autorice esta mutación pedagógica
+    // sin depender de que el estado visual conserve el correo de la sesión.
+    updatedBy: "profile_processes",
   };
 
   await updateDoc(ref, payload);
