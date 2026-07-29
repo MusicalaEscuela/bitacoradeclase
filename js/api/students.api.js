@@ -712,15 +712,50 @@ function normalizeStudentRecord(student = {}) {
 
   if (!rawStudentKey) return null;
 
-  const email = normalizeScalar(
+  /*
+    Algunos sincronizadores heredados llegaron a crear documentos cuyo único
+    dato real es un ID técnico (por ejemplo, el nombre usado como ID). No son
+    expedientes y mostrarlos como "Sin nombre" duplica al estudiante válido.
+    Se descartan únicamente si tampoco tienen una identidad visible ni datos
+    académicos; los registros históricos con información siguen intactos.
+  */
+  const rawName = normalizeScalar(
+    normalized.nombre || normalized.name || normalized.estudiante
+  );
+  const rawEmail = normalizeScalar(
     normalized.email ||
       normalized.correo ||
       normalized.correoElectronico ||
       normalized.mail
-  ).toLowerCase();
+  );
+  const rawDocument = normalizeScalar(
+    normalized.documento ||
+      normalized.numeroDocumento ||
+      normalized.identificacion ||
+      normalized.cc
+  );
+  const rawProcesses = Array.isArray(normalized.processes)
+    ? normalized.processes.filter(Boolean)
+    : [];
+  const hasAcademicDetails = [
+    normalized.area,
+    normalized.programa,
+    normalized.instrumento,
+    normalized.modalidad,
+    normalized.docente,
+    normalized.teacher,
+    normalized.acudiente,
+    normalized.responsable,
+  ].some((value) => Boolean(normalizeScalar(value)));
 
-  const processes = Array.isArray(normalized.processes)
-    ? normalized.processes
+  if (!rawName && !rawEmail && !rawDocument && !rawProcesses.length && !hasAcademicDetails) {
+    return null;
+  }
+
+  const email = rawEmail.toLowerCase();
+
+  const processes = rawProcesses.length
+    ? rawProcesses
         .flatMap((process, index) =>
           expandProcessRecords(process, rawStudentKey, index)
         )
