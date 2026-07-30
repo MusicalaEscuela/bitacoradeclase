@@ -23,7 +23,7 @@ import {
   serverTimestamp,
   normalizeTimestamps,
   getCurrentUser,
-} from "../firebase.client.js";
+} from "../firebase.client.js?v=20260730.5";
 
 import {
   isPlainObject,
