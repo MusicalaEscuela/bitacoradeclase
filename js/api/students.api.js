@@ -351,9 +351,25 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     .map((process, index) => normalizeProcessForWrite(process, index))
     .filter(Boolean);
 
-  const ref = doc(db, STUDENTS_COLLECTION, safeStudentId);
-  const snapshot = await getDoc(ref);
-  if (!snapshot.exists()) {
+  // Un estudiante puede conservar documentos historicos vinculados (por ejemplo,
+  // uno importado desde Sheets y otro creado desde el perfil). Los procesos son
+  // un dato pedagogico compartido: se guardan en todos los ids vinculados para
+  // que el perfil no muestre una version antigua despues de recargar.
+  const linkedStudentIds = Array.from(
+    new Set(
+      [safeStudentId, ...(Array.isArray(options.linkedStudentIds) ? options.linkedStudentIds : [])]
+        .map((id) => normalizeStudentIdentifier(id))
+        .filter(Boolean)
+    )
+  );
+  const records = await Promise.all(
+    linkedStudentIds.map(async (id) => {
+      const ref = doc(db, STUDENTS_COLLECTION, id);
+      return { id, ref, snapshot: await getDoc(ref) };
+    })
+  );
+  const primaryRecord = records.find((record) => record.id === safeStudentId);
+  if (!primaryRecord?.snapshot.exists()) {
     throw createApiError("No se encontro el estudiante en Firebase para actualizar areas.", {
       code: "STUDENT_NOT_FOUND",
       studentId: safeStudentId,
@@ -372,7 +388,14 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     updatedBy: "profile_processes",
   };
 
-  await updateDoc(ref, payload);
+  const existingRecords = records.filter((record) => record.snapshot.exists());
+  if (existingRecords.length === 1) {
+    await updateDoc(existingRecords[0].ref, payload);
+  } else {
+    const batch = writeBatch(db);
+    existingRecords.forEach((record) => batch.update(record.ref, payload));
+    await batch.commit();
+  }
 
   return {
     id: safeStudentId,
@@ -382,6 +405,7 @@ export async function updateStudentProcesses(studentId, processes = [], options 
     area: payload.area,
     instrumento: payload.instrumento,
     programa: payload.programa,
+    linkedStudentIds: existingRecords.map((record) => record.id),
   };
 }
 

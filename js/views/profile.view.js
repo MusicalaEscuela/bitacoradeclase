@@ -39,7 +39,7 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20260730.4";
+} from "../api/students.api.js?v=20260730.6";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -1701,7 +1701,7 @@ function mergePedagogicalUpdate(student, updated = {}) {
 }
 
 async function persistStudentProcesses(student, nextProcesses, successMessage) {
-  const studentId = getStudentAcademicRecordId(student);
+  const studentId = getStudentIdentity(student) || getStudentAcademicRecordId(student);
   const message = viewRoot?.querySelector("[data-process-message]");
   if (!studentId) {
     setAppError("No hay estudiante seleccionado.");
@@ -1710,7 +1710,9 @@ async function persistStudentProcesses(student, nextProcesses, successMessage) {
 
   try {
     clearAppError();
-    const updated = await updateStudentProcesses(studentId, nextProcesses);
+    const updated = await updateStudentProcesses(studentId, nextProcesses, {
+      linkedStudentIds: getStudentLinkedIds(student),
+    });
     const refreshedProfile = await getStudentProfile(
       getStudentIdentity(student),
       { refresh: true }
