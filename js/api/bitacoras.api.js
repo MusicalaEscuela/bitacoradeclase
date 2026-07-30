@@ -277,6 +277,9 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
   const title = safeString(input.title || input.titulo);
   const content = safeString(input.content || input.contenido);
   const fechaClase = normalizeLocalDateInput(input.fechaClase || input.fecha || "");
+  const horaClase = normalizeClassTime(
+    input.horaClase || input.hora || input.classTime || input.time || input.sessionTime
+  );
   const tags = normalizeTags(input.tags || input.etiquetas);
   const docentes = normalizeTeachers(input.docentes, input.docente || input.process?.docente);
   const attachments = normalizeAttachments(
@@ -358,6 +361,10 @@ function normalizeBitacoraPayload(input = {}, options = {}) {
     content,
     fechaClase,
     date: fechaClase,
+    // Contrato de conciliación: hora local de la clase en formato HH:mm.
+    // Si un registro histórico no tiene hora, se conserva vacío; nunca se inventa.
+    horaClase,
+    hora: horaClase,
     studentIds,
     studentRefs,
     studentOverrides,
@@ -398,6 +405,9 @@ function normalizeBitacoraRecord(docSnap) {
     title: safeString(normalized.title || normalized.titulo),
     content: safeString(normalized.content || normalized.contenido),
     fechaClase: safeString(normalized.fechaClase || normalized.fecha),
+    horaClase: normalizeClassTime(
+      normalized.horaClase || normalized.hora || normalized.classTime || normalized.time || normalized.sessionTime
+    ),
     studentIds: uniqueStrings(normalized.studentIds),
     studentRefs: uniqueStudentRefs(normalized.studentRefs),
     studentOverrides: normalizeStudentOverridesFromPayload(
@@ -569,6 +579,17 @@ export async function getBitacorasByStudent(studentId, options = {}) {
     ...options,
     limit: options.limit || 0,
   });
+}
+
+function normalizeClassTime(value) {
+  const match = safeString(value).match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return "";
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 /**

@@ -213,6 +213,7 @@ function normalizeBitacoraItem(item = {}) {
       ? [...item.attachments]
       : [],
     fechaClase: normalizeLocalDateInput(item.fechaClase || item.fecha || item.classDate),
+    horaClase: normalizeClassTime(item.horaClase || item.hora || item.classTime || item.time || item.sessionTime),
     studentId: studentId || null,
     studentIds,
     studentRefs: normalizeStudentRefs(item.studentRefs),
@@ -223,6 +224,17 @@ function normalizeBitacoraItem(item = {}) {
     createdAt: item.createdAt || item.created_at || item.fechaRegistro || null,
     updatedAt: item.updatedAt || item.updated_at || null,
   };
+}
+
+function normalizeClassTime(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return "";
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 function sortBitacoras(items = []) {

@@ -261,6 +261,7 @@ export function getDefaultEditorState() {
     content: "",
     tags: [],
     fechaClase: "",
+    horaClase: "",
   };
 }
 

@@ -26,10 +26,11 @@ import {
 
 import {
   getBitacorasByStudentIds,
+  getBitacoraById,
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20260727.1";
+} from "../api/bitacoras.api.js?v=20260728.3";
 
 import {
   getCatalogs,
@@ -632,6 +633,8 @@ function bindEditorEvents(student) {
   const form = viewRoot.querySelector("#bitacora-form");
   const processSelect = viewRoot.querySelector("#bitacora-process-select");
   const fechaInput = viewRoot.querySelector("#bitacora-fecha");
+  const horaInput = viewRoot.querySelector("#bitacora-hora");
+  const saveTimeBtn = viewRoot.querySelector("#bitacora-save-time-btn");
   const tituloInput = viewRoot.querySelector("#bitacora-titulo");
   const etiquetasInput = viewRoot.querySelector("#bitacora-etiquetas");
   const tareasInput = viewRoot.querySelector("#bitacora-tareas");
@@ -659,6 +662,7 @@ function bindEditorEvents(student) {
 
   [
     fechaInput,
+    horaInput,
     tituloInput,
     tareasInput,
     contenidoInput,
@@ -667,6 +671,12 @@ function bindEditorEvents(student) {
     input.addEventListener("input", () => scheduleDraftInput(student));
     input.addEventListener("change", () => handleDraftInput(student));
   });
+
+  if (saveTimeBtn) {
+    saveTimeBtn.addEventListener("click", async () => {
+      await handleSaveClassTime(student);
+    });
+  }
 
   modeInputs.forEach((input) => {
     input.addEventListener("change", () => {
@@ -1311,6 +1321,8 @@ function handleFilesChange(event, student, kind = "support") {
     ? currentDraft.archivos.filter((file) => (file.kind || "support") !== kind)
     : [];
 
+  // Abrir una bitácora no debe repintar todo el historial antes de mostrar el
+  // formulario. Este flujo ya actualiza solamente los bloques necesarios.
   updateDraft({
     ...currentDraft,
     studentId: studentRef,
@@ -1482,6 +1494,7 @@ function refillFormIfNeeded(student) {
   const structured = getStructuredDraftFields(draft, student);
 
   syncInputValue("#bitacora-fecha", normalizeLocalDateInput(draft.fechaClase) || getTodayDate());
+  syncInputValue("#bitacora-hora", normalizeClassTime(draft.horaClase));
   syncInputValue("#bitacora-titulo", draft.titulo || buildAutoTitle(student, draft.fechaClase, draft));
   syncTextareaValue("#bitacora-tareas", structured.tareas || "");
   syncTextareaValue("#bitacora-contenido", draft.contenido || "");
@@ -1875,6 +1888,7 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
         ? normalizeStudentRefs(normalized.studentRefs)
         : [{ id: studentRef, name: getStudentName(student) }],
     fechaClase: normalizeLocalDateInput(normalized.fechaClase) || getTodayDate(),
+    horaClase: normalizeClassTime(normalized.horaClase || normalized.hora || normalized.classTime || normalized.time || normalized.sessionTime),
     titulo: normalized.titulo || buildAutoTitle(student, normalized.fechaClase, normalized),
     docentes: normalizeListValues(normalized.docentes || normalized.docente),
     docente: firstNonEmpty(normalized.docente, ...(normalized.docentes || [])),
@@ -1887,7 +1901,7 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
     ),
     processKey: normalized.processKey || normalized.process?.processKey || "",
     editingBitacoraId: safeBitacoraId,
-  });
+  }, { notify: false });
 
   currentEditorMode = nextMode;
   currentEditorProcessKey = normalized.processKey || normalized.process?.processKey || "";
@@ -2058,7 +2072,16 @@ async function handleSubmit(student) {
           expectedUpdatedAt: editingExpectedUpdatedAt,
         })
       : await createBitacora(payload);
-    const normalized = normalizeCreatedBitacora(saved, payload);
+    // La hora es la llave de conciliación. Tras guardar, se lee el documento
+    // real para no mostrar un éxito si el navegador conservó un módulo viejo
+    // o Firebase no devolvió el valor escrito.
+    const persisted = payload.horaClase
+      ? await getBitacoraById(editingBitacoraId || saved.id)
+      : null;
+    if (payload.horaClase && normalizeClassTime(persisted?.horaClase) !== payload.horaClase) {
+      throw new Error("Firebase no confirmó la hora de la clase. La bitácora no se marcará como actualizada hasta que la hora quede guardada.");
+    }
+    const normalized = normalizeCreatedBitacora(persisted || saved, payload);
 
     const relatedStudentIds = Array.isArray(normalized.studentIds)
       ? normalized.studentIds
@@ -2135,6 +2158,74 @@ async function handleSubmit(student) {
     }
     setAppSaving(false);
     updateSaveButtonState(false);
+  }
+}
+
+// La hora se usa para conciliar y suele corregirse en registros ya guardados.
+// Este camino evita que la docente tenga que recorrer el formulario completo y
+// confirma la lectura real de Firebase antes de anunciar que quedó lista.
+async function handleSaveClassTime(student) {
+  clearAppError();
+  if (getState()?.app?.saving) return;
+
+  const draft = updateDraftFromForm(student);
+  const bitacoraId = toStringSafe(draft.editingBitacoraId || currentEditingBitacoraId);
+  const horaClase = normalizeClassTime(draft.horaClase);
+  if (!bitacoraId) {
+    setAppError("Abre una bitácora existente con Editar antes de guardar solo la hora.");
+    return;
+  }
+  if (!horaClase) {
+    setAppError("Elige una hora válida antes de guardarla.");
+    return;
+  }
+
+  setAppSaving(true);
+  const button = viewRoot?.querySelector("#bitacora-save-time-btn");
+  if (button) button.disabled = true;
+  const toastId = showLoadingToast("Guardando y verificando la hora en Firebase.", {
+    title: "Hora de clase",
+  });
+
+  try {
+    const payload = buildBitacoraPayload(student, draft);
+    await updateBitacora(bitacoraId, payload, {
+      fullPayload: true,
+      expectedUpdatedAt: currentEditingUpdatedAt,
+    });
+    const persisted = await getBitacoraById(bitacoraId);
+    const persistedHora = normalizeClassTime(persisted?.horaClase || persisted?.hora);
+    if (persistedHora !== horaClase) {
+      throw new Error("Firebase no devolvió la misma hora. No se confirmó el cambio.");
+    }
+
+    const normalized = normalizeCreatedBitacora(persisted, payload);
+    (normalized.studentIds || [getStudentIdentity(student)]).forEach((id) => {
+      if (id) addBitacoraForStudent(id, normalized);
+    });
+    currentEditingUpdatedAt = getTimestamp(persisted.updatedAt);
+    updateDraft({ ...getCurrentDraft(), horaClase: persistedHora }, { notify: false });
+    syncInputValue("#bitacora-hora", persistedHora);
+    renderHistoryBlock(student);
+    resolveLoadingToast(toastId, {
+      type: "success",
+      title: "Hora guardada",
+      message: `Firebase confirmó ${persistedHora}. Ya puede usarse en Conciliación.`,
+    });
+  } catch (error) {
+    console.error("Error guardando hora de clase:", error);
+    const message = error?.message || "No se pudo confirmar la hora en Firebase.";
+    setAppError(message);
+    if (toastId) {
+      resolveLoadingToast(toastId, {
+        type: "error",
+        title: "La hora no se guardó",
+        message,
+      });
+    }
+  } finally {
+    setAppSaving(false);
+    if (button) button.disabled = false;
   }
 }
 
@@ -2284,6 +2375,7 @@ async function findPotentialDuplicateBitacora(student, payload = {}) {
   if (!items.length) return null;
 
   const targetDate = normalizeClassDate(payload.fechaClase);
+  const targetTime = normalizeClassTime(payload.horaClase || payload.hora);
   const targetTeacher = normalizeDuplicateToken(payload.process?.docente);
   const targetProcess = normalizeDuplicateProcess(payload);
 
@@ -2295,6 +2387,13 @@ async function findPotentialDuplicateBitacora(student, payload = {}) {
     if (!hasSameStudent) return false;
 
     if (normalizeClassDate(item.fechaClase) !== targetDate) return false;
+
+    const itemTime = normalizeClassTime(
+      item.horaClase || item.hora || item.classTime || item.time || item.sessionTime
+    );
+    // Dos clases del mismo proceso y día son válidas si ambas tienen horas
+    // distintas. Con registros históricos sin hora conservamos la alerta.
+    if (targetTime && itemTime && targetTime !== itemTime) return false;
 
     const itemTeacher = normalizeDuplicateToken(
       item?.process?.docente || item?.docente || item?.teacher
@@ -2776,6 +2875,7 @@ function normalizeBitacora(item) {
     docentes: normalizeListValues(item.docentes || item.docente || item.process?.docente),
     docente: firstNonEmpty(item.docente, item.process?.docente),
     fechaClase: normalizeLocalDateInput(item.fechaClase || item.fecha || item.classDate || ""),
+    horaClase: normalizeClassTime(item.horaClase || item.hora || item.classTime || item.time || item.sessionTime),
     archivos: normalizeFiles(item.archivos || item.attachments || []),
     studentIds: normalizeStudentIds(item.studentIds || [item.studentId]),
     studentRefs: normalizeStudentRefs(item.studentRefs || []),
@@ -2905,6 +3005,7 @@ function buildBitacoraPayload(student, draft) {
     content: String(draft.contenido || "").trim(),
     tags: normalizeTags(draft.etiquetas),
     fechaClase: normalizeLocalDateInput(draft.fechaClase) || getTodayDate(),
+    horaClase: normalizeClassTime(draft.horaClase),
     docentes: selectedTeachers,
     docente: selectedTeacher,
     attachments: normalizeFiles(draft.archivos),
@@ -3088,6 +3189,7 @@ function updateDraftFromForm(student, options = {}) {
   };
 
   const nextFecha = normalizeLocalDateInput(viewRoot?.querySelector("#bitacora-fecha")?.value || "");
+  const nextHora = normalizeClassTime(viewRoot?.querySelector("#bitacora-hora")?.value || "");
   const nextTitulo = buildAutoTitle(student, nextFecha, {
     mode: nextMode,
     studentRefs: selectedStudents.map((item) => ({ id: item.id, name: item.name })),
@@ -3116,6 +3218,7 @@ function updateDraftFromForm(student, options = {}) {
             },
           ],
     fechaClase: nextFecha,
+    horaClase: nextHora,
     titulo: nextTitulo,
     docentes: structuredFields.docentes,
     docente: structuredFields.docentes[0] || "",
@@ -3210,6 +3313,7 @@ function getDraftForContext(student) {
             },
           ],
     fechaClase: normalizeLocalDateInput(draft.fechaClase) || getTodayDate(),
+    horaClase: normalizeClassTime(draft.horaClase),
     titulo: draft.titulo || "",
     docentes: resolveDraftTeachersWithSuggestion(draft, defaultDraft),
     docente: firstNonEmpty(
@@ -3286,6 +3390,7 @@ function createDefaultDraft(studentRef, student, mode = CONFIG.modes.individual)
     studentRefs: refs.filter((item) => item.id),
     processKey: activeProcess?.processKey || "",
     fechaClase: getTodayDate(),
+    horaClase: "",
     titulo: "",
     docentes: normalizeListValues(suggestedTeacher),
     docente: suggestedTeacher,
@@ -3674,7 +3779,7 @@ function renderBitacoraCard(item, index = 0, total = 0) {
             ${escapeHtml(item.titulo || "Sin titulo")}
           </h3>
             <p class="bitacora-card__date">
-              ${escapeHtml(formatDisplayDate(item.fechaClase || item.createdAt))}
+              ${escapeHtml(formatDisplayDate(item.fechaClase || item.createdAt))}${item.horaClase ? ` · ${escapeHtml(normalizeClassTime(item.horaClase))}` : ""}
             </p>
             ${
               authorName
@@ -4386,7 +4491,7 @@ function getSelectedStudentsForDraft(draft, primaryStudent, allStudents = []) {
   const resultMap = new Map();
 
   if (primary?.id && !isGroupPlaceholderId(primary.id)) {
-    resultMap.set(primary.id, primary);
+    resultMap.set(getStudentSelectionKey(primary), primary);
   }
 
   refsFromDraft.forEach((item) => {
@@ -4396,27 +4501,25 @@ function getSelectedStudentsForDraft(draft, primaryStudent, allStudents = []) {
       (student) => getStudentIdentity(student) === item.id
     );
 
-    resultMap.set(
-      item.id,
-      matched ? mapStudentForSelection(matched) : mapSelectionFromRef(item)
-    );
+    const resolved = matched ? mapStudentForSelection(matched) : mapSelectionFromRef(item);
+    resultMap.set(getStudentSelectionKey(resolved), resolved);
   });
 
   selectedIds.forEach((id) => {
-    if (resultMap.has(id)) return;
-
     const matched = allStudents.find(
       (student) => getStudentIdentity(student) === id
     );
 
     if (matched) {
-      resultMap.set(id, mapStudentForSelection(matched));
+      const resolved = mapStudentForSelection(matched);
+      resultMap.set(getStudentSelectionKey(resolved), resolved);
     } else {
-      resultMap.set(id, {
+      const resolved = {
         id,
         name: id,
         document: "",
-      });
+      };
+      resultMap.set(getStudentSelectionKey(resolved), resolved);
     }
   });
 
@@ -4447,6 +4550,16 @@ function mapSelectionFromRef(ref) {
     name: toStringSafe(ref.name) || toStringSafe(ref.id),
     document: "",
   };
+}
+
+function getStudentSelectionKey(student = {}) {
+  const academicRecordId = toStringSafe(student.academicRecordId);
+  if (academicRecordId) return `academic:${academicRecordId}`;
+
+  const aliases = normalizeStudentIds(student.linkedStudentIds || []).sort();
+  if (aliases.length) return `aliases:${aliases.join("|")}`;
+
+  return `id:${toStringSafe(student.id)}`;
 }
 
 /**
@@ -5030,6 +5143,17 @@ function buildMusicalaEditorMarkup({
                     value="${escapeHtml(draft.fechaClase || getTodayDate())}"
                   />
                 </label>
+                <div class="field">
+                  <span class="field__label">Hora de clase</span>
+                  <input
+                    id="bitacora-hora"
+                    name="horaClase"
+                    type="time"
+                    class="field__input"
+                    value="${escapeHtml(normalizeClassTime(draft.horaClase))}"
+                  />
+                  <button type="button" class="btn btn--ghost btn--sm" id="bitacora-save-time-btn">Guardar hora</button>
+                </div>
 
                 ${renderMultiValueField({
                   key: "docentes",
@@ -6206,6 +6330,17 @@ function matchesAreaCatalogKey(name, areaKeys = []) {
       areaKey.includes(normalizedName) ||
       normalizedName.includes(areaKey);
   });
+}
+
+function normalizeClassTime(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return "";
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 function buildAutoTitle(student, fechaClase = "", draft = null) {

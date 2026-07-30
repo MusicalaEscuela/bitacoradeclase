@@ -16,7 +16,7 @@ import {
   getSelectedStudentIds,
 } from "../state.js";
 import { getStudents } from "../api/students.api.js?v=20260713.3";
-import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260727.1";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260728.3";
 import {
   getCachedStudentIdentityLinkRecords,
   listStudentIdentityLinkRecords,

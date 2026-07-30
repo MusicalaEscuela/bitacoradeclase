@@ -724,7 +724,13 @@ service cloud.firestore {
     function isActiveTeacherEmail(email) {
       return email is string &&
         email != "" &&
-        isTeacherRole(targetTeacherData(email).get('role', '').lower()) &&
+        // El directorio docente también publica administradores que enseñan.
+        // En users/{correo} esos perfiles conservan role: "admin", por lo
+        // que no se pueden excluir al validar el destinatario del hilo.
+        (
+          isTeacherRole(targetTeacherData(email).get('role', '').lower()) ||
+          isAdminRole(targetTeacherData(email).get('role', '').lower())
+        ) &&
         targetTeacherData(email).get('active', true) != false;
     }
 
