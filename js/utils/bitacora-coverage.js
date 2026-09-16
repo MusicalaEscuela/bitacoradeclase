@@ -125,17 +125,29 @@ export function bitacoraMatchesStudentProcess(
   }
 
   const itemProcessKey = text(item?.process?.processKey || item.processKey);
+  const specificItemDetails = [
+    item?.process?.processLabel,
+    item?.process?.label,
+    item?.process?.programa,
+    item?.process?.detalle,
+  ]
+    .flatMap((value) => String(value || "").split(/,|;|\n/g))
+    .map(normalize)
+    .filter(Boolean);
+
   if (safeProcessKey && itemProcessKey) {
-    return itemProcessKey === safeProcessKey;
+    if (itemProcessKey === safeProcessKey) return true;
+
+    // Las migraciones de identidad pueden regenerar processKey sin que cambie
+    // el proceso pedagógico. Solo se permite el puente por la etiqueta
+    // específica (programa/detalle), nunca por el área genérica "Música".
+    return specificItemDetails.some((detail) => normalizedDetails.includes(detail));
   }
 
   if (!normalizedDetails.length) return !safeProcessKey;
 
   const itemDetails = [
-    item?.process?.processLabel,
-    item?.process?.label,
-    item?.process?.programa,
-    item?.process?.detalle,
+    ...specificItemDetails,
     item?.process?.area,
   ]
     .flatMap((value) => String(value || "").split(/,|;|\n/g))

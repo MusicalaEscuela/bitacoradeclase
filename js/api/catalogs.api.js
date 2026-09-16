@@ -114,8 +114,6 @@ function normalizeTeacher(item = {}, index = 0) {
   const nombre = toStringSafe(item.nombre || item.name);
   if (!nombre) return null;
 
-  const orden = Number(item.orden);
-
   return {
     id,
     nombre,
@@ -125,7 +123,6 @@ function normalizeTeacher(item = {}, index = 0) {
       item.activo === undefined || item.activo === null
         ? true
         : Boolean(item.activo),
-    orden: Number.isFinite(orden) ? orden : index + 1,
   };
 }
 
@@ -141,11 +138,7 @@ function normalizeTeachers(values = []) {
       seen.add(key);
       return true;
     })
-    .sort((a, b) => {
-      const orderDiff = (a.orden || 999999) - (b.orden || 999999);
-      if (orderDiff !== 0) return orderDiff;
-      return a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" });
-    });
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
 }
 
 function normalizeCatalogsDocument(data = {}) {

@@ -191,6 +191,41 @@ function buildLogicalStudent(group = [], evidence = [], confirmedLink = null) {
   ACADEMIC_FIELDS.forEach((field) => {
     const value = academic?.data?.[field];
     if (hasMeaningfulValue(value)) merged[field] = value;
+    if (Array.isArray(value)) {
+      // El expediente académico tiene prioridad: así, si una fuente histórica
+      // trae el mismo proceso con diferencias solo de mayúsculas, se conserva
+      // la versión pedagógica vigente antes de deduplicar.
+      const orderedGroup = [
+        academic,
+        ...group.filter((item) => item.id !== academic?.id),
+      ].filter(Boolean);
+      const allValues = orderedGroup.flatMap((item) =>
+        Array.isArray(item?.data?.[field]) ? item.data[field] : []
+      );
+      const seen = new Set();
+      merged[field] = allValues.filter((item) => {
+        const processIdentity = isPlainObject(item)
+          ? [item.arte || item.area, item.detalle || item.instrumento]
+              .map(normalizeText)
+              .filter(Boolean)
+              .join("|")
+          : "";
+        const key = processIdentity
+          ? `process:${processIdentity}`
+          : isPlainObject(item)
+            ? toStringSafe(
+                item.processKey ||
+                  item.processRef ||
+                  item.id ||
+                  item.label ||
+                  JSON.stringify(item)
+              )
+            : toStringSafe(item);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
   });
 
   const linkedStudentIds = uniqueStrings(group.map((item) => item.id));
@@ -333,6 +368,37 @@ export function resolveLogicalStudents(records = [], identityLinkRecords = []) {
 
   const pendingCandidateGroups = [];
   groupBy(items, (item) => item.emailKey).forEach((emailGroup) => {
+    const unresolvedEmailCandidates = emailGroup.filter(
+      (item) => !confirmedLinkByMember.has(item.id)
+    );
+    // Si los registros ya están unidos por evidencia explícita (por ejemplo,
+    // un alias histórico), no deben volver a aparecer como una alerta por
+    // correo o nombre: son distintas representaciones de la misma estudiante.
+    if (new Set(unresolvedEmailCandidates.map((item) => find(item.id))).size < 2) return;
+    const emailNames = new Set(unresolvedEmailCandidates.map((item) => item.nameKey));
+    const hasEmailConflictPair =
+      emailNames.size > 1 &&
+      unresolvedEmailCandidates.some((item) => item.isStu) &&
+      unresolvedEmailCandidates.some((item) => !item.isStu);
+
+    // Un mismo correo con nombres distintos puede ser un correo familiar
+    // compartido. No se fusiona automaticamente, pero se envia a la bandeja
+    // para que un administrador compare los registros y decida. Si esa pareja
+    // ya fue rechazada explícitamente, el correo queda reconocido como
+    // familiar/compartido y cada expediente vuelve a mostrarse por separado.
+    if (hasEmailConflictPair) {
+      const hasUnreviewedCrossTypePair = unresolvedEmailCandidates.some((left) =>
+        unresolvedEmailCandidates.some((right) =>
+          left.isStu !== right.isStu &&
+          !rejectedPairs.has([left.id, right.id].sort().join("|"))
+        )
+      );
+      if (hasUnreviewedCrossTypePair) {
+        pendingCandidateGroups.push(unresolvedEmailCandidates);
+      }
+      return;
+    }
+
     groupBy(emailGroup, (item) => item.nameKey).forEach((sameIdentityGroup) => {
       if (sameIdentityGroup.length < 2) return;
       const automaticGroup = sameIdentityGroup.filter(
@@ -407,6 +473,7 @@ export function resolveLogicalStudents(records = [], identityLinkRecords = []) {
         !confirmedLinkByMember.has(item.id) &&
         !consumedPendingIds.has(item.id)
     );
+    if (new Set(candidates.map((item) => find(item.id))).size < 2) return;
     const canonicalItems = candidates.filter((item) => !item.isStu);
     const stuItems = candidates.filter((item) => item.isStu);
     if (!canonicalItems.length || !stuItems.length) return;

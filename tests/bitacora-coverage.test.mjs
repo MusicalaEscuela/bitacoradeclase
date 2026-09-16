@@ -68,6 +68,34 @@ assert.equal(
   "Una grupal histórica no debe desaparecer para un integrante secundario"
 );
 
+const legacyPianoLog = {
+  studentId: "emma",
+  studentIds: ["emma"],
+  process: {
+    processKey: "proc_emma_musica_piano_legacy",
+    processLabel: "Música - Piano",
+    area: "Música",
+  },
+};
+assert.equal(
+  bitacoraMatchesStudentProcess(legacyPianoLog, {
+    studentIds: ["emma"],
+    processKey: "proc_emma_musica_piano_actual",
+    processDetails: ["Piano", "Música - Piano", "Música"],
+  }),
+  true,
+  "Un cambio técnico de clave no debe ocultar el historial del mismo Piano"
+);
+assert.equal(
+  bitacoraMatchesStudentProcess(legacyPianoLog, {
+    studentIds: ["emma"],
+    processKey: "proc_emma_musica_canto_actual",
+    processDetails: ["Canto", "Música - Canto", "Música"],
+  }),
+  false,
+  "El área genérica no debe mezclar procesos distintos"
+);
+
 const pendingResult = consumePendingClasses(
   [
     { studentId: "ana", fechaClase: "2026-07-25" },
@@ -82,4 +110,4 @@ assert.equal(pendingResult.completed.length, 3);
 assert.equal(pendingResult.pending.length, 1);
 assert.equal(pendingResult.pending[0].studentId, "luis");
 
-console.log("bitacora-coverage: 12 assertions passed");
+console.log("bitacora-coverage: 14 assertions passed");

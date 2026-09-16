@@ -6,6 +6,8 @@ import {
   getDocs,
   limit,
   query,
+  serverTimestamp,
+  setDoc,
   where,
 } from "../firebase.client.js";
 import { toStringSafe } from "../utils/shared.js";
@@ -54,6 +56,7 @@ function normalizeUserAccess(docSnap) {
     source: toStringSafe(data.source),
     syncOrigin: toStringSafe(data.syncOrigin),
     statusSource: toStringSafe(data.statusSource),
+    teacherAccessManaged: data.teacherAccessManaged === true,
   };
 }
 
@@ -158,4 +161,51 @@ export async function listStudentAccessUsers() {
     .sort((a, b) =>
       a.displayName.localeCompare(b.displayName, "es", { sensitivity: "base" })
     );
+}
+
+/**
+ * Mantiene sincronizado el acceso docente con el catálogo administrado en
+ * app_config/catalogos. Solo se invoca desde una sesión administrativa.
+ */
+export async function saveTeacherAccessProfile(teacher = {}, actor = null) {
+  const email = normalizeAccessEmail(teacher.email);
+  if (!email) return { skipped: true, reason: "missing-email" };
+
+  const ref = doc(db, USERS_COLLECTION, buildUserAccessDocId(email));
+  const existingSnapshot = await getDoc(ref);
+  const existing = existingSnapshot.exists() ? normalizeUserAccess(existingSnapshot) : null;
+
+  // Nunca convertir un perfil administrativo existente en docente por efecto
+  // de sincronizar el catálogo.
+  if (existing && normalizeAccessEmail(existing.role) === "admin") {
+    return { email, skipped: true, reason: "admin-profile" };
+  }
+
+  // Los perfiles históricos que ya conceden acceso no se reescriben ni se
+  // migran automáticamente; solo los perfiles creados por este administrador
+  // quedan bajo el nuevo contrato de sincronización.
+  if (existing && existing.teacherAccessManaged !== true) {
+    return { email, skipped: true, reason: "legacy-profile" };
+  }
+
+  const now = serverTimestamp();
+  const existingRole = normalizeAccessEmail(existing?.role);
+  const payload = {
+    email,
+    role: ["teacher", "docente", "profesor", "profesora"].includes(existingRole)
+      ? existingRole
+      : "docente",
+    active: teacher.activo !== false,
+    teacherAccessManaged: true,
+    displayName: toStringSafe(teacher.nombre || teacher.alias || email),
+    linkedBy: normalizeAccessEmail(actor?.email),
+    updatedAt: now,
+  };
+
+  if (!existingSnapshot.exists()) {
+    payload.linkedAt = now;
+  }
+
+  await setDoc(ref, payload, { merge: true });
+  return { email, created: !existingSnapshot.exists(), updated: true };
 }

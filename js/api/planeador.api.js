@@ -56,6 +56,7 @@ function normalizePlaneacion(record) {
   return {
     ...createEmptyPlaneacion(),
     ...normalized,
+    modalidad: toStringSafe(normalized.modalidad).toLowerCase() || "sede",
     momentosClase: {
       ...createEmptyPlaneacion().momentosClase,
       ...(normalized.momentosClase || {}),
@@ -74,6 +75,7 @@ function normalizePlaneacion(record) {
     },
     habilidades: toArraySafe(normalized.habilidades),
     materiales: toArraySafe(normalized.materiales),
+    estudiantes: toArraySafe(normalized.estudiantes),
     categorias: toArraySafe(normalized.categorias),
     componenteCorporal: toArraySafe(normalized.componenteCorporal),
     componenteTecnico: toArraySafe(normalized.componenteTecnico),
@@ -88,7 +90,7 @@ function buildSearchText(planeacion = {}) {
   return [
     planeacion.docenteNombre,
     planeacion.grupoNombre,
-    planeacion.sede,
+    planeacion.modalidad,
     planeacion.programa,
     planeacion.arte,
     planeacion.tipoClase,

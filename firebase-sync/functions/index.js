@@ -562,10 +562,13 @@ function ripOwnsStatus(existingDoc) {
 ========================= */
 
 function resolvePedagogicalProfileFields(normalized = {}, existing = {}) {
-  // Modalidad e intereses también se editan directamente en Bitácoras. Si la
-  // fuente de identidad no los trae, no debemos borrar una actualización
-  // pedagógica que ya confirmó una docente en este proyecto.
+  // Estos campos también se editan directamente en Bitácoras. Si una
+  // inscripción de origen llega incompleta, no puede borrar el proceso que ya
+  // fue confirmado en otro expediente académico de la misma identidad.
   return {
+    area: firstText(normalized.area, existing.area),
+    programa: firstText(normalized.programa, existing.programa),
+    instrumento: firstText(normalized.instrumento, existing.instrumento),
     modalidad: firstText(
       normalized.modalidad,
       normalized.modality,
@@ -585,7 +588,13 @@ async function mergeBitacorasStudent(normalized) {
   const ref = bitacorasDb.collection(TARGET_STUDENTS_COLLECTION).doc(normalized.studentId);
   const snap = await ref.get();
   const existing = snap.exists ? snap.data() || {} : {};
-  const { modalidad, interesesMusicales } = resolvePedagogicalProfileFields(
+  const {
+    area,
+    programa,
+    instrumento,
+    modalidad,
+    interesesMusicales,
+  } = resolvePedagogicalProfileFields(
     normalized,
     existing
   );
@@ -619,9 +628,9 @@ async function mergeBitacorasStudent(normalized) {
     edad: normalized.edad,
     interesesMusicales,
     intereses: interesesMusicales,
-    area: normalized.area,
-    programa: normalized.programa,
-    instrumento: normalized.instrumento,
+    area,
+    programa,
+    instrumento,
     modalidad,
     modality: modalidad,
     sede: normalized.sede,
@@ -1835,6 +1844,130 @@ function duplicateResponse(duplicateByEmail, duplicateByDocument) {
       : "No se encontraron inscripciones duplicadas.",
   };
 }
+
+// La Lista permite esta operación solamente a administración. La validación
+// también vive aquí: la interfaz no es una frontera de seguridad.
+const STUDENT_MERGE_EDITOR_EMAILS = new Set([
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com",
+]);
+
+function mergeEditorEmail(request) {
+  const email = normalizeRegistrationEmail(
+    request && request.auth && request.auth.token && request.auth.token.email
+  );
+  if (!email || !STUDENT_MERGE_EDITOR_EMAILS.has(email)) {
+    throw new HttpsError("permission-denied", "No tienes permiso para unificar inscripciones.");
+  }
+  return email;
+}
+
+function validatedMergeStudentId(value, label) {
+  const id = toText(value);
+  if (!id || id !== value || id.includes("/") || /[\u0000-\u001f\u007f]/.test(id)) {
+    throw new HttpsError("invalid-argument", `El ID de ${label} no es válido.`);
+  }
+  return id;
+}
+
+/*
+  Unificación administrativa y auditable de dos inscripciones Firebase.
+  No borra el expediente secundario: lo archiva, conserva sus correos en el
+  principal y mueve el dueño del índice privado de documento al principal.
+  La retención (identityHold) evita que el trigger replique el secundario
+  archivado hacia RIP o Bitácoras.
+*/
+exports.mergeStudentDuplicate = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    enforceAppCheck: false,
+    secrets: [DOC_INDEX_SECRET],
+  },
+  async (request) => {
+    const editorEmail = mergeEditorEmail(request);
+    const data = request.data || {};
+    if (data.confirmedSamePerson !== true) {
+      throw new HttpsError("failed-precondition", "Debes confirmar que ambas inscripciones pertenecen a la misma persona.");
+    }
+
+    const canonicalStudentId = validatedMergeStudentId(data.canonicalStudentId, "la inscripción principal");
+    const duplicateStudentId = validatedMergeStudentId(data.duplicateStudentId, "la inscripción duplicada");
+    if (canonicalStudentId === duplicateStudentId) {
+      throw new HttpsError("invalid-argument", "Selecciona dos inscripciones distintas.");
+    }
+
+    const result = await sourceDb.runTransaction(async (tx) => {
+      const canonicalRef = sourceDb.collection(SOURCE_STUDENTS_COLLECTION).doc(canonicalStudentId);
+      const duplicateRef = sourceDb.collection(SOURCE_STUDENTS_COLLECTION).doc(duplicateStudentId);
+      const [canonicalSnap, duplicateSnap] = await Promise.all([tx.get(canonicalRef), tx.get(duplicateRef)]);
+      if (!canonicalSnap.exists || !duplicateSnap.exists) {
+        throw new HttpsError("not-found", "Una de las inscripciones ya no existe.");
+      }
+
+      const canonical = canonicalSnap.data() || {};
+      const duplicate = duplicateSnap.data() || {};
+      if (duplicate.identityMergeStatus === "archived_duplicate" || duplicate.archivedFromDirectory === true) {
+        throw new HttpsError("failed-precondition", "La inscripción secundaria ya está archivada.");
+      }
+
+      const canonicalDocument = normalizeDocumentForFingerprint(canonical);
+      const duplicateDocument = normalizeDocumentForFingerprint(duplicate);
+      const sameName = normalizeText(firstText(canonical.studentName, canonical.nombre, canonical.name)) ===
+        normalizeText(firstText(duplicate.studentName, duplicate.nombre, duplicate.name));
+      if (!canonicalDocument || canonicalDocument !== duplicateDocument || !sameName) {
+        throw new HttpsError("failed-precondition", "Solo se pueden unificar inscripciones con el mismo nombre y documento.");
+      }
+
+      const emails = extractEmails(
+        canonical.studentEmail, canonical.email, canonical.emails, canonical.correos,
+        duplicate.studentEmail, duplicate.email, duplicate.emails, duplicate.correos
+      );
+      const fingerprint = buildDocumentFingerprint(canonicalDocument, readDocSecret());
+      if (fingerprint) {
+        tx.set(sourceDb.collection(DOCUMENT_INDEX_COLLECTION).doc(fingerprint), {
+          studentId: canonicalStudentId,
+          duplicates: admin.firestore.FieldValue.arrayRemove(duplicateStudentId),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      tx.set(canonicalRef, {
+        studentId: canonicalStudentId,
+        emails,
+        studentEmail: firstText(canonical.studentEmail, canonical.email, duplicate.studentEmail, duplicate.email),
+        identityHold: false,
+        identityMergeStatus: admin.firestore.FieldValue.delete(),
+        identityHoldReason: admin.firestore.FieldValue.delete(),
+        possibleDuplicateOf: admin.firestore.FieldValue.delete(),
+        mergedDuplicateIds: admin.firestore.FieldValue.arrayUnion(duplicateStudentId),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: editorEmail,
+      }, { merge: true });
+      tx.set(duplicateRef, {
+        identityMergeStatus: "archived_duplicate",
+        archivedFromDirectory: true,
+        canonicalStudentId,
+        legacyAliasOf: canonicalStudentId,
+        identityHold: true,
+        identityHoldReason: "archived_duplicate",
+        mergedAt: admin.firestore.FieldValue.serverTimestamp(),
+        mergedBy: editorEmail,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      return { emailCount: emails.length };
+    });
+
+    logger.info("Inscripción duplicada unificada.", buildTechnicalLog({
+      status: "completed",
+      operations: ["student_duplicate_merge"],
+      counts: { writes: 2 },
+    }));
+    return { ok: true, canonicalStudentId, duplicateStudentId, emailCount: result.emailCount };
+  }
+);
 
 function clientRateLimitKey(request, action) {
   const rawRequest = request && request.rawRequest;

@@ -14,15 +14,18 @@ import {
   setStudentsList,
   setStudentsLoading,
   getSelectedStudentIds,
-} from "../state.js";
-import { getStudents } from "../api/students.api.js?v=20260713.3";
-import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260728.3";
+} from "../state.js?v=20260815.2";
+import {
+  getStudents,
+  getTeacherListStudents,
+} from "../api/students.api.js?v=20260822.1";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260731.2";
 import {
   getCachedStudentIdentityLinkRecords,
   listStudentIdentityLinkRecords,
   manageStudentIdentityLink,
   maskStudentIdentityId,
-} from "../api/identity-links.api.js?v=20260713.3";
+} from "../api/identity-links.api.js?v=20260731.2";
 import {
   escapeHtml,
   getReadableValue,
@@ -31,7 +34,6 @@ import {
   getStudentIdentity,
   getStudentName,
   getStudentProcessesSummary,
-  matchesFlexibleSearch,
   matchesStudentRef,
   normalizeText,
   resolveStudentRefFromPayload,
@@ -52,8 +54,12 @@ let identityLinkSelection = null;
 let identityLinkCounts = new Map();
 let identityLinkBusy = false;
 let identityTrayOpen = false;
+let studentSearchIndex = new Map();
+let inactiveSearchRequestId = 0;
 
-const SEARCH_INPUT_DEBOUNCE_MS = 80;
+// El filtrado es local; una espera larga solo hace que el teclado se sienta lento.
+// Dejamos un ciclo corto para agrupar eventos sin retrasar la respuesta visible.
+const SEARCH_INPUT_DEBOUNCE_MS = 24;
 
 export async function beforeEnter({ payload } = {}) {
   clearAppError();
@@ -125,6 +131,7 @@ export async function render({
       renderResults(safeNextState);
       renderIdentityReviewSummary(safeNextState);
       renderStudentModal(safeNextState);
+      syncSearchControls(safeNextState);
       syncInputValue(safeNextState);
     });
   }
@@ -132,7 +139,7 @@ export async function render({
 
 export async function afterEnter() {
   const input = viewRoot?.querySelector("#student-search-input");
-  if (input) input.focus();
+  if (input && !input.disabled) input.focus();
 }
 
 export function beforeLeave() {
@@ -167,18 +174,20 @@ async function ensureStudentsLoaded(payload = {}) {
   await refreshStudents(payload);
 }
 
-async function refreshStudents(payload = {}) {
+async function refreshStudents(payload = {}, options = {}) {
   clearAppError();
   setStudentsLoading(true);
+  studentSearchIndex.clear();
 
   try {
-    const students = await safeLoadStudents();
+    const students = await safeLoadStudents(options);
+    setSearchResults(students);
+    setStudentsList(students);
+
     const state = getState();
     const query = state?.search?.query || "";
     const visibleStudents = getVisibleStudents(state, students);
 
-    setStudentsList(students);
-    setSearchResults(students);
     setFilteredStudentIds(filterStudentIds(visibleStudents, query));
     ensureInitialSelection(visibleStudents, state, payload);
   } catch (error) {
@@ -227,6 +236,8 @@ function getVisibleStudents(state, students = []) {
 function buildSearchViewMarkup(state, config) {
   const query = escapeHtml(state?.search?.query || "");
   const canUseHub = canUseTeacherHub(state?.auth?.user);
+  const searchReady = isStudentSearchReady(state);
+  const disabled = searchReady ? "" : "disabled";
   const title =
     config?.app?.name ||
     config?.appName ||
@@ -272,7 +283,11 @@ function buildSearchViewMarkup(state, config) {
         </div>
       </header>
 
-      <section class="search-toolbar" aria-label="Filtros de búsqueda">
+      <section
+        class="search-toolbar"
+        aria-label="Filtros de búsqueda"
+        aria-busy="${searchReady ? "false" : "true"}"
+      >
         <div class="search-toolbar__grid">
           <label class="field search-toolbar__field">
             <span class="field__label">Buscar estudiante</span>
@@ -283,7 +298,16 @@ function buildSearchViewMarkup(state, config) {
               placeholder="Nombre, documento, acudiente, docente, programa..."
               value="${query}"
               autocomplete="off"
+              aria-describedby="student-search-readiness"
+              ${disabled}
             />
+            <span id="student-search-readiness" class="field__hint">
+              ${
+                searchReady
+                  ? ""
+                  : "Cargando la lista completa de estudiantes. La búsqueda se habilitará automáticamente."
+              }
+            </span>
           </label>
 
           <div class="search-toolbar__actions">
@@ -292,6 +316,7 @@ function buildSearchViewMarkup(state, config) {
               id="search-clear-btn"
               class="btn btn--ghost btn--sm"
               title="Limpiar búsqueda"
+              ${disabled}
             >
               🧹 Limpiar
             </button>
@@ -301,6 +326,7 @@ function buildSearchViewMarkup(state, config) {
               id="search-refresh-btn"
               class="btn btn--secondary btn--sm"
               title="Recargar estudiantes"
+              ${state?.students?.loading ? "disabled" : ""}
             >
               🔄 Recargar
             </button>
@@ -313,6 +339,7 @@ function buildSearchViewMarkup(state, config) {
             id="search-clear-selection-btn"
             class="btn btn--ghost btn--sm"
             title="Limpiar selección grupal"
+            ${disabled}
           >
             ✖️ Selección
           </button>
@@ -322,6 +349,7 @@ function buildSearchViewMarkup(state, config) {
             id="search-open-group-editor-btn"
             class="btn btn--primary btn--sm"
             title="Crear bitácora grupal"
+            ${disabled}
           >
             📝 Bitácora grupal
           </button>
@@ -378,6 +406,40 @@ function canUseTeacherHub(user) {
   return access.role === CONFIG.roles.admin || access.role === CONFIG.roles.teacher;
 }
 
+function isStudentSearchReady(state = getState()) {
+  return Boolean(state?.students?.ready) && !Boolean(state?.students?.loading);
+}
+
+function syncSearchControls(state = getState()) {
+  if (!viewRoot) return;
+
+  const searchReady = isStudentSearchReady(state);
+  const loading = Boolean(state?.students?.loading);
+  const toolbar = viewRoot.querySelector(".search-toolbar");
+  const readinessHint = viewRoot.querySelector("#student-search-readiness");
+
+  if (toolbar) toolbar.setAttribute("aria-busy", String(!searchReady));
+
+  [
+    "#student-search-input",
+    "#search-clear-btn",
+    "#search-clear-selection-btn",
+    "#search-open-group-editor-btn",
+  ].forEach((selector) => {
+    const control = viewRoot.querySelector(selector);
+    if (control) control.disabled = !searchReady;
+  });
+
+  const refreshButton = viewRoot.querySelector("#search-refresh-btn");
+  if (refreshButton) refreshButton.disabled = loading;
+
+  if (readinessHint) {
+    readinessHint.textContent = searchReady
+      ? ""
+      : "Cargando la lista de estudiantes disponibles. La búsqueda se habilitará automáticamente.";
+  }
+}
+
 function bindViewEvents() {
   if (!viewRoot) return;
 
@@ -396,6 +458,8 @@ function bindViewEvents() {
   if (input) {
     input.addEventListener("input", handleSearchInput);
   }
+
+  syncSearchControls(getState());
 
   if (clearBtn) {
     clearBtn.addEventListener("click", handleClearSearch);
@@ -430,6 +494,8 @@ function bindViewEvents() {
 }
 
 function handleSearchInput(event) {
+  if (!isStudentSearchReady()) return;
+
   const query = String(event?.target?.value || "");
   // El input del navegador ya debe reflejar cada tecla. Mientras se calcula el
   // filtro, no permitimos que una actualización ajena del estado lo reemplace
@@ -446,12 +512,15 @@ function handleSearchInput(event) {
 
   searchInputDebounceTimer = setTimeout(() => {
     applySearchQuery(query, students);
+    void appendInactiveMatches(query, students);
     pendingSearchInputValue = null;
     searchInputDebounceTimer = null;
   }, SEARCH_INPUT_DEBOUNCE_MS);
 }
 
 function handleClearSearch() {
+  if (!isStudentSearchReady()) return;
+
   if (searchInputDebounceTimer) {
     clearTimeout(searchInputDebounceTimer);
     searchInputDebounceTimer = null;
@@ -472,15 +541,18 @@ function handleClearSearch() {
 }
 
 async function handleRefreshStudents() {
-  await refreshStudents();
+  if (getState()?.students?.loading) return;
+  await refreshStudents({}, { refresh: true });
 }
 
 function handleClearSelection() {
+  if (!isStudentSearchReady()) return;
   clearSelectedStudentIds();
   clearAppError();
 }
 
 function handleOpenGroupEditor() {
+  if (!isStudentSearchReady()) return;
   const state = getState();
   const selectedIds = Array.isArray(state?.search?.selectedStudentIds)
     ? state.search.selectedStudentIds
@@ -533,6 +605,7 @@ function openBlankGroupEditor() {
 }
 
 function handleSelectionCheckboxChange(event) {
+  if (!isStudentSearchReady()) return;
   const checkbox = event.target.closest("[data-student-select]");
   if (!checkbox) return;
 
@@ -549,6 +622,7 @@ function handleSelectionCheckboxChange(event) {
 }
 
 function handleResultsClick(event) {
+  if (!isStudentSearchReady()) return;
   const checkbox = event.target.closest("[data-student-select]");
   if (checkbox) return;
 
@@ -582,6 +656,7 @@ function handleResultsClick(event) {
 }
 
 function handleResultsKeydown(event) {
+  if (!isStudentSearchReady()) return;
   const card = event.target.closest("[data-student-id]");
   if (!card) return;
 
@@ -1109,11 +1184,13 @@ function renderBadge(value) {
   return `<span class="badge">${escapeHtml(String(value))}</span>`;
 }
 
-async function safeLoadStudents() {
-  const response = await getStudents({
-    includeInactive: true,
-    estado: "todos",
-  });
+async function safeLoadStudents(options = {}) {
+  // La carga inicial no puede leer toda la colección histórica: además de
+  // demorar la pantalla, un expediente que el docente no puede consultar hace
+  // que Firestore rechace toda la consulta y el buscador quede bloqueado.
+  // RIP publica la lista operativa permitida; los históricos se consultan
+  // únicamente al buscar una coincidencia concreta en appendInactiveMatches.
+  const response = await getTeacherListStudents(options);
   const students = normalizeStudentsResponse(response);
 
   return students.sort((a, b) =>
@@ -1186,43 +1263,59 @@ function filterStudents(students, query) {
   const normalizedQuery = normalizeText(rawQuery);
   if (!normalizedQuery || rawQuery.length < 2) return [];
 
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+
   return students
     .filter((student) => {
-      const processStrings = Array.isArray(student.processes)
-        ? student.processes.flatMap((process) => [
-            process?.arte,
-            process?.detalle,
-            process?.label,
-          ])
-        : [];
+      const studentId =
+        toStringSafe(student.id) ||
+        toStringSafe(student.studentKey) ||
+        getStudentIdentity(student);
+      if (!studentId) return false;
 
-      const searchable = [
-        student.id,
-        student.studentKey,
-        student.nombre,
-        student.name,
-        student.estudiante,
-        student.documento,
-        student.identificacion,
-        student.cc,
-        student.docente,
-        student.teacher,
-        student.acudiente,
-        student.responsable,
-        student.modalidad,
-        student.area,
-        student.programa,
-        student.instrumento,
-        student.sede,
-        student.correo,
-        student.email,
-        student.telefono,
-        student.estado,
-        student.interesesMusicales,
-        ...processStrings,
-      ];
+      let searchableText = studentSearchIndex.get(studentId);
+      if (!searchableText) {
+        const processStrings = Array.isArray(student.processes)
+          ? student.processes.flatMap((process) => [
+              process?.arte,
+              process?.detalle,
+              process?.label,
+            ])
+          : [];
 
-      return matchesFlexibleSearch(searchable, normalizedQuery);
+        searchableText = normalizeText(
+          [
+            student.id,
+            student.studentKey,
+            student.nombre,
+            student.name,
+            student.estudiante,
+            student.documento,
+            student.identificacion,
+            student.cc,
+            student.docente,
+            student.teacher,
+            student.acudiente,
+            student.responsable,
+            student.modalidad,
+            student.area,
+            student.programa,
+            student.instrumento,
+            student.sede,
+            student.correo,
+            student.email,
+            student.telefono,
+            student.estado,
+            student.interesesMusicales,
+            ...processStrings,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+        studentSearchIndex.set(studentId, searchableText);
+      }
+
+      return queryTokens.every((token) => searchableText.includes(token));
     })
     .slice(0, 12);
 }
@@ -1239,6 +1332,37 @@ function applySearchQuery(query, students) {
     filteredIds: filterStudentIds(students, query),
     lastSearchAt: Date.now(),
   });
+}
+
+async function appendInactiveMatches(query, currentStudents = []) {
+  const safeQuery = String(query || "").trim();
+  if (safeQuery.length < 2 || filterStudents(currentStudents, safeQuery).length) return;
+
+  const requestId = ++inactiveSearchRequestId;
+  try {
+    // La lista inicial usa RIP para abrir rápido. Solo si la búsqueda concreta
+    // no encuentra a nadie, consultamos el histórico: así Sara y otros
+    // inactivos siguen localizables sin penalizar la carga normal en tablets.
+    const matches = normalizeStudentsResponse(await getStudents({
+      q: safeQuery,
+      includeInactive: true,
+    }));
+    if (requestId !== inactiveSearchRequestId || getState()?.search?.query !== safeQuery) return;
+    if (!matches.length) return;
+
+    const byId = new Map(
+      [...currentStudents, ...matches]
+        .filter(Boolean)
+        .map((student) => [getStudentIdentity(student), student])
+        .filter(([id]) => Boolean(id))
+    );
+    const merged = [...byId.values()];
+    setSearchResults(merged);
+    setStudentsList(merged);
+    applySearchQuery(safeQuery, merged);
+  } catch (error) {
+    console.warn("No se pudieron buscar coincidencias históricas:", error);
+  }
 }
 
 function syncSelectedStudentFromId(studentId, baseState) {
@@ -1526,7 +1650,7 @@ async function handleIdentityDecision(action) {
     });
     currentIdentityLinkStudentId = null;
     identityLinkSelection = null;
-    await refreshStudents();
+    await refreshStudents({}, { refresh: true });
     clearAppError();
   } catch (error) {
     console.error("No se pudo resolver el vínculo de identidad:", error);
@@ -1618,6 +1742,8 @@ function cleanupView() {
     searchInputDebounceTimer = null;
   }
   pendingSearchInputValue = null;
+  inactiveSearchRequestId += 1;
+  studentSearchIndex.clear();
 
   currentModalStudentId = null;
   hasRetriedInitialLoad = false;

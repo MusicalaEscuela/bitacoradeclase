@@ -148,7 +148,8 @@ export const MOMENTOS = Object.freeze([
   },
   {
     key: "practicaCreacion",
-    label: "Práctica / creación",
+    // Conservamos la llave histórica para no perder las planeaciones ya guardadas.
+    label: "Obras",
     icon: "🛠️",
     help: "El estudiante aplica lo aprendido: individual, parejas, grupos, creación colectiva, montaje.",
     placeholder:
@@ -199,6 +200,8 @@ export const TIPOS_EVIDENCIA = Object.freeze([
 export const MATERIALES_SUGERIDOS = Object.freeze([
   "Parlante",
   "Instrumentos",
+  "Partituras",
+  "Libros",
   "Hojas",
   "Pinturas",
   "Cinta",
@@ -428,6 +431,7 @@ export function createEmptyPlaneacion(overrides = {}) {
     docenteNombre: "",
     programa: "",
     sede: "",
+    modalidad: "sede",
     grupoId: "",
     grupoNombre: "",
     ciclo: "",
@@ -462,6 +466,8 @@ export function createEmptyPlaneacion(overrides = {}) {
       recomendaciones: "",
     },
     materiales: [],
+    // Notas internas para que el equipo docente conozca mejor a cada estudiante.
+    estudiantes: [],
     evidenciaEsperada: {
       tipo: "",
       descripcion: "",

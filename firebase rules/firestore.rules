@@ -89,13 +89,46 @@ service cloud.firestore {
         request.resource.data.portalAccessManaged == true &&
         request.resource.data.studentId is string &&
         request.resource.data.studentId != '' &&
+        // Un estudiante puede tener un expediente académico y un ID canónico.
+        // El portal entrega ambos para conservar bitácoras y recursos; el ID
+        // visible sigue siendo obligatorio y la lista se mantiene acotada.
         request.resource.data.studentIds is list &&
-        request.resource.data.studentIds.size() == 1 &&
-        request.resource.data.studentIds[0] == request.resource.data.studentId &&
+        request.resource.data.studentIds.size() >= 1 &&
+        request.resource.data.studentIds.size() <= 10 &&
+        request.resource.data.studentIds.hasAll([request.resource.data.studentId]) &&
         request.resource.data.linkedBy == authEmail() &&
         request.resource.data.keys().hasOnly([
           'email', 'role', 'active', 'studentId', 'studentIds',
           'portalAccessManaged', 'linkedBy', 'linkedAt', 'updatedAt'
+        ]);
+    }
+
+    // Perfiles internos de docentes administrados desde Bitácoras de clase.
+    // Se mantienen separados de los accesos de estudiantes/acudientes.
+    function validManagedTeacherAccess(emailKey) {
+      return emailKey == request.resource.data.email &&
+        request.resource.data.email is string &&
+        request.resource.data.email.lower() == emailKey &&
+        isTeacherRole(request.resource.data.role) &&
+        request.resource.data.active is bool &&
+        request.resource.data.teacherAccessManaged == true &&
+        request.resource.data.keys().hasOnly([
+          'email', 'role', 'active', 'teacherAccessManaged',
+          'displayName', 'linkedBy', 'linkedAt', 'updatedAt'
+        ]);
+    }
+
+    function validManagedTeacherAccessUpdate(emailKey) {
+      return resource.data.teacherAccessManaged == true &&
+        request.resource.data.email == emailKey &&
+        request.resource.data.email is string &&
+        request.resource.data.email.lower() == emailKey &&
+        isTeacherRole(request.resource.data.role) &&
+        request.resource.data.active is bool &&
+        request.resource.data.teacherAccessManaged == true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'email', 'role', 'active', 'teacherAccessManaged',
+          'displayName', 'linkedBy', 'linkedAt', 'updatedAt'
         ]);
     }
 
@@ -146,13 +179,17 @@ service cloud.firestore {
 
     match /users/{emailKey} {
       allow read: if isAdmin() || (isSignedIn() && authEmail() == emailKey);
-      allow create: if isAdmin() && validManagedPortalAccess(emailKey);
+      allow create: if isAdmin() &&
+        (validManagedPortalAccess(emailKey) || validManagedTeacherAccess(emailKey));
       allow update: if isAdmin() &&
         (
           (resource.data.portalAccessManaged == true && validManagedPortalAccess(emailKey)) ||
+          validManagedTeacherAccessUpdate(emailKey) ||
           validPortalStudentLinksUpdate()
         );
-      allow delete: if isAdmin() && resource.data.get('portalAccessManaged', false) == true;
+      allow delete: if isAdmin() &&
+        (resource.data.get('portalAccessManaged', false) == true ||
+         resource.data.get('teacherAccessManaged', false) == true);
     }
 
     match /app_config/{docId} {
@@ -192,7 +229,7 @@ service cloud.firestore {
         academicRecordId.matches('^stu_.*') &&
         canonicalStudentId != academicRecordId &&
         request.resource.data.linkedStudentIds is list &&
-        request.resource.data.linkedStudentIds.size() == 2 &&
+        request.resource.data.linkedStudentIds.size() >= 2 &&
         request.resource.data.linkedStudentIds.hasAll([canonicalStudentId, academicRecordId]) &&
         request.resource.data.status == 'confirmed' &&
         request.resource.data.linkMethod == 'admin-confirmed' &&
@@ -310,9 +347,35 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    function isManagedMapProgress(data) {
+      return data.managedByMap == true &&
+        data.routeTemplateId in ['mapa-piano', 'mapa-guitarra'];
+    }
+
+    function validManagedMapProgress(progressId, data) {
+      return isManagedMapProgress(data) &&
+        data.studentId is string && data.studentKey is string &&
+        !data.studentId.matches('^stu_.*') &&
+        data.studentKey == data.studentId &&
+        progressId == data.studentId + '__' + data.routeTemplateId &&
+        ((data.routeTemplateId == 'mapa-piano' && data.progressEpoch == 'mapa-piano-20260815-v1') ||
+         (data.routeTemplateId == 'mapa-guitarra' && data.progressEpoch == 'mapa-guitarra-20260831-v1'));
+    }
+
+    function keepsManagedMapProgressIdentity(progressId) {
+      return !isManagedMapProgress(resource.data) ||
+        (validManagedMapProgress(progressId, request.resource.data) &&
+         request.resource.data.studentId == resource.data.studentId &&
+         request.resource.data.studentKey == resource.data.studentKey &&
+         request.resource.data.routeTemplateId == resource.data.routeTemplateId &&
+         request.resource.data.progressEpoch == resource.data.progressEpoch);
+    }
+
     match /student_route_progress/{routeId} {
       allow read: if isAdmin() || isTeacher() || studentOwnsRoute(routeId);
-      allow create, update: if isAdmin() || isTeacher();
+      allow create: if isAdmin() || (isTeacher() &&
+        (!isManagedMapProgress(request.resource.data) || validManagedMapProgress(routeId, request.resource.data)));
+      allow update: if isAdmin() || (isTeacher() && keepsManagedMapProgressIdentity(routeId));
       allow delete: if isAdmin();
     }
 

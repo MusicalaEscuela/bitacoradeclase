@@ -10,18 +10,19 @@ import {
   removeSelectedStudentId,
   clearSelectedStudentIds,
   getSelectedStudentIds,
-} from "../state.js";
+} from "../state.js?v=20260815.2";
 import { getStudents } from "../api/students.api.js";
-import { getBitacorasByStudent } from "../api/bitacoras.api.js";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js";
 import {
   escapeHtml,
   formatDisplayDate,
   getReadableValue,
-  getStudentCondition,
   getStudentDocument,
   getStudentIdentity,
+  getStudentLinkedIds,
   getStudentName,
   getStudentProcessesSummary,
+  normalizeStudentProcesses,
   matchesFlexibleSearch,
   normalizeText,
   sortBitacorasByDate,
@@ -38,6 +39,7 @@ const historyByStudentId = new Map();
 const latestErrors = new Map();
 const historyOpenStudentIds = new Set();
 const historyLoadingStudentIds = new Set();
+const compareProcessScopeByStudentId = new Map();
 
 export async function beforeEnter() {
   clearAppError();
@@ -143,6 +145,17 @@ function bindEvents() {
       await ensureStudentHistoryLoaded(studentId);
     }
   });
+
+  viewRoot?.addEventListener("change", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    if (!target.matches("[data-compare-process-scope]")) return;
+    compareProcessScopeByStudentId.set(
+      toStringSafe(target.getAttribute("data-student-id")),
+      toStringSafe(target.value)
+    );
+    await ensureStudentHistoryLoaded(toStringSafe(target.getAttribute("data-student-id")));
+  });
 }
 
 async function refreshLatestBitacoras(force = false) {
@@ -160,7 +173,11 @@ async function refreshLatestBitacoras(force = false) {
     missing.map(async (studentId) => {
       latestErrors.delete(studentId);
       try {
-        const items = await getBitacorasByStudent(studentId, { limit: 8 });
+        const student = getCompareStudent(studentId);
+        const items = await getBitacorasByStudentIds(
+          getCompareStudentAliases(student),
+          { limit: 8 }
+        );
         latestByStudentId.set(studentId, sortBitacorasByDate(items)[0] || null);
       } catch (error) {
         console.error("Error cargando última bitácora:", studentId, error);
@@ -188,7 +205,8 @@ async function ensureStudentHistoryLoaded(studentId) {
   renderDynamicBlocks(getState());
 
   try {
-    const items = await getBitacorasByStudent(safeStudentId, {
+    const student = getCompareStudent(safeStudentId);
+    const items = await getBitacorasByStudentIds(getCompareStudentAliases(student), {
       limit: CONFIG.limits.maxRecentBitacoras || 50,
     });
     historyByStudentId.set(safeStudentId, sortBitacorasByDate(items));
@@ -347,10 +365,13 @@ function renderCompareCards(students = []) {
 
 function renderCompareCard(student) {
   const id = getStudentIdentity(student);
-  const latest = latestByStudentId.get(id);
+  const scope = compareProcessScopeByStudentId.get(id) || "";
+  const loadedItems = historyByStudentId.get(id) || [];
+  const scopedItems = filterCompareItemsByProcess(loadedItems, student, scope);
+  const latest = scopedItems[0] || (!scope ? latestByStudentId.get(id) : null);
   const error = latestErrors.get(id);
   const historyOpen = historyOpenStudentIds.has(id);
-  const historyItems = historyByStudentId.get(id) || [];
+  const historyItems = scopedItems;
   const historyLoading = historyLoadingStudentIds.has(id);
 
   return `
@@ -369,8 +390,8 @@ function renderCompareCard(student) {
       </header>
       <dl class="compare-card__facts">
         ${renderFact("Proceso", getReadableValue(getStudentProcessesSummary(student), "Sin proceso"))}
-        ${renderFact("Condición", getReadableValue(getStudentCondition(student), "Sin condición registrada"))}
       </dl>
+      ${renderCompareProcessScopeControl(student, scope)}
       ${
         error
           ? `<p class="message-box message-box--warning">${escapeHtml(error)}</p>`
@@ -384,18 +405,21 @@ function renderCompareCard(student) {
 }
 
 function renderLatestBitacora(item = {}, student = {}) {
-  const override = getStudentOverride(item, getStudentIdentity(student));
+  const override = getStudentOverride(item, student);
   const structured = parseBitacoraContent(item.content || item.contenido);
   const content =
     toStringSafe(override?.tareas) ||
     structured.tareas ||
     toStringSafe(item.content || item.contenido);
-  const tags = normalizeList(override?.etiquetas || item.tags || item.etiquetas);
+  const overrideTags = normalizeList(override?.etiquetas);
+  const tags = overrideTags.length
+    ? overrideTags
+    : normalizeList(item.tags || item.etiquetas);
   const components = [
-    ...normalizeList(override?.componenteCorporal || structured.componenteCorporal),
-    ...normalizeList(override?.componenteTecnico || structured.componenteTecnico),
-    ...normalizeList(override?.componenteTeorico || structured.componenteTeorico),
-    ...normalizeList(override?.componenteObras || structured.componenteObras),
+    ...pickCompareContentList(override?.componenteCorporal, structured.componenteCorporal),
+    ...pickCompareContentList(override?.componenteTecnico, structured.componenteTecnico),
+    ...pickCompareContentList(override?.componenteTeorico, structured.componenteTeorico),
+    ...pickCompareContentList(override?.componenteObras, structured.componenteObras),
   ];
 
   return `
@@ -409,6 +433,42 @@ function renderLatestBitacora(item = {}, student = {}) {
       ${components.length ? `<div class="compare-chip-row">${components.map((value) => `<span class="badge badge--soft">${escapeHtml(value)}</span>`).join("")}</div>` : ""}
     </section>
   `;
+}
+
+function renderCompareProcessScopeControl(student = {}, selectedProcessKey = "") {
+  const studentId = getStudentIdentity(student);
+  const options = normalizeStudentProcesses(student);
+  if (!options.length) return "";
+
+  return `
+    <label class="field field--compact compare-card__process-filter">
+      <span class="field__label">Bitácoras a ver</span>
+      <select class="field__input" data-compare-process-scope data-student-id="${escapeHtml(studentId)}">
+        <option value="">Todos los procesos</option>
+        ${options.map((process) => {
+          const key = toStringSafe(process.processKey);
+          const label = toStringSafe(process.label || process.detalle || process.arte);
+          return `<option value="${escapeHtml(key)}"${key === selectedProcessKey ? " selected" : ""}>${escapeHtml(label)}</option>`;
+        }).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function filterCompareItemsByProcess(items = [], student = {}, processKey = "") {
+  const safeProcessKey = toStringSafe(processKey);
+  if (!safeProcessKey) return sortBitacorasByDate(items);
+
+  return sortBitacorasByDate(items.filter((item) => {
+    const overrideProcessKey = toStringSafe(getStudentOverride(item, student)?.processKey);
+    const itemProcessKey = toStringSafe(item?.process?.processKey || item?.processKey);
+    return (overrideProcessKey || itemProcessKey) === safeProcessKey;
+  }));
+}
+
+function pickCompareContentList(overrideValue, generalValue) {
+  const overrideList = normalizeList(overrideValue);
+  return overrideList.length ? overrideList : normalizeList(generalValue);
 }
 
 function renderFullHistory(items = [], student = {}, isLoading = false) {
@@ -462,9 +522,34 @@ function renderFact(label, value) {
   `;
 }
 
-function getStudentOverride(item = {}, studentId = "") {
+function getStudentOverride(item = {}, student = {}) {
   const overrides = item.studentOverrides || item.overrides || {};
-  return overrides?.[studentId] || null;
+  const aliases = getCompareStudentAliases(student);
+  const directMatch = aliases.find((alias) => overrides?.[alias]);
+  if (directMatch) return overrides[directMatch];
+
+  const studentName = normalizeText(getStudentName(student));
+  const matchingRef = (item.studentRefs || []).find(
+    (ref) => normalizeText(ref?.name) === studentName && overrides?.[ref?.id]
+  );
+  return matchingRef ? overrides[matchingRef.id] : null;
+}
+
+function getCompareStudent(studentId = "") {
+  const safeStudentId = toStringSafe(studentId);
+  return getAllStudents(getState()).find(
+    (student) => getStudentIdentity(student) === safeStudentId
+  ) || null;
+}
+
+function getCompareStudentAliases(student = {}) {
+  return [...new Set([
+    ...getStudentLinkedIds(student),
+    student?.email,
+    student?.correo,
+    student?.correoElectronico,
+    student?.mail,
+  ].map(toStringSafe).filter(Boolean))];
 }
 
 function normalizeList(value) {

@@ -18,6 +18,17 @@ import {
   toStringSafe,
   uniqueStrings,
 } from "../utils/shared.js";
+import {
+  isCurrentMapPianoProgressRecord,
+  isCurrentMapGuitarProgressRecord,
+  isCurrentMapViolinProgressRecord,
+  MAP_GUITAR_PROGRESS_EPOCH,
+  MAP_GUITAR_ROUTE_TEMPLATE_ID,
+  MAP_VIOLIN_PROGRESS_EPOCH,
+  MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+  MAP_PIANO_PROGRESS_EPOCH,
+  MAP_PIANO_ROUTE_TEMPLATE_ID,
+} from "../utils/map-piano-route.js";
 
 const STUDENT_ROUTES_COLLECTION = getStudentRoutesCollectionName();
 const ROUTE_TEMPLATES_COLLECTION = getRouteTemplatesCollectionName();
@@ -31,6 +42,8 @@ const PROGRESS_FIELDS = [
   "stage",
   "experience",
   "recommendations",
+  "progressEpoch",
+  "curriculumRevision",
 ];
 
 function createApiError(message, extra = {}) {
@@ -141,6 +154,11 @@ function normalizeStudentRouteRecord(data = {}, studentId = "") {
     instrumentKey: toStringSafe(normalized.instrumentKey),
     presetId: toStringSafe(normalized.presetId || "musicala_base_v1"),
     routeName: toStringSafe(normalized.routeName || "Ruta base Musicala"),
+    managedByMap: normalized.managedByMap === true,
+    progressEpoch: toStringSafe(normalized.progressEpoch),
+    curriculumRevision: toStringSafe(
+      normalized.curriculumRevision || normalized.revision
+    ),
     stage: toStringSafe(normalized.stage || normalized.etapa || "Experiencia 1"),
     experience: Number(normalized.experience) || 1,
     focusArea: toStringSafe(normalized.focusArea),
@@ -202,6 +220,9 @@ function splitRouteProgress(route = {}) {
     processLabel: normalized.processLabel,
     studentName: normalized.studentName,
     routeTemplateId: normalized.routeTemplateId,
+    managedByMap: normalized.managedByMap,
+    progressEpoch: normalized.progressEpoch,
+    curriculumRevision: normalized.curriculumRevision,
     stage: normalized.stage,
     experience: normalized.experience,
     completedGoalIds: normalized.completedGoalIds,
@@ -350,6 +371,58 @@ export async function getStudentRouteRecord(studentId, options = {}) {
   return mergeRouteStructureAndProgress(structure, progress);
 }
 
+function assertMapPianoCanonicalStudentId(studentId) {
+  const safeStudentId = toStringSafe(studentId);
+  if (!safeStudentId || /^stu_/i.test(safeStudentId)) {
+    throw createApiError(
+      "Se requiere un ID canónico explícito para guardar el avance de Piano.",
+      { code: "INVALID_CANONICAL_STUDENT_ID" }
+    );
+  }
+  return safeStudentId;
+}
+
+export async function getMapPianoProgressRecord(canonicalStudentId) {
+  assertAuthenticated();
+  const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const snapshot = await getDoc(
+    doc(
+      db,
+      STUDENT_ROUTE_PROGRESS_COLLECTION,
+      buildStudentRouteProgressDocId(
+        safeStudentId,
+        MAP_PIANO_ROUTE_TEMPLATE_ID
+      )
+    )
+  );
+  if (!snapshot.exists()) return null;
+
+  const rawProgress = snapshot.data();
+  if (!isCurrentMapPianoProgressRecord(rawProgress, safeStudentId)) {
+    return null;
+  }
+  const progress = splitRouteProgress(
+    normalizeStudentRouteRecord(rawProgress, safeStudentId)
+  );
+  return progress;
+}
+
+export async function getMapGuitarProgressRecord(canonicalStudentId) {
+  assertAuthenticated();
+  const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const snapshot = await getDoc(doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, buildStudentRouteProgressDocId(safeStudentId, MAP_GUITAR_ROUTE_TEMPLATE_ID)));
+  if (!snapshot.exists() || !isCurrentMapGuitarProgressRecord(snapshot.data(), safeStudentId)) return null;
+  return splitRouteProgress(normalizeStudentRouteRecord(snapshot.data(), safeStudentId));
+}
+
+export async function getMapViolinProgressRecord(canonicalStudentId) {
+  assertAuthenticated();
+  const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const snapshot = await getDoc(doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, buildStudentRouteProgressDocId(safeStudentId, MAP_VIOLIN_ROUTE_TEMPLATE_ID)));
+  if (!snapshot.exists() || !isCurrentMapViolinProgressRecord(snapshot.data(), safeStudentId)) return null;
+  return splitRouteProgress(normalizeStudentRouteRecord(snapshot.data(), safeStudentId));
+}
+
 async function saveRouteDocument(collectionName, studentId, route = {}, options = {}, picker) {
   const safeStudentId = toStringSafe(studentId);
   const payload = buildPersistedRoutePayload(safeStudentId, route, options);
@@ -408,8 +481,129 @@ export async function saveStudentRouteProgressRecord(studentId, route = {}, opti
   );
 }
 
+export async function saveMapPianoProgressRecord(
+  canonicalStudentId,
+  route = {},
+  options = {}
+) {
+  const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const strictOptions = {
+    ...options,
+    routeTemplateId: MAP_PIANO_ROUTE_TEMPLATE_ID,
+    instrumentKey: MAP_PIANO_ROUTE_TEMPLATE_ID,
+    areaKey: MAP_PIANO_ROUTE_TEMPLATE_ID,
+    student: {
+      ...(isPlainObject(options?.student) ? options.student : {}),
+      studentId: safeStudentId,
+      studentKey: safeStudentId,
+    },
+  };
+  const payload = buildPersistedRoutePayload(
+    safeStudentId,
+    {
+      ...route,
+      managedByMap: true,
+      routeTemplateId: MAP_PIANO_ROUTE_TEMPLATE_ID,
+      progressEpoch: MAP_PIANO_PROGRESS_EPOCH,
+      curriculumRevision: toStringSafe(
+        route?.curriculumRevision || route?.revision
+      ),
+    },
+    strictOptions
+  );
+  const persistedPayload = {
+    ...splitRouteProgress(payload),
+    studentId: safeStudentId,
+    studentKey: safeStudentId,
+    managedByMap: true,
+    routeTemplateId: MAP_PIANO_ROUTE_TEMPLATE_ID,
+    progressEpoch: MAP_PIANO_PROGRESS_EPOCH,
+    curriculumRevision: toStringSafe(
+      route?.curriculumRevision || route?.revision
+    ),
+  };
+  const ref = doc(
+    db,
+    STUDENT_ROUTE_PROGRESS_COLLECTION,
+    buildStudentRouteProgressDocId(
+      safeStudentId,
+      MAP_PIANO_ROUTE_TEMPLATE_ID
+    )
+  );
+
+  await setDoc(
+    ref,
+    {
+      ...persistedPayload,
+      updatedAt: serverTimestamp(),
+      createdAt: persistedPayload.createdAt || serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return (await getMapPianoProgressRecord(safeStudentId)) || persistedPayload;
+}
+
+export async function saveMapGuitarProgressRecord(canonicalStudentId, route = {}, options = {}) {
+  const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const strictOptions = {
+    ...options,
+    routeTemplateId: MAP_GUITAR_ROUTE_TEMPLATE_ID,
+    instrumentKey: MAP_GUITAR_ROUTE_TEMPLATE_ID,
+    areaKey: MAP_GUITAR_ROUTE_TEMPLATE_ID,
+    student: { ...(isPlainObject(options?.student) ? options.student : {}), studentId: safeStudentId, studentKey: safeStudentId },
+  };
+  const payload = buildPersistedRoutePayload(safeStudentId, {
+    ...route, managedByMap: true, routeTemplateId: MAP_GUITAR_ROUTE_TEMPLATE_ID,
+    progressEpoch: MAP_GUITAR_PROGRESS_EPOCH,
+    curriculumRevision: toStringSafe(route?.curriculumRevision || route?.revision),
+  }, strictOptions);
+  const persistedPayload = {
+    ...splitRouteProgress(payload), studentId: safeStudentId, studentKey: safeStudentId,
+    managedByMap: true, routeTemplateId: MAP_GUITAR_ROUTE_TEMPLATE_ID,
+    progressEpoch: MAP_GUITAR_PROGRESS_EPOCH,
+    curriculumRevision: toStringSafe(route?.curriculumRevision || route?.revision),
+  };
+  await setDoc(doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, buildStudentRouteProgressDocId(safeStudentId, MAP_GUITAR_ROUTE_TEMPLATE_ID)), {
+    ...persistedPayload, updatedAt: serverTimestamp(), createdAt: persistedPayload.createdAt || serverTimestamp(),
+  }, { merge: true });
+  return (await getMapGuitarProgressRecord(safeStudentId)) || persistedPayload;
+}
+
+export async function saveMapViolinProgressRecord(canonicalStudentId, route = {}, options = {}) {
+  const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const strictOptions = {
+    ...options,
+    routeTemplateId: MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+    instrumentKey: MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+    areaKey: MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+    student: { ...(isPlainObject(options?.student) ? options.student : {}), studentId: safeStudentId, studentKey: safeStudentId },
+  };
+  const payload = buildPersistedRoutePayload(safeStudentId, {
+    ...route, managedByMap: true, routeTemplateId: MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+    progressEpoch: MAP_VIOLIN_PROGRESS_EPOCH,
+    curriculumRevision: toStringSafe(route?.curriculumRevision || route?.revision),
+  }, strictOptions);
+  const persistedPayload = {
+    ...splitRouteProgress(payload), studentId: safeStudentId, studentKey: safeStudentId,
+    managedByMap: true, routeTemplateId: MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+    progressEpoch: MAP_VIOLIN_PROGRESS_EPOCH,
+    curriculumRevision: toStringSafe(route?.curriculumRevision || route?.revision),
+  };
+  await setDoc(doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, buildStudentRouteProgressDocId(safeStudentId, MAP_VIOLIN_ROUTE_TEMPLATE_ID)), {
+    ...persistedPayload, updatedAt: serverTimestamp(), createdAt: persistedPayload.createdAt || serverTimestamp(),
+  }, { merge: true });
+  return (await getMapViolinProgressRecord(safeStudentId)) || persistedPayload;
+}
+
 export default {
   getStudentRouteRecord,
+  getMapPianoProgressRecord,
+  getMapGuitarProgressRecord,
+  getMapViolinProgressRecord,
   saveStudentRouteRecord,
   saveStudentRouteProgressRecord,
+  saveMapPianoProgressRecord,
+  saveMapGuitarProgressRecord,
+  saveMapViolinProgressRecord,
 };

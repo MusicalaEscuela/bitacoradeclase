@@ -14,23 +14,25 @@ import {
   setAppSaving,
   setBitacorasLoading,
   setBitacorasForStudent,
-  addBitacoraForStudent,
+  addBitacoraForStudents,
   removeBitacoraForStudent,
+  updateStudentProfile,
   updateDraft,
   resetDraft,
   setUploadQueue,
   setUploading,
   addUploadedFiles,
   clearUploads,
-} from "../state.js";
+} from "../state.js?v=20260815.2";
 
 import {
   getBitacorasByStudentIds,
-  getBitacoraById,
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20260728.3";
+} from "../api/bitacoras.api.js?v=20260731.2";
+
+import { getStudentProfile } from "../api/students.api.js?v=20260822.1";
 
 import {
   getCatalogs,
@@ -81,7 +83,7 @@ import {
   bitacoraMatchesStudentProcess,
   getBitacoraParticipantIds,
   isGroupBitacora,
-} from "../utils/bitacora-coverage.js?v=20260727.1";
+} from "../utils/bitacora-coverage.js?v=20260731.2";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -102,6 +104,7 @@ let groupSearchDebounceTimer = null;
 let currentEditingBitacoraId = "";
 let currentEditingUpdatedAt = 0;
 let currentHistorySearchQuery = "";
+let showAllHistoryProcesses = true;
 let lastSaveNotice = "";
 let historySearchDebounceTimer = null;
 let activeAudioRecorder = null;
@@ -172,6 +175,12 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   await ensureCatalogsLoaded();
   await ensureBitacorasLoaded(student);
 
+  const requestedBitacoraId = getRequestedBitacoraIdFromPayload(payload);
+  if (requestedBitacoraId) {
+    prepareBitacoraForEditing(student, requestedBitacoraId);
+    return;
+  }
+
   const draft = getCurrentDraft();
 
   if (!draftBelongsToContext(draft, student)) {
@@ -193,6 +202,26 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
     updateDraft(nextDraft);
     currentEditorMode = nextDraft.mode;
   }
+
+  await ensureGroupDraftStudentsLoaded(getCurrentDraft());
+}
+
+// Las tarjetas de búsqueda son resumidas para mantener la app rápida. En una
+// grupal resolvemos sólo los integrantes elegidos para mostrar sus procesos.
+async function ensureGroupDraftStudentsLoaded(draft = {}) {
+  if (getAllowedMode(draft?.mode) !== CONFIG.modes.group) return;
+
+  const studentIds = normalizeStudentIds(draft?.studentIds || []);
+  await Promise.all(
+    studentIds.map(async (studentId) => {
+      try {
+        const profile = await getStudentProfile(studentId);
+        if (profile) updateStudentProfile(profile);
+      } catch (error) {
+        console.warn("No se pudo resolver integrante de la grupal:", studentId, error);
+      }
+    })
+  );
 }
 
 export async function render({
@@ -634,7 +663,6 @@ function bindEditorEvents(student) {
   const processSelect = viewRoot.querySelector("#bitacora-process-select");
   const fechaInput = viewRoot.querySelector("#bitacora-fecha");
   const horaInput = viewRoot.querySelector("#bitacora-hora");
-  const saveTimeBtn = viewRoot.querySelector("#bitacora-save-time-btn");
   const tituloInput = viewRoot.querySelector("#bitacora-titulo");
   const etiquetasInput = viewRoot.querySelector("#bitacora-etiquetas");
   const tareasInput = viewRoot.querySelector("#bitacora-tareas");
@@ -649,6 +677,7 @@ function bindEditorEvents(student) {
   const audioStopBtn = viewRoot.querySelector("#bitacora-audio-stop-btn");
   const resetBtn = viewRoot.querySelector("#bitacora-reset-btn");
   const refreshBtn = viewRoot.querySelector("#bitacora-refresh-btn");
+  const historyScopeBtn = viewRoot.querySelector("#bitacora-history-scope-btn");
   const historySearchInput = viewRoot.querySelector("#bitacoras-history-search");
   const printBtn = viewRoot.querySelector("#bitacora-print-btn");
   const backSearchBtn = viewRoot.querySelector("#editor-back-search-btn");
@@ -672,12 +701,6 @@ function bindEditorEvents(student) {
     input.addEventListener("change", () => handleDraftInput(student));
   });
 
-  if (saveTimeBtn) {
-    saveTimeBtn.addEventListener("click", async () => {
-      await handleSaveClassTime(student);
-    });
-  }
-
   modeInputs.forEach((input) => {
     input.addEventListener("change", () => {
       handleModeChange(student, input.value);
@@ -691,12 +714,12 @@ function bindEditorEvents(student) {
   }
 
   if (groupResultsContainer) {
-    groupResultsContainer.addEventListener("click", (event) => {
+    groupResultsContainer.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-group-add-student]");
       if (!button) return;
 
       const studentId = button.getAttribute("data-group-add-student");
-      addStudentToGroupDraft(student, studentId);
+      await addStudentToGroupDraft(student, studentId);
       renderGroupSelectionBlocks(student);
       renderDraftMetaBlock(student);
     });
@@ -1105,6 +1128,13 @@ function bindEditorEvents(student) {
     });
   }
 
+  if (historyScopeBtn) {
+    historyScopeBtn.addEventListener("click", () => {
+      showAllHistoryProcesses = !showAllHistoryProcesses;
+      renderHistoryBlock(student);
+    });
+  }
+
   if (historySearchInput) {
     historySearchInput.addEventListener("input", () => {
       currentHistorySearchQuery = toStringSafe(historySearchInput.value);
@@ -1259,7 +1289,10 @@ function scheduleGroupSearchRender(student) {
   }
 
   groupSearchDebounceTimer = setTimeout(() => {
-    renderGroupSelectionBlocks(student);
+    // Al escribir sólo cambia la lista de coincidencias. Volver a construir
+    // los chips, el resumen y las personalizaciones de todo el grupo hacía
+    // que cada letra se sintiera lenta, especialmente en grupos grandes.
+    renderGroupSearchResults(student);
     groupSearchDebounceTimer = null;
   }, GROUP_SEARCH_DEBOUNCE_MS);
 }
@@ -1268,7 +1301,8 @@ function renderHistoryBlock(student, state = getState(), config = CONFIG) {
   const historyContainer = viewRoot?.querySelector("#bitacoras-history");
   if (!historyContainer) return;
 
-  const hasActiveProcess = Boolean(toStringSafe(currentEditorProcessKey));
+  const hasActiveProcess =
+    !showAllHistoryProcesses && Boolean(toStringSafe(currentEditorProcessKey));
   const totalForStudent = getRawBitacorasFromState(student).length;
 
   // Mantener el titulo del historial sincronizado con el proceso activo.
@@ -1278,7 +1312,9 @@ function renderHistoryBlock(student, state = getState(), config = CONFIG) {
     const activeProcessLabel = toStringSafe(
       activeProcess?.label || activeProcess?.detalle || activeProcess?.arte || "Proceso"
     );
-    historyTitle.textContent = `Bitacoras registradas (${activeProcessLabel})`;
+    historyTitle.textContent = showAllHistoryProcesses
+      ? "Todas las bitácoras del estudiante"
+      : `Bitacoras registradas (${activeProcessLabel})`;
   }
 
   historyContainer.innerHTML = renderBitacorasHistory(
@@ -1289,6 +1325,13 @@ function renderHistoryBlock(student, state = getState(), config = CONFIG) {
     currentHistorySearchQuery,
     { hasActiveProcess, totalForStudent }
   );
+
+  const scopeButton = viewRoot?.querySelector("#bitacora-history-scope-btn");
+  if (scopeButton) {
+    scopeButton.textContent = showAllHistoryProcesses
+      ? "Solo este proceso"
+      : "Ver todas las bitácoras";
+  }
 }
 
 function handleModeChange(student, mode) {
@@ -1498,7 +1541,9 @@ function refillFormIfNeeded(student) {
   syncInputValue("#bitacora-titulo", draft.titulo || buildAutoTitle(student, draft.fechaClase, draft));
   syncTextareaValue("#bitacora-tareas", structured.tareas || "");
   syncTextareaValue("#bitacora-contenido", draft.contenido || "");
-  syncInputValue("#bitacora-docentes-input", "");
+  // El texto pendiente no debe desaparecer si llega una actualización
+  // reactiva mientras el docente todavía no ha pulsado "Agregar".
+  syncInputValue("#bitacora-docentes-input", draft.pendingDocenteInput || "");
   syncInputValue("#bitacora-etiquetas-input", "");
   syncInputValue("#bitacora-componente-corporal-input", "");
   syncInputValue("#bitacora-componente-tecnico-input", "");
@@ -1870,6 +1915,33 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
     return;
   }
 
+  if (!prepareBitacoraForEditing(student, safeBitacoraId, source)) return;
+  refillFormFromDraft(student);
+  renderGroupSelectionBlocks(student);
+  renderFilesPreviewBlock(student);
+  renderDraftMetaBlock(student);
+  syncModeInputs();
+  updateSaveButtonState(false);
+  viewRoot?.querySelector("#bitacora-form")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+function prepareBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
+  const safeBitacoraId = toStringSafe(bitacoraId);
+  if (!safeBitacoraId) return false;
+
+  const source =
+    sourceOverride ||
+    getBitacorasFromState(student).find(
+      (item) => toStringSafe(item.id) === safeBitacoraId
+    );
+  if (!source) {
+    setAppError("No se encontro la bitacora para editar.");
+    return false;
+  }
+
   const normalized = normalizeBitacora(source);
   const studentRef = getStudentIdentity(student);
   const nextMode = getAllowedMode(normalized.mode || CONFIG.modes.individual);
@@ -1901,6 +1973,7 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
     ),
     processKey: normalized.processKey || normalized.process?.processKey || "",
     editingBitacoraId: safeBitacoraId,
+    pendingDocenteInput: "",
   }, { notify: false });
 
   currentEditorMode = nextMode;
@@ -1910,16 +1983,7 @@ function loadBitacoraForEditing(student, bitacoraId, sourceOverride = null) {
   // Edicion de bitacora guardada: respetar sus docentes, no inyectar sugerido.
   docentesTouched = true;
   clearAppError();
-  refillFormFromDraft(student);
-  renderGroupSelectionBlocks(student);
-  renderFilesPreviewBlock(student);
-  renderDraftMetaBlock(student);
-  syncModeInputs();
-  updateSaveButtonState(false);
-  viewRoot?.querySelector("#bitacora-form")?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
+  return true;
 }
 
 async function handleDeleteBitacora(student, bitacoraId) {
@@ -2075,27 +2139,22 @@ async function handleSubmit(student) {
     // La hora es la llave de conciliación. Tras guardar, se lee el documento
     // real para no mostrar un éxito si el navegador conservó un módulo viejo
     // o Firebase no devolvió el valor escrito.
-    const persisted = payload.horaClase
-      ? await getBitacoraById(editingBitacoraId || saved.id)
-      : null;
-    if (payload.horaClase && normalizeClassTime(persisted?.horaClase) !== payload.horaClase) {
-      throw new Error("Firebase no confirmó la hora de la clase. La bitácora no se marcará como actualizada hasta que la hora quede guardada.");
-    }
-    const normalized = normalizeCreatedBitacora(persisted || saved, payload);
+    // La hora viaja en el mismo payload que el resto de la bitácora. Evitamos
+    // una lectura adicional de Firebase, especialmente costosa en registros
+    // grupales, y usamos la respuesta de la escritura confirmada.
+    const normalized = normalizeCreatedBitacora(saved, payload);
 
     const relatedStudentIds = Array.isArray(normalized.studentIds)
       ? normalized.studentIds
       : [studentRef];
 
-    relatedStudentIds.forEach((id) => {
-      if (!id) return;
-      addBitacoraForStudent(id, normalized);
-    });
-
     const fallbackId = getStudentFallbackId(student);
-    if (fallbackId && !relatedStudentIds.includes(fallbackId)) {
-      addBitacoraForStudent(fallbackId, normalized);
-    }
+    addBitacoraForStudents(
+      fallbackId && !relatedStudentIds.includes(fallbackId)
+        ? [...relatedStudentIds, fallbackId]
+        : relatedStudentIds,
+      normalized
+    );
 
     resetDraftForContext({
       mode: draft.mode || CONFIG.modes.individual,
@@ -2158,74 +2217,6 @@ async function handleSubmit(student) {
     }
     setAppSaving(false);
     updateSaveButtonState(false);
-  }
-}
-
-// La hora se usa para conciliar y suele corregirse en registros ya guardados.
-// Este camino evita que la docente tenga que recorrer el formulario completo y
-// confirma la lectura real de Firebase antes de anunciar que quedó lista.
-async function handleSaveClassTime(student) {
-  clearAppError();
-  if (getState()?.app?.saving) return;
-
-  const draft = updateDraftFromForm(student);
-  const bitacoraId = toStringSafe(draft.editingBitacoraId || currentEditingBitacoraId);
-  const horaClase = normalizeClassTime(draft.horaClase);
-  if (!bitacoraId) {
-    setAppError("Abre una bitácora existente con Editar antes de guardar solo la hora.");
-    return;
-  }
-  if (!horaClase) {
-    setAppError("Elige una hora válida antes de guardarla.");
-    return;
-  }
-
-  setAppSaving(true);
-  const button = viewRoot?.querySelector("#bitacora-save-time-btn");
-  if (button) button.disabled = true;
-  const toastId = showLoadingToast("Guardando y verificando la hora en Firebase.", {
-    title: "Hora de clase",
-  });
-
-  try {
-    const payload = buildBitacoraPayload(student, draft);
-    await updateBitacora(bitacoraId, payload, {
-      fullPayload: true,
-      expectedUpdatedAt: currentEditingUpdatedAt,
-    });
-    const persisted = await getBitacoraById(bitacoraId);
-    const persistedHora = normalizeClassTime(persisted?.horaClase || persisted?.hora);
-    if (persistedHora !== horaClase) {
-      throw new Error("Firebase no devolvió la misma hora. No se confirmó el cambio.");
-    }
-
-    const normalized = normalizeCreatedBitacora(persisted, payload);
-    (normalized.studentIds || [getStudentIdentity(student)]).forEach((id) => {
-      if (id) addBitacoraForStudent(id, normalized);
-    });
-    currentEditingUpdatedAt = getTimestamp(persisted.updatedAt);
-    updateDraft({ ...getCurrentDraft(), horaClase: persistedHora }, { notify: false });
-    syncInputValue("#bitacora-hora", persistedHora);
-    renderHistoryBlock(student);
-    resolveLoadingToast(toastId, {
-      type: "success",
-      title: "Hora guardada",
-      message: `Firebase confirmó ${persistedHora}. Ya puede usarse en Conciliación.`,
-    });
-  } catch (error) {
-    console.error("Error guardando hora de clase:", error);
-    const message = error?.message || "No se pudo confirmar la hora en Firebase.";
-    setAppError(message);
-    if (toastId) {
-      resolveLoadingToast(toastId, {
-        type: "error",
-        title: "La hora no se guardó",
-        message,
-      });
-    }
-  } finally {
-    setAppSaving(false);
-    if (button) button.disabled = false;
   }
 }
 
@@ -2842,9 +2833,10 @@ async function safeLoadBitacoras(studentOrRef) {
     studentOrRef && typeof studentOrRef === "object"
       ? getStudentLinkedIds(studentOrRef)
       : normalizeStudentIds([studentOrRef]);
-  const response = await getBitacorasByStudentIds(linkedStudentIds, {
-    processKey: currentEditorProcessKey || "",
-  });
+  // Cargamos todo el historial del estudiante. El filtro de proceso se
+  // aplica en la vista para permitir consultar otras etapas y bitácoras
+  // grupales sin volver a descargar datos.
+  const response = await getBitacorasByStudentIds(linkedStudentIds);
   const items = normalizeBitacorasResponse(response);
   return sortBitacorasByDate(items);
 }
@@ -3089,7 +3081,7 @@ function validateDraft(draft, student) {
   return { valid: true };
 }
 
-function collectStudentOverridesFromForm(selectedStudents = []) {
+function collectStudentOverridesFromForm(selectedStudents = [], existingOverrides = {}) {
   const next = {};
 
   selectedStudents.forEach((selectedStudent) => {
@@ -3104,7 +3096,18 @@ function collectStudentOverridesFromForm(selectedStudents = []) {
         ? Boolean(toggleControl.checked)
         : toggleControl?.getAttribute("aria-pressed") === "true";
 
+    const existing = getStudentOverrideForDraft(
+      { studentOverrides: existingOverrides },
+      studentId
+    );
+
     if (!enabled) {
+      if (existing.processKey) {
+        next[studentId] = {
+          ...buildEmptyStudentOverride(),
+          processKey: existing.processKey,
+        };
+      }
       return;
     }
 
@@ -3114,6 +3117,7 @@ function collectStudentOverridesFromForm(selectedStudents = []) {
 
     const override = {
       enabled,
+      processKey: existing.processKey,
       tareas,
       etiquetas: getOverrideMultiValueSelection(studentId, "etiquetas"),
       componenteCorporal: getOverrideMultiValueSelection(
@@ -3187,6 +3191,9 @@ function updateDraftFromForm(student, options = {}) {
     componenteTeorico: getMultiValueSelection("componenteTeorico"),
     componenteObras: getMultiValueSelection("componenteObras"),
   };
+  const pendingDocenteInput = toStringSafe(
+    viewRoot?.querySelector("#bitacora-docentes-input")?.value
+  );
 
   const nextFecha = normalizeLocalDateInput(viewRoot?.querySelector("#bitacora-fecha")?.value || "");
   const nextHora = normalizeClassTime(viewRoot?.querySelector("#bitacora-hora")?.value || "");
@@ -3222,6 +3229,7 @@ function updateDraftFromForm(student, options = {}) {
     titulo: nextTitulo,
     docentes: structuredFields.docentes,
     docente: structuredFields.docentes[0] || "",
+    pendingDocenteInput,
     etiquetas: getMultiValueSelection("etiquetas"),
     contenido: nextContenido,
     archivos: Array.isArray(existingDraft.archivos)
@@ -3229,7 +3237,7 @@ function updateDraftFromForm(student, options = {}) {
       : [],
     studentOverrides:
       nextMode === CONFIG.modes.group
-        ? collectStudentOverridesFromForm(selectedStudents)
+        ? collectStudentOverridesFromForm(selectedStudents, existingDraft.studentOverrides)
         : {},
   };
 
@@ -3928,6 +3936,22 @@ function renderGroupSelectionBlocks(student) {
   toggleGroupModeBlock(draft.mode === CONFIG.modes.group);
 }
 
+function renderGroupSearchResults(student) {
+  const resultsContainer = viewRoot?.querySelector("#group-students-results");
+  if (!resultsContainer) return;
+
+  const draft = getDraftForContext(student);
+  const allStudents = getAllStudentsFromState(getState());
+  const selected = getSelectedStudentsForDraft(draft, student, allStudents);
+  const searchValue = viewRoot?.querySelector("#group-students-search")?.value || "";
+
+  resultsContainer.innerHTML = renderGroupStudentsResults(
+    allStudents,
+    selected,
+    searchValue
+  );
+}
+
 function renderStudentOverridesBlock(student, { force = false } = {}) {
   const container = viewRoot?.querySelector("#student-overrides-block");
   if (!container) return;
@@ -4373,9 +4397,16 @@ function renderGroupStudentsResults(
   `;
 }
 
-function addStudentToGroupDraft(primaryStudent, studentId) {
+async function addStudentToGroupDraft(primaryStudent, studentId) {
   const safeStudentId = toStringSafe(studentId);
   if (!safeStudentId) return;
+
+  try {
+    const profile = await getStudentProfile(safeStudentId);
+    if (profile) updateStudentProfile(profile);
+  } catch (error) {
+    console.warn("No se pudo resolver proceso del integrante:", safeStudentId, error);
+  }
 
   const allStudents = getAllStudentsFromState(getState());
   const currentDraft = getDraftForContext(primaryStudent);
@@ -4630,6 +4661,10 @@ function getBitacorasFromState(studentOrRef) {
       : null;
 
   const rawItems = getRawBitacorasFromState(studentOrRef);
+  if (showAllHistoryProcesses || !toStringSafe(currentEditorProcessKey)) {
+    return rawItems;
+  }
+
   return rawItems.filter((item) =>
     bitacoraMatchesActiveProcess(item, selectedProcess, studentOrRef)
   );
@@ -4949,6 +4984,10 @@ function getRequestedModeFromPayload(payload) {
   return getAllowedMode(rawMode);
 }
 
+function getRequestedBitacoraIdFromPayload(payload) {
+  return toStringSafe(payload?.editBitacoraId || payload?.bitacoraId);
+}
+
 function getRequestedProcessFromPayload(payload) {
   return toStringSafe(payload?.processKey || payload?.processRef || payload?.process);
 }
@@ -5152,7 +5191,6 @@ function buildMusicalaEditorMarkup({
                     class="field__input"
                     value="${escapeHtml(normalizeClassTime(draft.horaClase))}"
                   />
-                  <button type="button" class="btn btn--ghost btn--sm" id="bitacora-save-time-btn">Guardar hora</button>
                 </div>
 
                 ${renderMultiValueField({
@@ -5365,6 +5403,9 @@ function buildMusicalaEditorMarkup({
                 <h2 class="panel-header__title" id="bitacoras-history-title">Bitacoras registradas (${escapeHtml(activeProcessLabel)})</h2>
               </div>
               <div class="editor-history__actions">
+                <button type="button" class="btn btn--ghost btn--sm" id="bitacora-history-scope-btn">
+                  Solo este proceso
+                </button>
                 <button type="button" class="btn btn--ghost btn--sm" id="bitacora-print-btn">
                   Imprimir historial
                 </button>
@@ -5375,7 +5416,7 @@ function buildMusicalaEditorMarkup({
             </header>
             ${renderHistorySearchControl(currentHistorySearchQuery)}
             <div id="bitacoras-history">
-              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery, { hasActiveProcess: Boolean(toStringSafe(currentEditorProcessKey)), totalForStudent: getRawBitacorasFromState(student).length })}
+              ${renderBitacorasHistory(bitacoras, isLoading, config, isAuthenticated, currentHistorySearchQuery, { hasActiveProcess: !showAllHistoryProcesses && Boolean(toStringSafe(currentEditorProcessKey)), totalForStudent: getRawBitacorasFromState(student).length })}
             </div>
           </section>
         </main>
@@ -5988,7 +6029,9 @@ function renderStudentOverrideCard(student, override, catalogOptions = {}) {
           <span class="student-override-card__switch-state">${selectedOverride.enabled ? "Activada" : "Desactivada"}</span>
         </button>
       </div>
-      <div class="student-override-card__body ${selectedOverride.enabled ? "" : "is-hidden"}">
+      ${
+        selectedOverride.enabled
+          ? `<div class="student-override-card__body">
         <label class="field field--compact">
           <span class="field__label">Observacion / tarea personalizada</span>
           <textarea
@@ -6007,7 +6050,9 @@ function renderStudentOverrideCard(student, override, catalogOptions = {}) {
           ${renderStudentOverrideField(studentId, "componenteTeorico", "Componente teorico", "Temas o refuerzos...", selectedOverride.componenteTeorico, catalogOptions.componenteTeorico)}
         </div>
         ${renderStudentOverrideField(studentId, "componenteObras", "Componente de obras", "Obras o repertorio especifico...", selectedOverride.componenteObras, catalogOptions.componenteObras)}
-      </div>
+      </div>`
+          : ""
+      }
     </article>
   `;
 }
@@ -6190,6 +6235,8 @@ const AREA_KEY_SYNONYMS = [
       "ceramica",
       "modelado",
       "manualidades",
+      "manual",
+      "manuales",
     ],
   },
   {
@@ -6229,8 +6276,11 @@ function resolveCanonicalArea(value) {
 // filtrar: todo lo que sea de Musica aplica a cualquier proceso de Musica, lo de
 // Danza/Baile a cualquier proceso de danza, y asi sucesivamente.
 function getAreaCatalogKeys(process = {}, student = {}) {
-  // 1) Primero el area macro declarada explicitamente.
-  const macroValues = [process?.arte, process?.area, student?.area];
+  // 1) El proceso activo manda. Algunos estudiantes conservan en `student.area`
+  // un area historica (por ejemplo Música) aunque el proceso actual sea Artes
+  // manuales; mezclar ambos catalogos vuelve a mostrar opciones equivocadas.
+  const processMacroValues = [process?.arte, process?.area];
+  const studentMacroValues = [student?.area];
   // 2) Como respaldo, instrumento/programa/detalle (por si no hay area macro).
   const detailValues = [
     process?.instrumento,
@@ -6241,7 +6291,13 @@ function getAreaCatalogKeys(process = {}, student = {}) {
   ];
 
   const fromMacro = new Set();
-  macroValues.forEach((value) => {
+  processMacroValues.forEach((value) => {
+    const canonical = resolveCanonicalArea(value);
+    if (canonical) fromMacro.add(canonical);
+  });
+  if (fromMacro.size) return [...fromMacro];
+
+  studentMacroValues.forEach((value) => {
     const canonical = resolveCanonicalArea(value);
     if (canonical) fromMacro.add(canonical);
   });
@@ -6255,7 +6311,7 @@ function getAreaCatalogKeys(process = {}, student = {}) {
   if (fromDetail.size) return [...fromDetail];
 
   // 3) Sin coincidencia con las 4 areas: usar las claves crudas (compatibilidad).
-  return uniqueByNormalized([...macroValues, ...detailValues]).map((value) =>
+  return uniqueByNormalized([...processMacroValues, ...studentMacroValues, ...detailValues]).map((value) =>
     normalizeText(value)
   );
 }

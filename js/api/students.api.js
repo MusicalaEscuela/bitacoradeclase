@@ -23,8 +23,8 @@ import {
 import {
   getLogicalStudentLinkedIds,
   resolveLogicalStudents,
-} from "../utils/student-resolver.js?v=20260713.3";
-import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260713.3";
+} from "../utils/student-resolver.js?v=20260818.1";
+import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260731.2";
 
 const DEFAULT_TIMEOUT =
   Number.isFinite(CONFIG?.api?.timeoutMs) && CONFIG.api.timeoutMs > 0
@@ -32,8 +32,12 @@ const DEFAULT_TIMEOUT =
     : 20000;
 
 const STUDENTS_COLLECTION = getStudentsCollectionName();
+const STUDENT_IDENTITY_LINKS_COLLECTION = "student_identity_links";
 const FIRESTORE_BATCH_LIMIT = 400;
 let logicalStudentsCache = [];
+let studentsLoadPromise = null;
+let teacherStudentsCache = [];
+let teacherStudentsLoadPromise = null;
 
 function createApiError(message, extra = {}) {
   const error = new Error(message);
@@ -781,11 +785,13 @@ function normalizeStudentRecord(student = {}) {
   const email = rawEmail.toLowerCase();
 
   const processes = rawProcesses.length
-    ? rawProcesses
-        .flatMap((process, index) =>
-          expandProcessRecords(process, rawStudentKey, index)
-        )
-        .filter(Boolean)
+    ? dedupeExpandedProcesses(
+        rawProcesses
+          .flatMap((process, index) =>
+            expandProcessRecords(process, rawStudentKey, index)
+          )
+          .filter(Boolean)
+      )
     : [];
 
   const firstProcess = processes[0] || null;
@@ -862,6 +868,21 @@ function expandProcessRecords(process = {}, studentKey = "", index = 0) {
     .filter(Boolean);
 }
 
+function dedupeExpandedProcesses(processes = []) {
+  const seen = new Set();
+
+  return processes.filter((process) => {
+    const semanticKey = [process?.arte, process?.detalle]
+      .map(normalizeText)
+      .filter(Boolean)
+      .join("|");
+    const key = semanticKey || toStringSafe(process?.processKey);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function matchesStatusFilter(student, statusValue, includeInactive) {
   if (!includeInactive && !isStudentVisibleForTeachers(student)) {
     return false;
@@ -915,29 +936,192 @@ function sortStudents(students = []) {
 }
 
 async function listStudentsFromFirestore() {
-  const [snapshot, identityLinks] = await Promise.all([
-    getDocs(collection(db, STUDENTS_COLLECTION)),
-    listStudentIdentityLinkRecords({ includeReviews: true }),
-  ]);
-  const rawRecords = snapshot.docs.map((docSnap) => ({
-    ...docSnap.data(),
-    __documentId: docSnap.id,
-    id: docSnap.id,
-  }));
-  logicalStudentsCache = resolveLogicalStudents(rawRecords, identityLinks)
-    .map((record) => normalizeStudentRecord(record))
-    .filter(Boolean);
-  return logicalStudentsCache;
+  // Vistas que se abren casi al mismo tiempo (búsqueda, perfil o planeador)
+  // no deben disparar varias lecturas completas de la misma colección.
+  if (studentsLoadPromise) return studentsLoadPromise;
+
+  studentsLoadPromise = (async () => {
+    const [snapshot, identityLinks] = await Promise.all([
+      getDocs(collection(db, STUDENTS_COLLECTION)),
+      listStudentIdentityLinkRecords({ includeReviews: true }),
+    ]);
+    const rawRecords = snapshot.docs.map((docSnap) => ({
+      ...docSnap.data(),
+      __documentId: docSnap.id,
+      id: docSnap.id,
+    }));
+    logicalStudentsCache = resolveLogicalStudents(rawRecords, identityLinks)
+      .map((record) => normalizeStudentRecord(record))
+      .filter(Boolean);
+    return logicalStudentsCache;
+  })();
+
+  try {
+    return await studentsLoadPromise;
+  } finally {
+    studentsLoadPromise = null;
+  }
+}
+
+/**
+ * Lista inicial del HUB docente. RIP ya publica esta señal como un campo
+ * indexable; usarla evita descargar el directorio histórico completo antes
+ * de que el docente pueda escribir en el buscador.
+ */
+async function listTeacherStudentsFromFirestore(options = {}) {
+  if (options.refresh === true) {
+    teacherStudentsCache = [];
+  }
+  if (teacherStudentsCache.length) return teacherStudentsCache;
+  if (teacherStudentsLoadPromise) return teacherStudentsLoadPromise;
+
+  teacherStudentsLoadPromise = (async () => {
+    const snapshot = await getDocs(
+      query(
+        collection(db, STUDENTS_COLLECTION),
+        where("rip.showInTeacherLists", "==", true)
+      )
+    );
+
+    const visibleRecords = snapshot.docs.map((docSnap) => ({
+      ...docSnap.data(),
+      __documentId: docSnap.id,
+      id: docSnap.id,
+    }));
+    const visibleIds = new Set(visibleRecords.map((record) => record.id));
+
+    /*
+      RIP publica el canónico visible, pero sus procesos pueden estar en un
+      expediente académico confirmado. La búsqueda rápida no puede renderizar
+      ese canónico aislado: se hidratan exclusivamente los miembros de los
+      vínculos confirmados de los estudiantes ya visibles, sin descargar el
+      directorio histórico completo.
+    */
+    const identityLinks = await listStudentIdentityLinkRecords({ includeReviews: false });
+    const relevantLinks = identityLinks.filter((record) =>
+      record?.kind === "link" &&
+      normalizeText(record?.status) === "confirmed" &&
+      Array.isArray(record?.linkedStudentIds) &&
+      record.linkedStudentIds.some((id) => visibleIds.has(normalizeStudentIdentifier(id)))
+    );
+    const loadedIds = new Set(visibleRecords.map((record) => record.id));
+    const linkedIds = Array.from(
+      new Set(
+        relevantLinks
+          .flatMap((record) => record.linkedStudentIds || [])
+          .map(normalizeStudentIdentifier)
+          .filter((id) => id && !loadedIds.has(id))
+      )
+    );
+    const linkedRecords = (await Promise.all(
+      linkedIds.map(async (id) => {
+        const linkedSnapshot = await getDoc(doc(db, STUDENTS_COLLECTION, id));
+        return linkedSnapshot.exists()
+          ? { ...linkedSnapshot.data(), __documentId: linkedSnapshot.id, id: linkedSnapshot.id }
+          : null;
+      })
+    )).filter(Boolean);
+
+    teacherStudentsCache = resolveLogicalStudents(
+      [...visibleRecords, ...linkedRecords],
+      relevantLinks
+    )
+      .filter((student) =>
+        getLogicalStudentLinkedIds(student).some((id) => visibleIds.has(id))
+      )
+      .map((record) => normalizeStudentRecord(record))
+      .filter(Boolean);
+
+    return teacherStudentsCache;
+  })();
+
+  try {
+    return await teacherStudentsLoadPromise;
+  } finally {
+    teacherStudentsLoadPromise = null;
+  }
 }
 
 async function getStudentDocFromFirestore(studentRef) {
   const studentKey = normalizeStudentIdentifier(studentRef);
   if (!studentKey) return null;
 
-  const snapshot = await getDoc(doc(db, STUDENTS_COLLECTION, studentKey));
+  // La ficha se abre por ID para no descargar todo el directorio. Cuando el
+  // documento canónico acaba de ser sincronizado puede no traer todavía sus
+  // datos pedagógicos, aunque sus expedientes vinculados sí los conserven.
+  // Cargamos sólo esos documentos explícitamente confirmados (no la colección
+  // completa) y aplicamos el mismo resolvedor de identidad de la carga total.
+  const [snapshot, linkSnapshot] = await Promise.all([
+    getDoc(doc(db, STUDENTS_COLLECTION, studentKey)),
+    getDoc(doc(db, STUDENT_IDENTITY_LINKS_COLLECTION, studentKey)),
+  ]);
   if (!snapshot.exists()) return null;
 
-  return normalizeStudentRecord({ id: snapshot.id, ...snapshot.data() });
+  const link = linkSnapshot.exists() ? linkSnapshot.data() || {} : {};
+  const linkedStudentIds = Array.isArray(link.linkedStudentIds)
+    ? link.linkedStudentIds.map(normalizeStudentIdentifier).filter(Boolean)
+    : [];
+  const linkedCanonicalId = normalizeStudentIdentifier(link.canonicalStudentId);
+  const hasConfirmedCanonicalLink =
+    normalizeText(link.status) === "confirmed" &&
+    linkedCanonicalId === studentKey &&
+    linkedStudentIds.includes(studentKey);
+
+  if (hasConfirmedCanonicalLink) {
+    const idsToResolve = Array.from(new Set([studentKey, ...linkedStudentIds]));
+    const linkedSnapshots = await Promise.all(
+      idsToResolve.map((id) => getDoc(doc(db, STUDENTS_COLLECTION, id)))
+    );
+    const linkedRecords = linkedSnapshots
+      .filter((item) => item.exists())
+      .map((item) => ({ id: item.id, ...item.data() }));
+    const resolved = resolveLogicalStudents(linkedRecords, [
+      { id: linkSnapshot.id, kind: "link", ...link },
+    ])
+      .map((item) => normalizeStudentRecord(item))
+      .filter(Boolean)
+      .find((item) => item.canonicalStudentId === linkedCanonicalId);
+
+    if (resolved) return resolved;
+  }
+
+  // Algunas consolidaciones antiguas dejaron los alias con
+  // canonicalStudentId, pero sin el documento técnico de enlace del canónico.
+  // Al abrir una ficha, recuperamos únicamente esos alias declarados para no
+  // perder su historial pedagógico ni descargar todo el directorio.
+  const aliasesSnapshot = await getDocs(
+    query(
+      collection(db, STUDENTS_COLLECTION),
+      where("canonicalStudentId", "==", studentKey)
+    )
+  );
+  const aliasRecords = aliasesSnapshot.docs.map((aliasSnapshot) => ({
+    id: aliasSnapshot.id,
+    ...aliasSnapshot.data(),
+  }));
+  if (aliasRecords.length) {
+    const resolved = resolveLogicalStudents(
+      [{ id: snapshot.id, ...snapshot.data() }, ...aliasRecords],
+      []
+    )
+      .map((item) => normalizeStudentRecord(item))
+      .filter(Boolean)
+      .find((item) => item.canonicalStudentId === studentKey);
+
+    if (resolved) return resolved;
+  }
+
+  return normalizeStudentRecord({
+    id: snapshot.id,
+    ...snapshot.data(),
+    ...(hasConfirmedCanonicalLink
+      ? {
+          canonicalStudentId: linkedCanonicalId,
+          linkedStudentIds,
+          identityLinkStatus: "confirmed",
+        }
+      : {}),
+  });
 }
 
 async function getStudentByEmailFromFirestore(email) {
@@ -955,13 +1139,25 @@ async function getStudentByEmailFromFirestore(email) {
 
 /*
   Lista operativa para docentes usando la consulta indexable publicada por RIP
-  (rip.showInTeacherLists == true). TRANSICIÓN: mientras existan estudiantes
-  sin sincronizar desde RIP, se completa con la carga heredada filtrada por la
-  política equivalente; cuando la migración termine, la rama de fallback se
-  puede retirar y queda solo la consulta indexada.
+  (rip.showInTeacherLists == true). Esta es la ruta rápida de búsqueda.
 */
 export async function getTeacherListStudents(options = {}) {
-  return getStudents({ ...options, includeInactive: false });
+  const filters = normalizeStudentQueryOptions({
+    ...options,
+    includeInactive: false,
+  });
+  const students = await listTeacherStudentsFromFirestore({
+    refresh: options.refresh === true,
+  });
+
+  return sortStudents(
+    students.filter(
+      (student) =>
+        matchesStatusFilter(student, filters.estado, filters.includeInactive) &&
+        matchesAreaFilter(student, filters.arte) &&
+        matchesStudentQuery(student, filters.q)
+    )
+  );
 }
 
 export async function getStudents(options = {}) {
@@ -993,6 +1189,12 @@ export async function getStudentsResponse(options = {}) {
 export async function getStudentProfile(studentRef, options = {}) {
   const safeStudentRef = normalizeStudentIdentifier(studentRef);
   if (!safeStudentRef) return null;
+
+  // Al abrir una ficha desde búsqueda, el ID del documento ya está disponible.
+  // Resolverlo puntualmente evita bloquear el dispositivo leyendo el directorio.
+  const directStudent = await getStudentDocFromFirestore(safeStudentRef);
+  if (directStudent) return directStudent;
+
   if (!logicalStudentsCache.length || options.refresh === true) {
     await listStudentsFromFirestore();
   }
@@ -1006,6 +1208,10 @@ export async function getStudentProfile(studentRef, options = {}) {
 export async function getStudentByEmail(email) {
   const safeEmail = normalizeScalar(email).toLowerCase();
   if (!safeEmail) return null;
+
+  const directStudent = await getStudentByEmailFromFirestore(safeEmail);
+  if (directStudent) return directStudent;
+
   if (!logicalStudentsCache.length) {
     await listStudentsFromFirestore();
   }

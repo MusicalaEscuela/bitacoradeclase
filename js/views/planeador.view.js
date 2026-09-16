@@ -17,7 +17,7 @@
 
 import { CONFIG } from "../config.js";
 import { resolveUserAccess } from "../authz.js";
-import { getState } from "../state.js";
+import { getState } from "../state.js?v=20260815.2";
 import {
   showSuccess,
   showError,
@@ -29,6 +29,7 @@ import {
   escapeHtml,
   toStringSafe,
   toArraySafe,
+  normalizeText,
   getTodayDate,
   formatDisplayDate,
 } from "../utils/shared.js";
@@ -49,6 +50,7 @@ import {
   buildAreaCatalog,
   getCatalogTeachers,
 } from "../api/planeador.api.js";
+import { getStudents } from "../api/students.api.js?v=20260818.1";
 
 import {
   ARTES,
@@ -76,6 +78,8 @@ import {
 
 let viewRoot = null;
 let currentNavigateTo = null;
+let planeadorStudents = [];
+let loadingPlaneadorStudents = false;
 
 const pState = {
   tab: "planeaciones", // planeaciones | tablero
@@ -89,7 +93,7 @@ const pState = {
   filters: {
     query: "",
     docente: "",
-    sede: "",
+    modalidad: "",
     grupo: "",
     arte: "",
     estado: "",
@@ -229,7 +233,7 @@ function getFilteredPlaneaciones() {
         if (!hay.includes(f.query.toLowerCase())) return false;
       }
       if (f.docente && p.docenteNombre !== f.docente) return false;
-      if (f.sede && p.sede !== f.sede) return false;
+      if (f.modalidad && p.modalidad !== f.modalidad) return false;
       if (f.grupo && p.grupoNombre !== f.grupo) return false;
       if (f.arte && p.arte !== f.arte) return false;
       if (f.estado && p.estado !== f.estado) return false;
@@ -256,7 +260,7 @@ function renderList() {
       <div class="planeador-filters">
         <input type="search" data-filter="query" placeholder="🔎 Buscar..." value="${escapeHtml(pState.filters.query)}" />
         ${filterSelect("docente", "Docente", uniqueValues("docenteNombre"))}
-        ${filterSelect("sede", "Sede", uniqueValues("sede"))}
+        ${filterSelect("modalidad", "Modalidad", ["sede", "hogar", "virtual"])}
         ${filterSelect("grupo", "Grupo", uniqueValues("grupoNombre"))}
         <select data-filter="arte">
           <option value="">Área artística</option>
@@ -301,6 +305,11 @@ function arteMeta(value) {
   return ARTES.find((c) => c.value === value) || { label: value || "Sin área", icon: "🎨" };
 }
 
+function formatModalidad(value = "") {
+  const normalized = toStringSafe(value).toLowerCase();
+  return ({ sede: "Sede", hogar: "Hogar", virtual: "Virtual" })[normalized] || "";
+}
+
 function renderPlaneacionCard(p) {
   const comp = arteMeta(p.arte);
   const estadoColor = ESTADO_COLORS[p.estado] || "#94a3b8";
@@ -321,7 +330,7 @@ function renderPlaneacionCard(p) {
       <div class="planeacion-card__meta">
         <span>📅 ${escapeHtml(formatDisplayDate(p.fechaClase) || "Sin fecha")}</span>
         ${p.docenteNombre ? `<span>🧑‍🏫 ${escapeHtml(p.docenteNombre)}</span>` : ""}
-        ${p.sede ? `<span>📍 ${escapeHtml(p.sede)}</span>` : ""}
+        ${p.modalidad ? `<span>📍 ${escapeHtml(formatModalidad(p.modalidad))}</span>` : ""}
         ${tipo ? `<span>🏷️ ${escapeHtml(tipo.label)}</span>` : ""}
       </div>
       <p class="planeacion-card__objetivo">${escapeHtml(p.objetivo || "Sin objetivo definido todavía.")}</p>
@@ -405,7 +414,7 @@ function renderForm() {
           ${field("Hora inicio", `<input type="time" data-field="horaInicio" value="${escapeHtml(d.horaInicio)}" />`)}
           ${field("Hora fin", `<input type="time" data-field="horaFin" value="${escapeHtml(d.horaFin)}" />`)}
           ${field("Docente", teacherOptions)}
-          ${field("Sede", `<input type="text" data-field="sede" value="${escapeHtml(d.sede)}" placeholder="Sede" />`)}
+          ${field("Modalidad", `<select data-field="modalidad">${["sede", "hogar", "virtual"].map((value) => `<option value="${value}" ${d.modalidad === value ? "selected" : ""}>${formatModalidad(value)}</option>`).join("")}</select>`)}
           ${field("Grupo", `<input type="text" data-field="grupoNombre" value="${escapeHtml(d.grupoNombre)}" placeholder="Nombre del grupo" />`)}
           ${field("Edad o ciclo", `<input type="text" data-field="ciclo" value="${escapeHtml(d.ciclo)}" placeholder="Ej: 7-9 años / Ciclo 1" />`)}
           ${field("Duración", `<input type="text" data-field="duracion" value="${escapeHtml(d.duracion)}" placeholder="Ej: 60 min" />`)}
@@ -432,18 +441,11 @@ function renderForm() {
         <p class="chip-hint">${areaCatalog.fromCatalog ? "✓ Listas cargadas desde tus catálogos de Configuración (las mismas de las bitácoras)." : "Aún no hay catálogo cargado para esta área: puedes escribir libremente. Carga las listas en Configuración para que se sugieran solas."}</p>
       </section>
 
-      <!-- 3. Objetivo -->
-      <section class="planeacion-block">
-        ${blockHead(3, "Objetivo de la clase", escapeHtml(OBJETIVO_PLANTILLA))}
-        ${field("", `<textarea data-field="objetivo" placeholder="${escapeHtml(OBJETIVO_PLANTILLA)}">${escapeHtml(d.objetivo)}</textarea>`)}
-        <div class="chip-set">
-          ${OBJETIVO_EJEMPLOS.map((ej, i) => `<button type="button" class="chip-suggest" data-action="set-objetivo" data-idx="${i}">Ejemplo ${i + 1}</button>`).join("")}
-        </div>
-      </section>
+      ${renderStudentsField(d)}
 
-      <!-- 5. Momentos -->
+      <!-- 4. Momentos -->
       <section class="planeacion-block">
-        ${blockHead(5, "Momentos de clase", "La columna vertebral de la clase Musicala.")}
+        ${blockHead(4, "Momentos de clase", "La columna vertebral de la clase Musicala.")}
         ${MOMENTOS.map((m) => `
           <div class="momento">
             <div class="momento__head"><span class="momento__icon">${m.icon}</span><span class="momento__label">${escapeHtml(m.label)}</span></div>
@@ -452,9 +454,18 @@ function renderForm() {
           </div>`).join("")}
       </section>
 
-      <!-- 6. Adaptaciones -->
-      <section class="planeacion-block">
-        ${blockHead(6, "Adaptaciones del grupo", "La misma actividad cambia según edad, energía y nivel.")}
+      <!-- Información que no debe frenar una planeación rápida -->
+      <details class="planeacion-block planeacion-extra-details">
+        <summary>Más datos opcionales</summary>
+        <div class="planeacion-extra-details__body">
+        <h3>Objetivo de la clase</h3>
+        <p class="chip-hint">Opcional. Puedes guardar la planeación sin objetivo.</p>
+        ${field("", `<textarea data-field="objetivo" placeholder="${escapeHtml(OBJETIVO_PLANTILLA)}">${escapeHtml(d.objetivo)}</textarea>`)}
+        <div class="chip-set">
+          ${OBJETIVO_EJEMPLOS.map((ej, i) => `<button type="button" class="chip-suggest" data-action="set-objetivo" data-idx="${i}">Ejemplo ${i + 1}</button>`).join("")}
+        </div>
+        <h3>Adaptaciones del grupo</h3>
+        <p class="chip-hint">Ábrelo solo si el grupo requiere un ajuste específico.</p>
         <div class="field-grid">
           ${field("Nivel del grupo", `<select data-field="adapt.nivelGrupo">${[{ value: "", label: "Selecciona" }, ...NIVELES_GRUPO].map((n) => `<option value="${n.value}" ${d.adaptaciones?.nivelGrupo === n.value ? "selected" : ""}>${n.label}</option>`).join("")}</select>`)}
         </div>
@@ -463,11 +474,12 @@ function renderForm() {
           <label class="material-item"><input type="checkbox" data-field="adapt.grupoMixto" ${d.adaptaciones?.grupoMixto ? "checked" : ""}/> Grupo mixto</label>
         </div>
         ${field("Ajustes o apoyos necesarios (opcional)", `<textarea data-field="adapt.descripcion" placeholder="Escribe aquí únicamente si el grupo requiere algún ajuste.">${escapeHtml(d.adaptaciones?.descripcion || "")}</textarea>`)}
-      </section>
+        </div>
+      </details>
 
-      <!-- 7. Materiales -->
+      <!-- 5. Materiales -->
       <section class="planeacion-block">
-        ${blockHead(7, "Materiales", "Marca lo que necesitas. Agrega los que falten.")}
+        ${blockHead(5, "Materiales", "Marca lo que necesitas. Agrega los que falten.")}
         <div class="material-list">
           ${MATERIALES_SUGERIDOS.map((mat) => `<label class="material-item"><input type="checkbox" data-material value="${escapeHtml(mat)}" ${toArraySafe(d.materiales).includes(mat) ? "checked" : ""}/> ${escapeHtml(mat)}</label>`).join("")}
         </div>
@@ -482,10 +494,9 @@ function renderForm() {
           <button type="button" class="chip-toggle ${d.esReemplazo ? "is-active" : ""}" data-action="set-reemplazo" data-value="1">Clase para reemplazo</button>
         </div>
         ${d.esReemplazo ? `
-          <div class="field-grid" style="margin-top:1rem">
-            ${field("Docente titular", `<input type="text" data-field="reemp.docenteTitular" value="${escapeHtml(d.reemplazo?.docenteTitular || "")}" />`)}
-            ${field("Docente reemplazante", `<input type="text" data-field="reemp.docenteReemplazante" value="${escapeHtml(d.reemplazo?.docenteReemplazante || "")}" />`)}
-          </div>
+          <details class="planeacion-extra-details" style="margin-top:1rem">
+            <summary>Más datos para quien haga el reemplazo (opcionales)</summary>
+            <div class="planeacion-extra-details__body">
           ${field("¿Qué debe continuar?", `<textarea data-field="reemp.continuidad">${escapeHtml(d.reemplazo?.continuidad || "")}</textarea>`)}
           ${field("¿Qué NO debe cambiar?", `<textarea data-field="reemp.noCambiar">${escapeHtml(d.reemplazo?.noCambiar || "")}</textarea>`)}
           ${field("Indicaciones importantes del grupo", `<textarea data-field="reemp.indicacionesGrupo">${escapeHtml(d.reemplazo?.indicacionesGrupo || "")}</textarea>`)}
@@ -493,6 +504,8 @@ function renderForm() {
           ${field("Nivel real del grupo", `<input type="text" data-field="reemp.nivelReal" value="${escapeHtml(d.reemplazo?.nivelReal || "")}" />`)}
           ${field("Alertas de comportamiento o cuidado", `<textarea data-field="reemp.alertas">${escapeHtml(d.reemplazo?.alertas || "")}</textarea>`)}
           ${field("Evidencia que debe entregar el reemplazo", `<textarea data-field="reemp.evidenciaSolicitada">${escapeHtml(d.reemplazo?.evidenciaSolicitada || "")}</textarea>`)}
+            </div>
+          </details>
         ` : ""}
       </section>
 
@@ -536,6 +549,62 @@ function renderMultiCatalogField(key, label, placeholder, selected = [], options
         ${sugeridas.map((o) => `<button type="button" class="chip-suggest" data-action="add-componente-sug" data-key="${key}" data-value="${escapeHtml(o)}">+ ${escapeHtml(o)}</button>`).join("")}
       </div>` : ""}
     </div>`;
+}
+
+function studentName(student = {}) {
+  return toStringSafe(student.nombre || student.name || student.nombreCompleto || "Estudiante sin nombre");
+}
+
+function renderStudentsField(d) {
+  const selected = toArraySafe(d.estudiantes);
+  return `
+    <section class="planeacion-block">
+      ${blockHead(3, "Estudiantes", "Opcional. Selecciona a quienes asistirán y deja notas internas útiles para otros docentes.")}
+      ${planeadorStudents.length
+        ? `<div class="field"><label>Buscar estudiante</label><input type="search" data-student-search placeholder="Escribe al menos 2 letras para buscar..." autocomplete="off" /><div class="student-picker-results" data-student-results></div></div>`
+        : `<button type="button" class="btn btn--ghost btn--sm" data-action="load-planeador-students" ${loadingPlaneadorStudents ? "disabled" : ""}>${loadingPlaneadorStudents ? "Cargando estudiantes..." : "Elegir estudiantes"}</button>`}
+      <p class="chip-hint">Estas observaciones son internas entre docentes; no se muestran a estudiantes.</p>
+      <div class="planeacion-students">
+        ${selected.length
+          ? selected.map((student) => `<article class="planeacion-student">
+              <div class="planeacion-student__head"><strong>${escapeHtml(student.nombre || "Estudiante")}</strong><button type="button" class="btn btn--ghost btn--sm" data-action="remove-planeador-student" data-student-id="${escapeHtml(student.id)}">Quitar</button></div>
+              <textarea data-student-note="${escapeHtml(student.id)}" placeholder="Observaciones internas entre docentes (opcional)">${escapeHtml(student.observaciones || "")}</textarea>
+            </article>`).join("")
+          : '<p class="chip-hint">Sin estudiantes seleccionados.</p>'}
+      </div>
+    </section>`;
+}
+
+function renderStudentSearchResults(query = "") {
+  const container = viewRoot?.querySelector("[data-student-results]");
+  if (!container) return;
+  const normalizedQuery = normalizeText(query);
+  if (normalizedQuery.length < 2) {
+    container.innerHTML = '<p class="chip-hint">Escribe al menos 2 letras.</p>';
+    return;
+  }
+  const selectedIds = new Set(toArraySafe(pState.draft?.estudiantes).map((student) => String(student.id)));
+  const matches = planeadorStudents
+    .filter((student) => !selectedIds.has(String(student.id)) && normalizeText(`${studentName(student)} ${student.email || student.correo || ""}`).includes(normalizedQuery))
+    .slice(0, 8);
+  container.innerHTML = matches.length
+    ? matches.map((student) => `<button type="button" class="student-picker-result" data-action="add-planeador-student" data-student-id="${escapeHtml(student.id)}">${escapeHtml(studentName(student))}<small>${escapeHtml(student.email || student.correo || "")}</small></button>`).join("")
+    : '<p class="chip-hint">No encontramos estudiantes con esa búsqueda.</p>';
+  container.querySelectorAll("[data-action]").forEach((el) => el.addEventListener("click", () => handleAction(el.dataset.action, el)));
+}
+
+async function loadPlaneadorStudents() {
+  if (loadingPlaneadorStudents || planeadorStudents.length) return;
+  loadingPlaneadorStudents = true;
+  renderActive();
+  try {
+    planeadorStudents = await getStudents({ includeInactive: true });
+  } catch (error) {
+    showError(error?.message || "No se pudieron cargar los estudiantes.");
+  } finally {
+    loadingPlaneadorStudents = false;
+    renderActive();
+  }
 }
 
 /* ==========================================================================
@@ -586,6 +655,11 @@ function harvestForm() {
     .filter(Boolean);
   d.materiales = [...new Set([...checked, ...extras])];
   delete d._materialesExtra;
+
+  d.estudiantes = toArraySafe(d.estudiantes).map((student) => {
+    const note = form.querySelector(`[data-student-note="${CSS.escape(String(student.id))}"]`);
+    return { ...student, observaciones: toStringSafe(note?.value) };
+  });
 }
 
 /* ==========================================================================
@@ -631,7 +705,7 @@ function renderDetail() {
           <span>📅 ${escapeHtml(formatDisplayDate(p.fechaClase) || "Sin fecha")}</span>
           ${p.horaInicio ? `<span>⏰ ${escapeHtml(p.horaInicio)}${p.horaFin ? `–${escapeHtml(p.horaFin)}` : ""}</span>` : ""}
           ${p.docenteNombre ? `<span>🧑‍🏫 ${escapeHtml(p.docenteNombre)}</span>` : ""}
-          ${p.sede ? `<span>📍 ${escapeHtml(p.sede)}</span>` : ""}
+          ${p.modalidad ? `<span>📍 ${escapeHtml(formatModalidad(p.modalidad))}</span>` : ""}
           ${p.ciclo ? `<span>👥 ${escapeHtml(p.ciclo)}</span>` : ""}
           ${tipo ? `<span>🏷️ ${escapeHtml(tipo.label)}</span>` : ""}
           ${isAdminUser() && toStringSafe(p.ownerEmail) ? `<span>👤 ${escapeHtml(p.ownerEmail)}</span>` : ""}
@@ -640,6 +714,7 @@ function renderDetail() {
 
       ${p.objetivo ? `<section class="detalle-section"><h3>🎯 Objetivo</h3><p>${escapeHtml(p.objetivo)}</p></section>` : ""}
       ${renderComponentesDetail(p)}
+      ${renderStudentsDetail(p)}
       ${momentos ? `<section class="detalle-section"><h3>Momentos de clase</h3>${momentos}</section>` : ""}
       ${renderAdaptacionesDetail(p)}
       ${toArraySafe(p.materiales).length ? `<section class="detalle-section"><h3>📦 Materiales</h3><div class="chip-set">${p.materiales.map((m) => `<span class="postit__chip" style="background:var(--bg-muted)">${escapeHtml(m)}</span>`).join("")}</div></section>` : ""}
@@ -682,12 +757,16 @@ function renderAdaptacionesDetail(p) {
   return `<section class="detalle-section"><h3>🔧 Adaptaciones</h3>${rows.map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join("")}</section>`;
 }
 
+function renderStudentsDetail(p) {
+  const students = toArraySafe(p.estudiantes);
+  if (!students.length) return "";
+  return `<section class="detalle-section"><h3>👥 Estudiantes y observaciones internas</h3>${students.map((student) => `<div class="detalle-momento"><strong>${escapeHtml(student.nombre || "Estudiante")}</strong>${student.observaciones ? `<p>${escapeHtml(student.observaciones)}</p>` : ""}</div>`).join("")}</section>`;
+}
+
 function renderReemplazoDetail(p) {
   if (!p.esReemplazo) return "";
   const r = p.reemplazo || {};
   const rows = [
-    ["Docente titular", r.docenteTitular],
-    ["Docente reemplazante", r.docenteReemplazante],
     ["Qué debe continuar", r.continuidad],
     ["Qué no debe cambiar", r.noCambiar],
     ["Indicaciones del grupo", r.indicacionesGrupo],
@@ -717,7 +796,7 @@ function buildResumen(p) {
 Fecha: ${formatDisplayDate(p.fechaClase) || "—"}
 Docente: ${p.docenteNombre || "—"}
 Grupo: ${p.grupoNombre || "—"}
-Sede: ${p.sede || "—"}
+Modalidad: ${formatModalidad(p.modalidad) || "—"}
 Área artística: ${comp.label}
 Tipo de clase: ${tipo}${p.esReemplazo ? " [REEMPLAZO]" : ""}
 
@@ -728,7 +807,7 @@ Momentos de clase:
 1. Bienvenida: ${m.bienvenida || "—"}
 2. Calentamiento: ${m.calentamiento || "—"}
 3. Desarrollo técnico: ${m.desarrolloTecnico || "—"}
-4. Práctica / creación: ${m.practicaCreacion || "—"}
+4. Obras: ${m.practicaCreacion || "—"}
 5. Cierre: ${m.cierre || "—"}
 
 Materiales: ${toArraySafe(p.materiales).join(", ") || "—"}`;
@@ -854,6 +933,10 @@ function bindEvents() {
     });
   });
 
+  viewRoot.querySelectorAll("[data-student-search]").forEach((el) => {
+    el.addEventListener("input", () => renderStudentSearchResults(el.value));
+  });
+
   // Drag & drop del tablero
   bindBoardDnD();
 }
@@ -930,6 +1013,26 @@ async function handleAction(action, el) {
     case "set-objetivo":
       harvestForm();
       pState.draft.objetivo = OBJETIVO_EJEMPLOS[Number(el.dataset.idx)] || "";
+      renderActive();
+      break;
+
+    case "load-planeador-students":
+      await loadPlaneadorStudents();
+      break;
+
+    case "add-planeador-student": {
+      harvestForm();
+      const student = planeadorStudents.find((item) => String(item.id) === String(el.dataset.studentId));
+      if (student && !toArraySafe(pState.draft.estudiantes).some((item) => String(item.id) === String(student.id))) {
+        pState.draft.estudiantes = [...toArraySafe(pState.draft.estudiantes), { id: student.id, nombre: studentName(student), email: toStringSafe(student.email || student.correo), observaciones: "" }];
+      }
+      renderActive();
+      break;
+    }
+
+    case "remove-planeador-student":
+      harvestForm();
+      pState.draft.estudiantes = toArraySafe(pState.draft.estudiantes).filter((student) => String(student.id) !== String(el.dataset.studentId));
       renderActive();
       break;
 
@@ -1085,8 +1188,8 @@ async function savePlaneacion(mode) {
     d.estado = "borrador";
   }
 
-  if (!toStringSafe(d.grupoNombre) && !toStringSafe(d.objetivo)) {
-    showError("Agrega al menos el grupo o el objetivo antes de guardar.");
+  if (!toStringSafe(d.grupoNombre)) {
+    showError("Agrega al menos el nombre del grupo antes de guardar.");
     return;
   }
 

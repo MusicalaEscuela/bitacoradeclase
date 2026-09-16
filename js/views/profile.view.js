@@ -11,7 +11,7 @@ import {
   getStudentRoute,
   setAppError,
   clearAppError,
-  addBitacoraForStudent,
+  addBitacoraForStudents,
   setBitacorasForStudent,
   removeBitacoraForStudent,
   setBitacorasLoading,
@@ -21,14 +21,14 @@ import {
   setStudentProfile,
   setStudentRoute,
   updateStudentProfile,
-} from "../state.js";
+} from "../state.js?v=20260815.2";
 import {
   getBitacoraById,
   getBitacorasByStudentIds,
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20260728.3";
+} from "../api/bitacoras.api.js?v=20260731.2";
 import {
   getStudentProfile,
   updateStudentTeacher,
@@ -39,16 +39,39 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20260730.6";
+} from "../api/students.api.js?v=20260911.2";
 import {
   getCatalogs,
   getEmptyCatalogs,
 } from "../api/catalogs.api.js";
 import {
+  getMapPianoProgressRecord,
+  getMapGuitarProgressRecord,
+  getMapViolinProgressRecord,
   getStudentRouteRecord,
+  saveMapPianoProgressRecord,
+  saveMapGuitarProgressRecord,
+  saveMapViolinProgressRecord,
   saveStudentRouteProgressRecord,
   saveStudentRouteRecord,
-} from "../api/student-routes.api.js";
+} from "../api/student-routes.api.js?v=20260831.5";
+import { getPublishedPianoCurriculum, getPublishedGuitarCurriculum, getPublishedViolinCurriculum } from "../api/map-curriculum.api.js?v=20260831.5";
+import {
+  deriveMapPianoRouteProgress,
+  getMapPianoProgressIdentity,
+  isMapPianoProcess,
+  isMapGuitarProcess,
+  isMapViolinProcess,
+  isMapPianoRoute,
+  isMapGuitarRoute,
+  isMapViolinRoute,
+  MAP_GUITAR_PROGRESS_EPOCH,
+  MAP_GUITAR_ROUTE_TEMPLATE_ID,
+  MAP_VIOLIN_PROGRESS_EPOCH,
+  MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+  MAP_PIANO_PROGRESS_EPOCH,
+  MAP_PIANO_ROUTE_TEMPLATE_ID,
+} from "../utils/map-piano-route.js?v=20260831.5";
 import {
   escapeHtml,
   firstNonEmpty,
@@ -81,9 +104,9 @@ import {
 } from "../utils/shared.js";
 import { applyAutomaticCategoriesFromWorks } from "../utils/bitacoras.js";
 import {
-  getBitacoraParticipantIds,
+  bitacoraMatchesStudentProcess,
   isGroupBitacora,
-} from "../utils/bitacora-coverage.js?v=20260727.1";
+} from "../utils/bitacora-coverage.js?v=20260911.1";
 import {
   normalizeLinkList,
   parseBitacoraSheetText,
@@ -97,6 +120,7 @@ let currentSubscribe = null;
 let currentProfileStudentKey = null;
 let currentProfileProcessKey = "";
 let currentProfileHistorySearchQuery = "";
+let showAllProfileHistoryProcesses = false;
 let profileHistorySearchDebounceTimer = null;
 let historyExpansionState = new Map();
 let cachedCatalogs = getEmptyCatalogs();
@@ -111,6 +135,26 @@ const ROUTE_COMPONENTS = Object.freeze([
   { id: "obras", label: "Componente de obras" },
   { id: "repertorio", label: "Componente repertorio" },
 ]);
+
+const COMPONENT_DISPLAY_ORDER = Object.freeze([
+  "tecnico", "tecnica", "teorico", "teoria", "repertorio", "obras",
+]);
+
+function componentDisplayRank(value = "") {
+  const normalized = toStringSafe(value).toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const rank = COMPONENT_DISPLAY_ORDER.indexOf(normalized);
+  return rank >= 0 ? rank : COMPONENT_DISPLAY_ORDER.length;
+}
+
+function compareComponentsForDisplay(left = {}, right = {}) {
+  const leftRank = componentDisplayRank(left?.id || left?.component || left?.componentLabel || left?.label);
+  const rightRank = componentDisplayRank(right?.id || right?.component || right?.componentLabel || right?.label);
+  if (leftRank !== rightRank) return leftRank - rightRank;
+  return toStringSafe(left?.label || left?.componentLabel || left?.component || left?.id)
+    .localeCompare(toStringSafe(right?.label || right?.componentLabel || right?.component || right?.id));
+}
 
 const ROUTE_EXPERIENCES = Object.freeze([1, 2, 3]);
 
@@ -660,6 +704,24 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
     return;
   }
 
+  // Los resultados de búsqueda son deliberadamente resumidos para responder
+  // rápido. Antes de pintar el perfil resolvemos sus expedientes confirmados;
+  // de lo contrario un canónico sincronizado sin procesos se vería como
+  // "Proceso general" y ocultaría su historial por proceso.
+  student = await ensureStudentLoadedForProfile(getStudentIdentity(student));
+  state = getState();
+  if (!student || !canViewStudent(state?.auth?.user, getStudentIdentity(student))) {
+    setAppError("No se pudo cargar el perfil completo del estudiante.");
+    if (typeof navigateTo === "function") {
+      navigateTo(CONFIG.routes.search);
+    }
+    return;
+  }
+
+  if (currentProfileStudentKey !== getStudentIdentity(student)) {
+    showAllProfileHistoryProcesses = false;
+    currentProfileHistorySearchQuery = "";
+  }
   currentProfileStudentKey = getStudentIdentity(student);
   currentProfileProcessKey =
     resolveStudentProcess(student, requestedProcessRef)?.processKey || "";
@@ -723,6 +785,10 @@ export async function render({
     return;
   }
 
+  if (currentProfileStudentKey !== getStudentIdentity(student)) {
+    showAllProfileHistoryProcesses = false;
+    currentProfileHistorySearchQuery = "";
+  }
   currentProfileStudentKey = getStudentIdentity(student);
   currentProfileProcessKey =
     resolveStudentProcess(student, requestedProcessRef || currentProfileProcessKey)
@@ -817,6 +883,9 @@ async function ensureCatalogsLoaded() {
 
 function buildProfileMarkup(student, state, config) {
   const bitacoras = getBitacorasFromState(student);
+  const historyBitacoras = getBitacorasFromState(student, {
+    scope: showAllProfileHistoryProcesses ? "all" : "active",
+  });
   const isAuthenticated = Boolean(state?.auth?.isAuthenticated);
   const access = resolveUserAccess(state?.auth?.user);
   const title =
@@ -883,7 +952,7 @@ function buildProfileMarkup(student, state, config) {
               <h2 class="panel-header__title" id="profile-history-title">🎵 Última bitácora</h2>
             </summary>
             <div id="profile-history-content">
-              ${renderLastBitacoraPreview(student, bitacoras, config, isAuthenticated)}
+              ${renderLastBitacoraPreview(student, historyBitacoras, config, isAuthenticated)}
             </div>
           </details>
 
@@ -910,7 +979,7 @@ function buildProfileMarkup(student, state, config) {
             <summary class="panel-header collapsible-card__summary">
               <h2 class="panel-header__title">⚡ Profundizar</h2>
             </summary>
-            ${renderQuickActions(access)}
+            ${renderQuickActions(access, student)}
           </details>
         </section>
 
@@ -944,13 +1013,16 @@ function buildProfileMarkup(student, state, config) {
                 <h2 class="panel-header__title">Todas las bitácoras</h2>
               </div>
               <div class="panel-header__actions">
+                <button type="button" class="btn btn--ghost btn--sm" id="profile-history-scope-btn">
+                  ${showAllProfileHistoryProcesses ? "Solo este proceso" : "Ver todos los procesos"}
+                </button>
                 <button type="button" class="btn btn--ghost btn--sm" id="profile-refresh-history-btn">Recargar</button>
                 <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-close>Cerrar</button>
               </div>
             </header>
             ${renderProfileHistorySearchControl(currentProfileHistorySearchQuery)}
             <div id="profile-all-history-content">
-              ${renderAllBitacorasPanel(student, bitacoras, config, isAuthenticated)}
+              ${renderAllBitacorasPanel(student, historyBitacoras, config, isAuthenticated)}
             </div>
           </article>
 
@@ -982,6 +1054,7 @@ function bindProfileEvents(student) {
   const openEditorBtn = viewRoot.querySelector("#profile-open-editor-btn");
   const importTextBtn = viewRoot.querySelector("#profile-import-text-bitacoras-btn");
   const refreshBtn = viewRoot.querySelector("#profile-refresh-history-btn");
+  const historyScopeBtn = viewRoot.querySelector("#profile-history-scope-btn");
   const historySearchInput = viewRoot.querySelector("#profile-history-search");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
   const allHistoryContainer = viewRoot.querySelector("#profile-all-history-content");
@@ -1124,6 +1197,16 @@ function bindProfileEvents(student) {
     });
   }
 
+  if (historyScopeBtn) {
+    historyScopeBtn.addEventListener("click", () => {
+      showAllProfileHistoryProcesses = !showAllProfileHistoryProcesses;
+      historyScopeBtn.textContent = showAllProfileHistoryProcesses
+        ? "Solo este proceso"
+        : "Ver todos los procesos";
+      renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+    });
+  }
+
   if (historySearchInput) {
     historySearchInput.addEventListener("input", () => {
       currentProfileHistorySearchQuery = toStringSafe(historySearchInput.value);
@@ -1170,6 +1253,14 @@ function bindProfileEvents(student) {
         return;
       }
 
+      if (action === "edit-bitacora") {
+        const bitacoraId = toStringSafe(
+          actionButton.getAttribute("data-bitacora-id")
+        );
+        if (bitacoraId) goToEditor(student, { editBitacoraId: bitacoraId });
+        return;
+      }
+
       if (action === "assign-process") {
         const bitacoraId = toStringSafe(
           actionButton.getAttribute("data-bitacora-id")
@@ -1178,10 +1269,12 @@ function bindProfileEvents(student) {
         const processSelect = card?.querySelector(
           "[data-history-process-select]"
         );
+        const timeInput = card?.querySelector("[data-history-time-input]");
         const processKey = toStringSafe(processSelect?.value);
+        const classTime = normalizeHistoryClassTime(timeInput?.value);
 
         if (!bitacoraId) return;
-        await assignProcessToBitacora(student, bitacoraId, processKey);
+        await assignProcessToBitacora(student, bitacoraId, processKey, classTime);
       }
     });
   });
@@ -1190,6 +1283,12 @@ function bindProfileEvents(student) {
     const panelButton = event.target.closest("[data-profile-panel-target]");
     if (panelButton) {
       const target = panelButton.getAttribute("data-profile-panel-target");
+      if (target === "route-editor" && isActiveMapPianoStudent(student)) {
+        setAppError(
+          "La ruta de Piano se administra desde Mapa de Experiencias y no se puede editar en Bitácoras."
+        );
+        return;
+      }
       openProfilePanel(target);
       if (target === "route-editor") {
         routeEditorState.set(getStudentIdentity(student), true);
@@ -1293,6 +1392,9 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   const badgesNode = viewRoot.querySelector("#profile-badges");
 
   const bitacoras = getBitacorasFromState(student);
+  const historyBitacoras = getBitacorasFromState(student, {
+    scope: showAllProfileHistoryProcesses ? "all" : "active",
+  });
 
   if (titleNode) {
     titleNode.textContent = getStudentName(student);
@@ -1347,7 +1449,7 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   if (historyContainer) {
     historyContainer.innerHTML = renderLastBitacoraPreview(
       student,
-      bitacoras,
+      historyBitacoras,
       config,
       Boolean(state?.auth?.isAuthenticated)
     );
@@ -1356,7 +1458,7 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   if (allHistoryContainer) {
     allHistoryContainer.innerHTML = renderAllBitacorasPanel(
       student,
-      bitacoras,
+      historyBitacoras,
       config,
       Boolean(state?.auth?.isAuthenticated)
     );
@@ -2067,6 +2169,9 @@ function renderCurrentRoutePreview(student) {
   const access = resolveUserAccess(getState()?.auth?.user);
   const studentId = getStudentIdentity(student);
   const route = buildDefaultRouteState(student, getStudentRoute(studentId));
+  if (isMapManagedRoute(route)) {
+    return renderMapPianoRoutePreview(route, access);
+  }
   const preset = resolveRoutePreset(student, route);
   const components = getRouteComponentsForPreset(preset);
 
@@ -2091,7 +2196,214 @@ function renderCurrentRoutePreview(student) {
   `;
 }
 
-function renderQuickActions(access = {}) {
+function getMapPianoCurrentExperience(route = {}) {
+  if (route?.currentExperienceData && typeof route.currentExperienceData === "object") {
+    return route.currentExperienceData;
+  }
+  return (Array.isArray(route?.experiences) ? route.experiences : []).find(
+    (experience) =>
+      toStringSafe(experience?.id) === toStringSafe(route?.currentExperienceId)
+  ) || null;
+}
+
+function getMapPianoProgress(route = {}) {
+  return deriveMapPianoRouteProgress(route, route?.completedGoalIds || []);
+}
+
+function renderMapPianoUnavailable(route = {}, { compact = false } = {}) {
+  return `
+    <div class="route-history-card route-history-card--wide">
+      <p class="route-history-card__title">Ruta de Piano no disponible</p>
+      <p class="route-overview__text">
+        ${escapeHtml(
+          route?.mapErrorMessage ||
+            "No fue posible cargar la publicación oficial de Mapa de Experiencias."
+        )}
+      </p>
+      <p class="route-overview__text">
+        No se mostrará una ruta anterior ni se guardará avance mientras la fuente oficial no esté disponible.
+      </p>
+      <button type="button" class="btn btn--ghost btn--sm" data-route-action="refresh-route">
+        Reintentar carga
+      </button>
+      ${
+        compact
+          ? `<button type="button" class="btn btn--ghost btn--sm" data-profile-panel-target="route">Ver detalle</button>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderMapPianoIdentityNotice(route = {}) {
+  if (route?.progressIdentityReady === true) return "";
+  return `
+    <article class="route-history-card route-history-card--wide">
+      <p class="route-history-card__title">Avance protegido</p>
+      <p class="route-overview__text">
+        ${escapeHtml(
+          route?.progressIdentityMessage ||
+            "No se puede guardar progreso hasta confirmar el ID canónico del estudiante."
+        )}
+      </p>
+    </article>
+  `;
+}
+
+function renderMapPianoGoalControl(goal = {}, route = {}, canUpdate = false) {
+  const completedIds = new Set(route?.completedGoalIds || []);
+  const activeIds = new Set(route?.activeGoalIds || []);
+  const completed = completedIds.has(goal.id);
+  const active = activeIds.has(goal.id);
+  const achievement = firstNonEmpty(goal.achievement, goal.description);
+
+  if (completed) {
+    return `
+      <span class="route-achievement-chip">
+        <span>✓ ${escapeHtml(goal.title)}</span>
+        ${
+          canUpdate
+            ? `<button
+                type="button"
+                class="route-achievement-chip__undo"
+                data-route-goal-undo="${escapeHtml(goal.id)}"
+                aria-label="Quitar meta lograda: ${escapeHtml(goal.title)}"
+                title="Quitar logro"
+              >×</button>`
+            : ""
+        }
+      </span>
+    `;
+  }
+
+  if (active) {
+    return `
+      <label class="route-goal-check">
+        <input
+          type="checkbox"
+          data-route-goal-check="${escapeHtml(goal.id)}"
+          ${!canUpdate ? "disabled" : ""}
+        />
+        <span class="route-goal-check__body">
+          <span class="route-goal-check__title">${escapeHtml(goal.title)}</span>
+          ${achievement ? `<span class="route-goal-check__text">${escapeHtml(achievement)}</span>` : ""}
+          <span class="route-goal-check__meta">${escapeHtml(
+            [goal.componentLabel, goal.category].filter(Boolean).join(" · ") ||
+              "Meta de la experiencia"
+          )}</span>
+        </span>
+      </label>
+    `;
+  }
+
+  return `
+    <div class="route-focus-item">
+      <span class="route-focus-item__component">Meta de una experiencia posterior</span>
+      <strong class="route-focus-item__title">${escapeHtml(goal.title)}</strong>
+      ${achievement ? `<span class="route-overview__text">${escapeHtml(achievement)}</span>` : ""}
+    </div>
+  `;
+}
+
+function renderMapPianoRoutePreview(route = {}, access = {}) {
+  if (route?.mapUnavailable === true) {
+    return renderMapPianoUnavailable(route, { compact: true });
+  }
+
+  const progress = getMapPianoProgress(route);
+  const currentExperience = getMapPianoCurrentExperience(route);
+  const canUpdate = Boolean(
+    access?.canUpdateRouteProgress && route?.progressIdentityReady === true
+  );
+
+  return `
+    <div class="profile-route-summary">
+      ${renderMapPianoIdentityNotice(route)}
+      <section class="route-current">
+        <header class="route-current__header">
+          <div>
+            <p class="route-overview__kicker">${escapeHtml(route.routeName || "Ruta de Piano")}</p>
+            <h3 class="route-current__title">${escapeHtml(
+              progress.isComplete
+                ? "Ruta completada"
+                : firstNonEmpty(
+                    currentExperience?.label,
+                    currentExperience?.name,
+                    route.stage,
+                    "Experiencia actual"
+                  )
+            )}</h3>
+            ${
+              currentExperience?.name &&
+              currentExperience.name !== currentExperience.label
+                ? `<p class="route-overview__text">${escapeHtml(currentExperience.name)}</p>`
+                : ""
+            }
+          </div>
+          <span class="route-current__stage">${escapeHtml(
+            `${progress.completedExperienceCount}/${progress.totalExperiences} experiencias · ${progress.completedGoals}/${progress.totalGoals} metas`
+          )}</span>
+        </header>
+
+        ${
+          currentExperience
+            ? `
+              <div class="route-history-grid">
+                <article class="route-history-card">
+                  <p class="route-history-card__title">Objetivo</p>
+                  <p class="route-overview__text">${escapeHtml(
+                    firstNonEmpty(
+                      currentExperience.objective,
+                      currentExperience.description,
+                      "Sin objetivo publicado."
+                    )
+                  )}</p>
+                </article>
+                <article class="route-history-card">
+                  <p class="route-history-card__title">Evidencia esperada</p>
+                  <p class="route-overview__text">${escapeHtml(
+                    currentExperience.evidence || "Sin evidencia publicada."
+                  )}</p>
+                </article>
+                ${
+                  currentExperience?.personalRepertoire?.title ||
+                  currentExperience?.personalRepertoire?.focus ||
+                  currentExperience?.personalRepertoire?.evidence
+                    ? `<article class="route-history-card">
+                        <p class="route-history-card__title">Repertorio personal</p>
+                        ${currentExperience.personalRepertoire.title ? `<p class="route-focus-item__title">${escapeHtml(currentExperience.personalRepertoire.title)}</p>` : ""}
+                        ${currentExperience.personalRepertoire.focus ? `<p class="route-overview__text"><strong>Foco:</strong> ${escapeHtml(currentExperience.personalRepertoire.focus)}</p>` : ""}
+                        ${currentExperience.personalRepertoire.evidence ? `<p class="route-overview__text"><strong>Evidencia:</strong> ${escapeHtml(currentExperience.personalRepertoire.evidence)}</p>` : ""}
+                      </article>`
+                    : ""
+                }
+              </div>
+              <div class="route-section-list">
+                ${[...(currentExperience.skills || [])]
+                  .sort(compareRouteGoals)
+                  .map((goal) => renderMapPianoGoalControl(goal, route, canUpdate))
+                  .join("")}
+              </div>
+            `
+            : `<p class="route-component-card__done">Todas las experiencias y metas de Piano están completadas.</p>`
+        }
+      </section>
+      <div class="profile-panel-actions">
+        <button type="button" class="btn btn--ghost btn--sm" data-profile-panel-target="route">
+          Ver las ${escapeHtml(
+            String(Array.isArray(route?.experiences) ? route.experiences.length : 0)
+          )} experiencias
+        </button>
+        <button type="button" class="btn btn--ghost btn--sm" data-route-action="refresh-route">
+          Actualizar desde Mapa
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderQuickActions(access = {}, student = {}) {
+  const mapManagedPiano = isActiveMapPianoStudent(student);
   return `
     <div class="profile-actions-grid">
       <button type="button" class="btn btn--ghost" data-profile-panel-target="student-info">
@@ -2111,7 +2423,7 @@ function renderQuickActions(access = {}) {
         Ver ruta completa
       </button>
       ${
-        access.canEditRouteStructure
+        access.canEditRouteStructure && !mapManagedPiano
           ? `<button type="button" class="btn btn--primary" data-profile-panel-target="route-editor">
               Editar ruta
             </button>`
@@ -3046,14 +3358,14 @@ function renderTeachingHistoryCard(item, student, processOptions = []) {
     structuredContent.docente,
     getHistoryTeacherName(item)
   );
+  const currentOverride = getCurrentStudentOverride(item, student);
   const selectedProcessKey = toStringSafe(
-    item?.process?.processKey || item?.processKey
+    currentOverride?.processKey || item?.process?.processKey || item?.processKey
   );
   const selectedProcess = processOptions.find(
     (process) => toStringSafe(process?.processKey) === selectedProcessKey
   );
   const processLabel = getProcessDisplayLabel(selectedProcess || item?.process);
-  const currentOverride = getCurrentStudentOverride(item, student);
   const hasOverrideContent = hasStudentOverrideContent(currentOverride);
   const hasGeneralContent = hasStructuredHistoryContent(structuredContent);
   const title = toStringSafe(item.titulo || "Bitácora sin título");
@@ -3070,6 +3382,14 @@ function renderTeachingHistoryCard(item, student, processOptions = []) {
           <h3 class="teaching-history-card__title">${escapeHtml(title)}</h3>
         </div>
         <div class="teaching-history-card__meta">
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-history-action="edit-bitacora"
+            data-bitacora-id="${escapeHtml(item.id || "")}"
+          >
+            Editar
+          </button>
           <button
             type="button"
             class="btn btn--ghost btn--sm"
@@ -3324,13 +3644,22 @@ async function ensureLearningRouteLoaded(student, options = {}) {
   const access = resolveUserAccess(getState()?.auth?.user);
   const currentRoute = getStudentRoute(studentId);
   const currentGoals = getStudentGoals(studentId);
-  const activeProcess =
-    resolveStudentProcess(student, currentProfileProcessKey) ||
-    normalizeStudentProcesses(student)[0] ||
-    null;
+  const activeProcess = getActiveProcessContext(student);
   const activeProcessKey = toStringSafe(
     currentProfileProcessKey || activeProcess?.processKey
   );
+
+  if (isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess)) {
+    await ensureMapPianoLearningRouteLoaded(student, {
+      forceReload,
+      studentId,
+      activeProcess,
+      activeProcessKey,
+      currentRoute,
+      currentGoals,
+    });
+    return;
+  }
 
   if (
     !forceReload &&
@@ -3378,17 +3707,153 @@ async function ensureLearningRouteLoaded(student, options = {}) {
   }
 }
 
+async function ensureMapPianoLearningRouteLoaded(student, context = {}) {
+  const studentId = toStringSafe(context?.studentId || getStudentIdentity(student));
+  if (!studentId) return;
+
+  const forceReload = Boolean(context?.forceReload);
+  const activeProcess = context?.activeProcess || getActiveProcessContext(student);
+  const activeProcessKey = toStringSafe(
+    context?.activeProcessKey || currentProfileProcessKey || activeProcess?.processKey
+  );
+  const currentRoute = context?.currentRoute || getStudentRoute(studentId);
+  const currentGoals = context?.currentGoals || getStudentGoals(studentId);
+  const mapConfig = getMapRouteConfig(student, currentRoute);
+
+  if (
+    !forceReload &&
+    isMapManagedRoute(currentRoute) &&
+    currentRoute?.mapUnavailable !== true &&
+    Array.isArray(currentRoute?.experiences) &&
+    currentRoute.experiences.length > 0 &&
+    Array.isArray(currentGoals) &&
+    currentGoals.length > 0 &&
+    toStringSafe(currentRoute?.processKey) === activeProcessKey
+  ) {
+    return;
+  }
+
+  setProfileLoading(true);
+  const progressIdentity = getMapPianoProgressIdentity(student);
+
+  try {
+    const [curriculum, persistedProgress] = await Promise.all([
+      mapConfig.getCurriculum({ forceReload }),
+      progressIdentity.ok
+        ? mapConfig.getProgress(progressIdentity.studentId)
+        : Promise.resolve(null),
+    ]);
+    const nextRoute = buildDefaultRouteState(student, {
+      ...curriculum,
+      ...(persistedProgress || {}),
+      managedByMap: true,
+      mapUnavailable: false,
+      routeTemplateId: mapConfig.routeTemplateId,
+      presetId: mapConfig.routeTemplateId,
+      progressEpoch: mapConfig.progressEpoch,
+      curriculumRevision: curriculum.revision,
+      customGoals: curriculum.goals,
+      experiences: curriculum.experiences,
+      completedGoalIds: persistedProgress?.completedGoalIds || [],
+      history: persistedProgress?.history || [],
+      processKey: activeProcessKey,
+      processLabel: firstNonEmpty(
+        activeProcess?.label,
+        activeProcess?.detalle,
+        activeProcess?.arte
+      ),
+      progressIdentityReady: progressIdentity.ok,
+      progressIdentityReason: progressIdentity.reason,
+      progressIdentityMessage: progressIdentity.message,
+    });
+
+    setStudentRoute(studentId, nextRoute);
+    setStudentGoals(studentId, buildStudentGoalsFromRoute(nextRoute, student));
+  } catch (error) {
+    console.error("Error cargando la ruta publicada de Piano:", error);
+    const unavailableRoute = {
+      managedByMap: true,
+      mapUnavailable: true,
+      mapErrorMessage:
+        error?.message ||
+        `La ruta publicada de ${mapConfig.label} no está disponible en este momento.`,
+      routeTemplateId: mapConfig.routeTemplateId,
+      presetId: mapConfig.routeTemplateId,
+      progressEpoch: mapConfig.progressEpoch,
+      routeName: `Ruta de ${mapConfig.label}`,
+      customGoals: [],
+      experiences: [],
+      completedGoalIds: [],
+      activeGoalIds: [],
+      history: [],
+      milestones: [],
+      processKey: activeProcessKey,
+      processLabel: firstNonEmpty(
+        activeProcess?.label,
+        activeProcess?.detalle,
+        activeProcess?.arte
+      ),
+      progressIdentityReady: progressIdentity.ok,
+      progressIdentityReason: progressIdentity.reason,
+      progressIdentityMessage: progressIdentity.message,
+    };
+    setStudentRoute(studentId, unavailableRoute);
+    setStudentGoals(studentId, []);
+    setAppError(unavailableRoute.mapErrorMessage);
+  } finally {
+    setProfileLoading(false);
+  }
+}
+
 function getActiveProcessContext(student) {
-  return (
+  const normalizedProcess =
     resolveStudentProcess(student, currentProfileProcessKey) ||
     normalizeStudentProcesses(student)[0] ||
-    null
-  );
+    null;
+  if (!normalizedProcess) return null;
+
+  const rawProcesses = Array.isArray(student?.processes) ? student.processes : [];
+  const rawProcess =
+    rawProcesses.find(
+      (process) =>
+        toStringSafe(process?.processKey) ===
+        toStringSafe(currentProfileProcessKey || normalizedProcess?.processKey)
+    ) ||
+    rawProcesses.find(
+      (process) =>
+        normalizeText(process?.label) === normalizeText(normalizedProcess?.label)
+    ) ||
+    (rawProcesses.length === 1 ? rawProcesses[0] : null);
+
+  return rawProcess && typeof rawProcess === "object"
+    ? { ...rawProcess, ...normalizedProcess }
+    : normalizedProcess;
+}
+
+function isActiveMapPianoStudent(student) {
+  const process = getActiveProcessContext(student);
+  return isMapPianoProcess(process) || isMapGuitarProcess(process) || isMapViolinProcess(process);
+}
+
+function isMapManagedRoute(route = {}) { return isMapPianoRoute(route) || isMapGuitarRoute(route) || isMapViolinRoute(route); }
+function isActiveMapGuitarStudent(student) { return isMapGuitarProcess(getActiveProcessContext(student)); }
+function isActiveMapViolinStudent(student) { return isMapViolinProcess(getActiveProcessContext(student)); }
+function getMapRouteConfig(student, route = {}) {
+  const violin = isMapViolinRoute(route) || isActiveMapViolinStudent(student);
+  const guitar = isMapGuitarRoute(route) || isActiveMapGuitarStudent(student);
+  if (violin) return { label: "Violín", routeTemplateId: MAP_VIOLIN_ROUTE_TEMPLATE_ID, progressEpoch: MAP_VIOLIN_PROGRESS_EPOCH, getCurriculum: getPublishedViolinCurriculum, getProgress: getMapViolinProgressRecord, saveProgress: saveMapViolinProgressRecord };
+  return guitar
+    ? { label: "Guitarra", routeTemplateId: MAP_GUITAR_ROUTE_TEMPLATE_ID, progressEpoch: MAP_GUITAR_PROGRESS_EPOCH, getCurriculum: getPublishedGuitarCurriculum, getProgress: getMapGuitarProgressRecord, saveProgress: saveMapGuitarProgressRecord }
+    : { label: "Piano", routeTemplateId: MAP_PIANO_ROUTE_TEMPLATE_ID, progressEpoch: MAP_PIANO_PROGRESS_EPOCH, getCurriculum: getPublishedPianoCurriculum, getProgress: getMapPianoProgressRecord, saveProgress: saveMapPianoProgressRecord };
 }
 
 function getRouteSaveOptions(student) {
   const activeProcess = getActiveProcessContext(student);
-  const routeTemplateId = normalizeArtKey(student);
+  const mapManagedPiano = isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess);
+  const mapConfig = getMapRouteConfig(student);
+  const routeTemplateId = mapManagedPiano
+    ? mapConfig.routeTemplateId
+    : normalizeArtKey(student);
   return {
     student,
     processKey: currentProfileProcessKey || "",
@@ -3396,10 +3861,16 @@ function getRouteSaveOptions(student) {
     routeTemplateId,
     areaKey: routeTemplateId,
     instrumentKey: routeTemplateId,
+    ...(mapManagedPiano ? { progressEpoch: mapConfig.progressEpoch } : {}),
   };
 }
 
 async function persistLearningRouteStructure(student, route) {
+  if (isMapManagedRoute(route) || isActiveMapPianoStudent(student)) {
+    throw new Error(
+      "La estructura de Piano se administra únicamente desde Mapa de Experiencias."
+    );
+  }
   const studentId = getStudentIdentity(student);
   if (!studentId) {
     throw new Error("No se pudo resolver el estudiante para guardar la ruta.");
@@ -3414,6 +3885,34 @@ async function persistLearningRouteStructure(student, route) {
 }
 
 async function persistLearningRouteProgress(student, route) {
+  if (isMapManagedRoute(route) || isActiveMapPianoStudent(student)) {
+    const mapConfig = getMapRouteConfig(student, route);
+    if (!isMapManagedRoute(route) || route?.mapUnavailable === true) {
+      throw new Error(
+        "La ruta publicada de Piano no está disponible; no se guardará ningún avance."
+      );
+    }
+    const progressIdentity = getMapPianoProgressIdentity(student);
+    if (!progressIdentity.ok) {
+      throw new Error(progressIdentity.message);
+    }
+    const savedProgress = await mapConfig.saveProgress(
+      progressIdentity.studentId,
+      route,
+      getRouteSaveOptions(student)
+    );
+    return buildDefaultRouteState(student, {
+      ...route,
+      ...savedProgress,
+      managedByMap: true,
+      routeTemplateId: mapConfig.routeTemplateId,
+      progressEpoch: mapConfig.progressEpoch,
+      curriculumRevision: route.curriculumRevision || route.revision,
+      customGoals: route.customGoals,
+      experiences: route.experiences,
+    });
+  }
+
   const studentId = getStudentIdentity(student);
   if (!studentId) {
     throw new Error("No se pudo resolver el estudiante para guardar el avance.");
@@ -3428,10 +3927,7 @@ async function persistLearningRouteProgress(student, route) {
 }
 
 function normalizeArtKey(student) {
-  const activeProcess =
-    resolveStudentProcess(student, currentProfileProcessKey) ||
-    normalizeStudentProcesses(student)[0] ||
-    null;
+  const activeProcess = getActiveProcessContext(student);
   const rawValue = firstNonEmpty(
     activeProcess?.detalle,
     activeProcess?.label,
@@ -3517,8 +4013,11 @@ function buildGenericRoutePreset(artKey, artLabel) {
 }
 
 function resolveRoutePreset(student, baseRoute = {}) {
+  const activeProcess = getActiveProcessContext(student);
+  const mapManagedPiano =
+    isMapManagedRoute(baseRoute) || isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess);
   const customGoals = normalizeManualRouteGoals(baseRoute?.customGoals);
-  if (customGoals.length) {
+  if (customGoals.length && (!mapManagedPiano || isMapManagedRoute(baseRoute))) {
     return {
       id: toStringSafe(baseRoute?.presetId) || "ruta_manual_v1",
       routeName: toStringSafe(baseRoute?.routeName) || "Ruta manual",
@@ -3526,10 +4025,14 @@ function resolveRoutePreset(student, baseRoute = {}) {
     };
   }
 
-  const activeProcess =
-    resolveStudentProcess(student, currentProfileProcessKey) ||
-    normalizeStudentProcesses(student)[0] ||
-    null;
+  if (mapManagedPiano) {
+    const mapConfig = getMapRouteConfig(student, baseRoute);
+    return {
+      id: mapConfig.routeTemplateId,
+      routeName: toStringSafe(baseRoute?.routeName) || `Ruta de ${mapConfig.label}`,
+      goals: [],
+    };
+  }
   const activeProcessKey = toStringSafe(
     currentProfileProcessKey || activeProcess?.processKey
   );
@@ -3551,9 +4054,6 @@ function resolveRoutePreset(student, baseRoute = {}) {
       activeProcessHint.includes("violoncello"))
   ) {
     forcedPreset = ROUTE_PRESETS.cello;
-  }
-  if (!forcedPreset && activeProcessHint.includes("piano")) {
-    forcedPreset = ROUTE_PRESETS.piano;
   }
   if (forcedPreset) return forcedPreset;
 
@@ -3601,10 +4101,36 @@ function resolveRoutePreset(student, baseRoute = {}) {
 }
 
 function buildDefaultRouteState(student, baseRoute = {}) {
-  const activeProcess =
-    resolveStudentProcess(student, currentProfileProcessKey) ||
-    normalizeStudentProcesses(student)[0] ||
-    null;
+  const activeProcess = getActiveProcessContext(student);
+  if (isMapManagedRoute(baseRoute)) {
+    return buildMapPianoRouteState(student, baseRoute, activeProcess);
+  }
+  if (isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess)) {
+    const mapConfig = getMapRouteConfig(student, baseRoute);
+    return {
+      ...(baseRoute && typeof baseRoute === "object" ? baseRoute : {}),
+      managedByMap: true,
+      mapUnavailable: true,
+      mapErrorMessage:
+        `La ruta publicada de ${mapConfig.label} todavía no se ha cargado desde Mapa de Experiencias.`,
+      routeTemplateId: mapConfig.routeTemplateId,
+      presetId: mapConfig.routeTemplateId,
+      progressEpoch: mapConfig.progressEpoch,
+      routeName: `Ruta de ${mapConfig.label}`,
+      customGoals: [],
+      experiences: [],
+      completedGoalIds: [],
+      activeGoalIds: [],
+      history: [],
+      milestones: [],
+      processKey: toStringSafe(currentProfileProcessKey || activeProcess?.processKey),
+      processLabel: firstNonEmpty(
+        activeProcess?.label,
+        activeProcess?.detalle,
+        activeProcess?.arte
+      ),
+    };
+  }
   const preset = resolveRoutePreset(student, baseRoute);
   const routeTemplateId =
     toStringSafe(baseRoute?.routeTemplateId) || normalizeArtKey(student);
@@ -3697,6 +4223,92 @@ function buildDefaultRouteState(student, baseRoute = {}) {
   };
 }
 
+function buildMapPianoRouteState(student, baseRoute = {}, activeProcess = null) {
+  const mapConfig = getMapRouteConfig(student, baseRoute);
+  const experiences = Array.isArray(baseRoute?.experiences)
+    ? baseRoute.experiences
+    : [];
+  const customGoals = normalizeManualRouteGoals(
+    Array.isArray(baseRoute?.customGoals)
+      ? baseRoute.customGoals
+      : experiences.flatMap((experience) => experience?.skills || [])
+  );
+  const validGoalIds = new Set(customGoals.map((goal) => goal.id));
+  const completedGoalIds = [
+    ...new Set(
+      (Array.isArray(baseRoute?.completedGoalIds)
+        ? baseRoute.completedGoalIds
+        : []
+      )
+        .map(toStringSafe)
+        .filter((goalId) => goalId && validGoalIds.has(goalId))
+    ),
+  ];
+  const history = (Array.isArray(baseRoute?.history) ? baseRoute.history : [])
+    .map((entry) => ({
+      goalId: toStringSafe(entry?.goalId),
+      title: toStringSafe(entry?.title),
+      component: toStringSafe(entry?.component),
+      experience: Number(entry?.experience) || 1,
+      completedAt: entry?.completedAt || null,
+    }))
+    .filter((entry) => entry.goalId && validGoalIds.has(entry.goalId));
+  const progress = deriveMapPianoRouteProgress(
+    { ...baseRoute, experiences },
+    completedGoalIds
+  );
+  const currentExperience = progress.currentExperience;
+  const activeGoals = customGoals.filter((goal) =>
+    progress.activeGoalIds.includes(goal.id)
+  );
+
+  return {
+    ...(baseRoute && typeof baseRoute === "object" ? baseRoute : {}),
+    managedByMap: true,
+    routeTemplateId: mapConfig.routeTemplateId,
+    areaKey: mapConfig.routeTemplateId,
+    instrumentKey: mapConfig.routeTemplateId,
+    presetId: mapConfig.routeTemplateId,
+    progressEpoch: mapConfig.progressEpoch,
+    curriculumRevision: toStringSafe(
+      baseRoute?.curriculumRevision || baseRoute?.revision
+    ),
+    routeName: toStringSafe(baseRoute?.routeName) || `Ruta de ${mapConfig.label}`,
+    customGoals,
+    experiences,
+    processKey: toStringSafe(
+      baseRoute?.processKey || currentProfileProcessKey || activeProcess?.processKey
+    ),
+    processLabel: firstNonEmpty(
+      baseRoute?.processLabel,
+      activeProcess?.label,
+      activeProcess?.detalle,
+      activeProcess?.arte
+    ),
+    focusArea: mapConfig.label,
+    completedGoalIds,
+    history,
+    currentExperience: progress.currentExperienceOrder,
+    currentExperienceId: progress.currentExperienceId,
+    currentExperienceData: currentExperience,
+    experience: progress.currentExperienceOrder || experiences.length,
+    stage: progress.isComplete
+      ? `Ruta de ${mapConfig.label} completada`
+      : firstNonEmpty(
+          currentExperience?.label,
+          currentExperience?.name,
+          progress.currentExperienceOrder
+            ? `Experiencia ${progress.currentExperienceOrder}`
+            : `Ruta de ${mapConfig.label}`
+        ),
+    activeGoalIds: progress.activeGoalIds,
+    milestones: progress.milestones,
+    recommendations: activeGoals.slice(0, 4).map((goal) => goal.title),
+    routeProgress: progress,
+    updatedAt: baseRoute?.updatedAt || null,
+  };
+}
+
 function buildStudentGoalsFromRoute(route = {}, student = null) {
   const preset = resolveRoutePreset(student, route);
   const completedIds = new Set(
@@ -3747,6 +4359,17 @@ function normalizeManualRouteGoals(goals = []) {
         order: Number(goal?.order) || index + 1,
         title,
         description: toStringSafe(goal?.description || `Ruta manual · ${componentLabel}`),
+        goalId: toStringSafe(goal?.goalId || goal?.id),
+        skillId: toStringSafe(goal?.skillId),
+        experienceId: toStringSafe(goal?.experienceId),
+        experienceOrder: Number(goal?.experienceOrder || goal?.experience) || 1,
+        experienceLabel: toStringSafe(goal?.experienceLabel),
+        experienceName: toStringSafe(goal?.experienceName),
+        category: toStringSafe(goal?.category),
+        achievement: toStringSafe(goal?.achievement),
+        difficulty: toStringSafe(goal?.difficulty),
+        note: toStringSafe(goal?.note),
+        managedByMap: goal?.managedByMap === true,
       };
     })
     .filter(Boolean);
@@ -3952,12 +4575,14 @@ function getRouteComponentsForPreset(preset = null) {
     });
   });
 
-  return components.length ? components : ROUTE_COMPONENTS;
+  return components.length ? components.sort(compareComponentsForDisplay) : ROUTE_COMPONENTS;
 }
 
 function compareRouteGoals(a = {}, b = {}) {
   const expDiff = Number(a?.experience || 0) - Number(b?.experience || 0);
   if (expDiff !== 0) return expDiff;
+  const componentDiff = compareComponentsForDisplay(a, b);
+  if (componentDiff !== 0) return componentDiff;
   return Number(a?.order || 0) - Number(b?.order || 0);
 }
 
@@ -3982,10 +4607,13 @@ function groupGoalsBySection(goals = []) {
 
 function renderLearningRoute(student) {
   const access = resolveUserAccess(getState()?.auth?.user);
-  const canEditRouteStructure = Boolean(access.canEditRouteStructure);
-  const canUpdateRouteProgress = Boolean(access.canUpdateRouteProgress);
   const studentId = getStudentIdentity(student);
   const route = buildDefaultRouteState(student, getStudentRoute(studentId));
+  if (isMapManagedRoute(route)) {
+    return renderMapPianoLearningRoute(route, access);
+  }
+  const canEditRouteStructure = Boolean(access.canEditRouteStructure);
+  const canUpdateRouteProgress = Boolean(access.canUpdateRouteProgress);
   const preset = resolveRoutePreset(student, route);
   const routeComponents = getRouteComponentsForPreset(preset);
   const progress = buildRouteProgress(route.completedGoalIds, preset);
@@ -4184,6 +4812,217 @@ function renderLearningRoute(student) {
       </section>
 
       ${canEditRouteStructure ? renderManualRouteEditor(route, preset, routeEditorOpen, access) : ""}
+    </div>
+  `;
+}
+
+function renderMapPianoExperienceCard(experience = {}, route = {}, canUpdate = false) {
+  const completedIds = new Set(route?.completedGoalIds || []);
+  const currentExperienceId = toStringSafe(route?.currentExperienceId);
+  const experienceId = toStringSafe(experience?.id);
+  const skills = Array.isArray(experience?.skills) ? experience.skills : [];
+  const completedGoals = skills.filter((goal) => completedIds.has(goal.id));
+  const isCurrent = experienceId === currentExperienceId;
+  const done = skills.length > 0 && completedGoals.length === skills.length;
+  const repertoire = experience?.personalRepertoire || {};
+  const meta = [
+    experience?.difficulty,
+    experience?.estimatedDuration,
+    experience?.suggestedAge,
+  ]
+    .map(toStringSafe)
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <details class="route-section-card ${done ? "is-done" : isCurrent ? "is-active" : ""}" ${isCurrent ? "open" : ""}>
+      <summary class="route-section-card__summary">
+        <span>${escapeHtml(
+          [experience.label, experience.name]
+            .map(toStringSafe)
+            .filter(Boolean)
+            .filter((value, index, values) => values.indexOf(value) === index)
+            .join(" · ") || `Experiencia ${experience.order || ""}`
+        )}</span>
+        <span>${escapeHtml(`${completedGoals.length}/${skills.length} metas`)}</span>
+      </summary>
+      <div class="route-history-grid">
+        <article class="route-history-card">
+          <p class="route-history-card__title">Objetivo</p>
+          <p class="route-overview__text">${escapeHtml(
+            firstNonEmpty(
+              experience.objective,
+              experience.description,
+              "Sin objetivo publicado."
+            )
+          )}</p>
+          ${meta ? `<p class="route-log-item__meta">${escapeHtml(meta)}</p>` : ""}
+        </article>
+        <article class="route-history-card">
+          <p class="route-history-card__title">Evidencia esperada</p>
+          <p class="route-overview__text">${escapeHtml(
+            experience.evidence || "Sin evidencia publicada."
+          )}</p>
+        </article>
+      </div>
+      ${
+        repertoire.title || repertoire.focus || repertoire.evidence
+          ? `
+            <article class="route-history-card route-history-card--wide">
+              <p class="route-history-card__title">Repertorio personal</p>
+              ${repertoire.title ? `<p class="route-focus-item__title">${escapeHtml(repertoire.title)}</p>` : ""}
+              ${repertoire.focus ? `<p class="route-overview__text"><strong>Foco:</strong> ${escapeHtml(repertoire.focus)}</p>` : ""}
+              ${repertoire.evidence ? `<p class="route-overview__text"><strong>Evidencia:</strong> ${escapeHtml(repertoire.evidence)}</p>` : ""}
+            </article>
+          `
+          : ""
+      }
+      <div class="route-section-list">
+        ${
+          skills.length
+            ? [...skills]
+                .sort(compareRouteGoals)
+                .map((goal) => renderMapPianoGoalControl(goal, route, canUpdate))
+                .join("")
+            : `<p class="route-history-card__empty">Esta experiencia no tiene metas publicadas.</p>`
+        }
+      </div>
+    </details>
+  `;
+}
+
+function renderMapPianoLearningRoute(route = {}, access = {}) {
+  if (route?.mapUnavailable === true) {
+    return `<div class="route-overview">${renderMapPianoUnavailable(route)}</div>`;
+  }
+
+  const progress = getMapPianoProgress(route);
+  const currentExperience = getMapPianoCurrentExperience(route);
+  const canUpdate = Boolean(
+    access?.canUpdateRouteProgress && route?.progressIdentityReady === true
+  );
+  const experiences = Array.isArray(route?.experiences) ? route.experiences : [];
+
+  return `
+    <div class="route-overview">
+      ${renderMapPianoIdentityNotice(route)}
+      <section class="route-overview__hero route-overview__hero--compact">
+        <div>
+          <p class="route-overview__kicker">Ruta oficial · Mapa de Experiencias</p>
+          <h3 class="route-overview__title">${escapeHtml(route.routeName || "Ruta de Piano")}</h3>
+          <p class="route-overview__text">${escapeHtml(
+            route.routeDescription ||
+              "El docente marca manualmente cada meta dominada; la primera experiencia incompleta define el punto actual."
+          )}</p>
+        </div>
+        <div class="route-overview__stats">
+          <article class="route-stat">
+            <span class="route-stat__label">Experiencias</span>
+            <strong class="route-stat__value">${escapeHtml(
+              `${progress.completedExperienceCount}/${progress.totalExperiences}`
+            )}</strong>
+          </article>
+          <article class="route-stat">
+            <span class="route-stat__label">Metas logradas</span>
+            <strong class="route-stat__value">${escapeHtml(
+              `${progress.completedGoals}/${progress.totalGoals}`
+            )}</strong>
+          </article>
+          <article class="route-stat">
+            <span class="route-stat__label">Progreso total</span>
+            <strong class="route-stat__value">${escapeHtml(String(progress.percent))}%</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="route-current">
+        <header class="route-current__header">
+          <div>
+            <p class="route-overview__kicker">Experiencia actual</p>
+            <h3 class="route-current__title">${escapeHtml(
+              progress.isComplete
+                ? "Ruta de Piano completada"
+                : firstNonEmpty(
+                    currentExperience?.label,
+                    currentExperience?.name,
+                    "Experiencia actual"
+                  )
+            )}</h3>
+            ${
+              currentExperience?.name &&
+              currentExperience.name !== currentExperience.label
+                ? `<p class="route-overview__text">${escapeHtml(currentExperience.name)}</p>`
+                : ""
+            }
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" data-route-action="refresh-route">
+            Actualizar desde Mapa
+          </button>
+        </header>
+        ${
+          currentExperience
+            ? `
+              <div class="route-history-grid">
+                <article class="route-history-card">
+                  <p class="route-history-card__title">Objetivo</p>
+                  <p class="route-overview__text">${escapeHtml(
+                    firstNonEmpty(
+                      currentExperience.objective,
+                      currentExperience.description,
+                      "Sin objetivo publicado."
+                    )
+                  )}</p>
+                </article>
+                <article class="route-history-card">
+                  <p class="route-history-card__title">Evidencia esperada</p>
+                  <p class="route-overview__text">${escapeHtml(
+                    currentExperience.evidence || "Sin evidencia publicada."
+                  )}</p>
+                </article>
+              </div>
+            `
+            : `<p class="route-component-card__done">Todas las experiencias y metas están completadas.</p>`
+        }
+      </section>
+
+      <section class="route-map" aria-label="Mapa dinámico de experiencias de Piano">
+        ${progress.milestones
+          .map(
+            (milestone) => `
+              <article class="route-map__step ${milestone.done ? "is-done" : milestone.unlocked ? "is-active" : ""}">
+                <div class="route-map__dot"></div>
+                <p class="route-map__label">${escapeHtml(
+                  milestone.label || `Experiencia ${milestone.experience}`
+                )}</p>
+                <p class="route-map__meta">${escapeHtml(
+                  `${milestone.completed}/${milestone.total} metas`
+                )}</p>
+              </article>
+            `
+          )
+          .join("")}
+      </section>
+
+      <section class="route-component-card">
+        <header class="route-component-card__header">
+          <div>
+            <p class="route-component-card__eyebrow">Ruta completa</p>
+            <h3 class="route-component-card__title">${escapeHtml(
+              `${experiences.length} experiencias publicadas`
+            )}</h3>
+          </div>
+          <span class="route-component-card__count">${escapeHtml(
+            `${progress.completedExperienceCount}/${progress.totalExperiences}`
+          )}</span>
+        </header>
+        <div class="route-section-list">
+          ${experiences
+            .map((experience) =>
+              renderMapPianoExperienceCard(experience, route, canUpdate)
+            )
+            .join("")}
+        </div>
+      </section>
     </div>
   `;
 }
@@ -4466,9 +5305,7 @@ function groupGoalsByExperienceAndComponent(goals = []) {
   const orderedGoals = normalizeManualRouteGoals(goals).sort((a, b) => {
     const expDiff = Number(a.experience || 0) - Number(b.experience || 0);
     if (expDiff !== 0) return expDiff;
-    const componentDiff = toStringSafe(a.componentLabel || a.component).localeCompare(
-      toStringSafe(b.componentLabel || b.component)
-    );
+    const componentDiff = compareComponentsForDisplay(a, b);
     if (componentDiff !== 0) return componentDiff;
     return Number(a.order || 0) - Number(b.order || 0);
   });
@@ -4495,7 +5332,7 @@ function groupGoalsByExperienceAndComponent(goals = []) {
 
   return [...experienceMap.entries()].map(([experience, componentMap]) => ({
     experience,
-    components: [...componentMap.values()],
+    components: [...componentMap.values()].sort(compareComponentsForDisplay),
   }));
 }
 
@@ -4564,11 +5401,18 @@ async function completeLearningGoal(student, goalId) {
   const access = resolveUserAccess(getState()?.auth?.user);
   if (!access.canUpdateRouteProgress) return;
 
-  const routePreset = resolveRoutePreset(student, getStudentRoute(studentId));
+  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
+  if (isMapManagedRoute(currentRoute) && currentRoute?.progressIdentityReady !== true) {
+    setAppError(
+      currentRoute?.progressIdentityMessage ||
+        "No se puede guardar progreso hasta confirmar el ID canónico del estudiante."
+    );
+    return;
+  }
+  const routePreset = resolveRoutePreset(student, currentRoute);
   const goal = (routePreset?.goals || GUITAR_ROUTE_PRESET).find((item) => item.id === goalId);
   if (!goal) return;
 
-  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
   const completedGoalIds = new Set(currentRoute.completedGoalIds || []);
   if (completedGoalIds.has(goal.id)) return;
 
@@ -4618,6 +5462,12 @@ async function saveManualLearningRoute(student) {
   if (!access.canEditRouteStructure) return;
 
   const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
+  if (isMapManagedRoute(currentRoute) || isActiveMapPianoStudent(student)) {
+    setAppError(
+      "La ruta de Piano se administra únicamente desde Mapa de Experiencias."
+    );
+    return;
+  }
   const routePreset = resolveRoutePreset(student, currentRoute);
   const visualGoals = getManualGoalsFromVisualEditor();
   const textarea = viewRoot?.querySelector("[data-route-goals-editor]");
@@ -4682,11 +5532,18 @@ async function undoLearningGoal(student, goalId) {
   const access = resolveUserAccess(getState()?.auth?.user);
   if (!access.canUpdateRouteProgress) return;
 
-  const routePreset = resolveRoutePreset(student, getStudentRoute(studentId));
+  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
+  if (isMapManagedRoute(currentRoute) && currentRoute?.progressIdentityReady !== true) {
+    setAppError(
+      currentRoute?.progressIdentityMessage ||
+        "No se puede guardar progreso hasta confirmar el ID canónico del estudiante."
+    );
+    return;
+  }
+  const routePreset = resolveRoutePreset(student, currentRoute);
   const goal = (routePreset?.goals || GUITAR_ROUTE_PRESET).find((item) => item.id === goalId);
   if (!goal) return;
 
-  const currentRoute = buildDefaultRouteState(student, getStudentRoute(studentId));
   const completedGoalIds = new Set(currentRoute.completedGoalIds || []);
   if (!completedGoalIds.has(goal.id)) return;
 
@@ -4758,6 +5615,16 @@ function toggleRouteHistory(student) {
 function toggleRouteEditor(student) {
   const studentId = getStudentIdentity(student);
   if (!studentId) return;
+
+  const route = buildDefaultRouteState(student, getStudentRoute(studentId));
+  if (isMapManagedRoute(route) || isActiveMapPianoStudent(student)) {
+    routeEditorState.set(studentId, false);
+    setAppError(
+      "La ruta de Piano se administra únicamente desde Mapa de Experiencias."
+    );
+    rerenderRoutePanel(student);
+    return;
+  }
 
   routeEditorState.set(studentId, !(routeEditorState.get(studentId) === true));
   rerenderRoutePanel(student);
@@ -5013,6 +5880,14 @@ function renderHistoryCard(item, processOptions = [], options = {}) {
           <button
             type="button"
             class="btn btn--ghost btn--sm"
+            data-history-action="edit-bitacora"
+            data-bitacora-id="${escapeHtml(item.id || "")}"
+          >
+            Editar
+          </button>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
             data-history-action="delete-bitacora"
             data-bitacora-id="${escapeHtml(item.id || "")}"
           >
@@ -5049,6 +5924,13 @@ function renderHistoryCard(item, processOptions = [], options = {}) {
                   <option value="">Sin categorizar</option>
                   ${renderHistoryProcessOptions(processOptions, selectedProcessKey)}
                 </select>
+                <input
+                  type="time"
+                  class="field__input"
+                  aria-label="Hora de clase"
+                  data-history-time-input
+                  value="${escapeHtml(normalizeHistoryClassTime(item.horaClase || item.hora))}"
+                />
                 <button
                   type="button"
                   class="btn btn--ghost btn--sm"
@@ -5155,6 +6037,11 @@ function renderHistoryListSection(label, values = []) {
   `;
 }
 
+function normalizeHistoryClassTime(value) {
+  const safeValue = toStringSafe(value);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(safeValue) ? safeValue : "";
+}
+
 function renderProcessAssignmentControl(item, processOptions = [], selectedProcessKey = "") {
   return `
     <details class="teaching-history-process">
@@ -5164,6 +6051,13 @@ function renderProcessAssignmentControl(item, processOptions = [], selectedProce
           <option value="">Sin categorizar</option>
           ${renderHistoryProcessOptions(processOptions, selectedProcessKey)}
         </select>
+        <input
+          type="time"
+          class="field__input"
+          aria-label="Hora de clase"
+          data-history-time-input
+          value="${escapeHtml(normalizeHistoryClassTime(item.horaClase || item.hora))}"
+        />
         <button
           type="button"
           class="btn btn--ghost btn--sm"
@@ -5195,6 +6089,10 @@ function getCurrentStudentOverride(item = {}, student = {}) {
     student?.id,
     student?.studentId,
     student?.studentKey,
+    student?.email,
+    student?.correo,
+    student?.correoElectronico,
+    student?.mail,
   ]
     .map(toStringSafe)
     .filter(Boolean);
@@ -5355,9 +6253,6 @@ async function ensureStudentBitacorasLoaded(student) {
   const studentRef = getStudentIdentity(student);
   if (!studentRef) return;
 
-  const currentItems = getBitacorasFromState(student);
-  if (currentItems.length > 0) return;
-
   setBitacorasLoading(true);
 
   try {
@@ -5407,7 +6302,7 @@ async function reloadHistory(student) {
   }
 }
 
-async function assignProcessToBitacora(student, bitacoraId, processKey = "") {
+async function assignProcessToBitacora(student, bitacoraId, processKey = "", classTime = "") {
   const safeBitacoraId = toStringSafe(bitacoraId);
   if (!safeBitacoraId) return;
 
@@ -5471,14 +6366,42 @@ async function assignProcessToBitacora(student, bitacoraId, processKey = "") {
           programa: "",
         };
 
-    await updateBitacora(safeBitacoraId, {
-      process: nextProcess,
-      metadata: {
-        ...(currentItem?.metadata || {}),
-        manualProcessAssignment: true,
-        manualProcessAssignedAt: new Date().toISOString(),
-      },
-    });
+    const assignmentMetadata = {
+      ...(currentItem?.metadata || {}),
+      manualProcessAssignment: true,
+      manualProcessAssignedAt: new Date().toISOString(),
+    };
+    const sessionTime = normalizeHistoryClassTime(classTime);
+    const sessionFields = sessionTime
+      ? { horaClase: sessionTime, hora: sessionTime }
+      : {};
+
+    if (isGroupBitacora(currentItem)) {
+      const overrideKey = resolveStudentOverrideKey(currentItem, student);
+      if (!overrideKey) {
+        throw new Error("No se pudo identificar al estudiante dentro de esta bitácora grupal.");
+      }
+
+      const existingOverrides = currentItem?.studentOverrides || currentItem?.overrides || {};
+      const existingOverride = existingOverrides[overrideKey] || {};
+      await updateBitacora(safeBitacoraId, {
+        studentOverrides: {
+          ...existingOverrides,
+          [overrideKey]: {
+            ...existingOverride,
+            processKey: safeProcessKey,
+          },
+        },
+        metadata: assignmentMetadata,
+        ...sessionFields,
+      });
+    } else {
+      await updateBitacora(safeBitacoraId, {
+        process: nextProcess,
+        metadata: assignmentMetadata,
+        ...sessionFields,
+      });
+    }
 
     await reloadHistory(student);
     renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
@@ -5488,6 +6411,30 @@ async function assignProcessToBitacora(student, bitacoraId, processKey = "") {
       error?.message || "No se pudo guardar el proceso de la bitácora."
     );
   }
+}
+
+function resolveStudentOverrideKey(item = {}, student = {}) {
+  const itemStudentIds = normalizeStudentIds(item.studentIds || []);
+  const candidates = [
+    getStudentIdentity(student),
+    getStudentFallbackId(student),
+    student?.id,
+    student?.studentId,
+    student?.studentKey,
+    student?.email,
+    student?.correo,
+    student?.correoElectronico,
+    student?.mail,
+  ]
+    .map(toStringSafe)
+    .filter(Boolean);
+  const directMatch = candidates.find((candidate) => itemStudentIds.includes(candidate));
+  if (directMatch) return directMatch;
+
+  const studentName = normalizeText(getStudentName(student));
+  return (item.studentRefs || []).find(
+    (ref) => normalizeText(ref?.name) === studentName && itemStudentIds.includes(toStringSafe(ref?.id))
+  )?.id || "";
 }
 
 async function handleDeleteBitacoraFromProfile(student, bitacoraId) {
@@ -6406,11 +7353,14 @@ async function saveImportedBitacoras(student, items = [], options = {}) {
 
       const saved = await createBitacora(item.payload);
       const normalized = normalizeBitacorasResponseShared([saved])[0] || saved;
-      normalizeStudentIds(normalized.studentIds || item.payload.studentIds).forEach((studentId) => {
-        addBitacoraForStudent(studentId, normalized);
-      });
       const fallbackId = getStudentFallbackId(student);
-      if (fallbackId) addBitacoraForStudent(fallbackId, normalized);
+      addBitacoraForStudents(
+        normalizeStudentIds([
+          ...(normalized.studentIds || item.payload.studentIds || []),
+          fallbackId,
+        ]),
+        normalized
+      );
       item.saved = true;
       created += 1;
       processed += 1;
@@ -6426,7 +7376,7 @@ async function saveImportedBitacoras(student, items = [], options = {}) {
   return { created, skipped };
 }
 
-function getBitacorasFromState(studentOrRef) {
+function getBitacorasFromState(studentOrRef, { scope = "active" } = {}) {
   const selectedProcess =
     studentOrRef && typeof studentOrRef === "object"
       ? resolveStudentProcess(studentOrRef, currentProfileProcessKey)
@@ -6441,46 +7391,26 @@ function getBitacorasFromState(studentOrRef) {
       : "";
 
   const applyProcessFilter = (items = []) => {
+    if (scope === "all") return items;
+
     const safeProcessKey = toStringSafe(currentProfileProcessKey);
-    const selectedDetail = normalizeText(
-      selectedProcess?.detalle || selectedProcess?.label || ""
+    const selectedDetails = [
+      selectedProcess?.detalle,
+      selectedProcess?.label,
+      selectedProcess?.arte,
+    ]
+      .map(normalizeText)
+      .filter(Boolean);
+    const studentIds = getStudentLinkedIds(studentOrRef);
+
+    return items.filter((item) =>
+      bitacoraMatchesProfileActiveProcess(item, {
+        studentIds: studentIds.length ? studentIds : [studentRef, fallbackId],
+        processKey: safeProcessKey,
+        processDetails: selectedDetails,
+        normalize: normalizeText,
+      })
     );
-
-    const filtered = items.filter((item) => {
-      if (isGroupBitacoraForStudent(item, studentRef, fallbackId)) {
-        return true;
-      }
-
-      const itemProcessKey = toStringSafe(
-        item?.process?.processKey || item?.processKey
-      );
-
-      if (safeProcessKey && itemProcessKey) {
-        return itemProcessKey === safeProcessKey;
-      }
-
-      if (!selectedDetail) return true;
-
-      const itemDetails = [
-        item?.process?.processLabel,
-        item?.process?.label,
-        item?.process?.programa,
-        item?.process?.detalle,
-        item?.process?.area,
-      ]
-        .flatMap((value) => String(value || "").split(/,|;|\n/g))
-        .map((value) => normalizeText(value))
-        .filter(Boolean);
-
-      // Mantenemos visibles los registros sin proceso para permitir categorización manual.
-      if (!itemProcessKey && !itemDetails.length) {
-        return true;
-      }
-
-      return itemDetails.includes(selectedDetail);
-    });
-
-    return filtered;
   };
 
   const selectedItems = getSelectedStudentBitacoras();
@@ -6511,12 +7441,10 @@ function getBitacorasFromState(studentOrRef) {
   return [];
 }
 
-function isGroupBitacoraForStudent(item = {}, studentRef = "", fallbackId = "") {
-  const aliases = [studentRef, fallbackId].map(toStringSafe).filter(Boolean);
-  return (
-    isGroupBitacora(item) &&
-    getBitacoraParticipantIds(item).some((id) => aliases.includes(id))
-  );
+function bitacoraMatchesProfileActiveProcess(item = {}, options = {}) {
+  // Mantiene una única regla para el perfil y el resto de coberturas:
+  // respeta overrides grupales y enlaza claves históricas del mismo proceso.
+  return bitacoraMatchesStudentProcess(item, options);
 }
 
 function normalizeBitacorasResponse(response) {
@@ -6573,6 +7501,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
       const source = value && typeof value === "object" ? value : {};
     const normalized = {
       enabled: Boolean(source.enabled),
+      processKey: toStringSafe(source.processKey || source.processRef),
       tareas: repairVisibleText(source.tareas),
       etiquetas: normalizeTags(source.etiquetas || []).map(repairVisibleText),
       componenteCorporal: normalizeTags(source.componenteCorporal || []).map(repairVisibleText),
@@ -6583,6 +7512,7 @@ function normalizeStudentOverrides(overrides = {}, allowedStudentIds = []) {
 
       if (
         !normalized.enabled &&
+        !normalized.processKey &&
         !normalized.tareas &&
         !normalized.etiquetas.length &&
         !normalized.componenteCorporal.length &&

@@ -23,7 +23,7 @@ import {
   serverTimestamp,
   normalizeTimestamps,
   getCurrentUser,
-} from "../firebase.client.js?v=20260730.5";
+} from "../firebase.client.js?v=20260731.2";
 
 import {
   isPlainObject,
@@ -33,7 +33,7 @@ import {
   uniqueStrings,
   getTimestamp,
 } from "../utils/shared.js";
-import { getBitacoraParticipantIds } from "../utils/bitacora-coverage.js?v=20260727.1";
+import { getBitacoraParticipantIds } from "../utils/bitacora-coverage.js?v=20260731.2";
 
 const BITACORAS_COLLECTION = getBitacorasCollectionName();
 const DEFAULT_LIMIT = 50;

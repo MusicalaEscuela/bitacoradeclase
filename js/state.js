@@ -391,6 +391,9 @@ function createEmptyDraft(overrides = {}) {
     studentIds: normalizedStudentIds,
     studentRefs: normalizedStudentRefs,
     fechaClase: normalizeLocalDateInput(overrides.fechaClase),
+    horaClase: normalizeClassTime(
+      overrides.horaClase || overrides.hora || overrides.classTime || overrides.time
+    ),
     titulo: toStringSafe(overrides.titulo || overrides.title || base.title),
     contenido: toStringSafe(
       overrides.contenido || overrides.content || base.content
@@ -398,6 +401,9 @@ function createEmptyDraft(overrides = {}) {
     etiquetas: uniqueStrings(overrides.etiquetas || overrides.tags || base.tags),
     docentes: uniqueStrings(overrides.docentes || overrides.docente),
     docente: toStringSafe(overrides.docente),
+    processKey: toStringSafe(overrides.processKey || overrides.processRef),
+    pendingDocenteInput: toStringSafe(overrides.pendingDocenteInput),
+    editingBitacoraId: toStringSafe(overrides.editingBitacoraId),
     archivos: Array.isArray(overrides.archivos)
       ? [...overrides.archivos]
       : Array.isArray(overrides.attachments)
@@ -460,6 +466,9 @@ const initialState = {
     allIds: [],
     currentStudentId: null,
     loading: false,
+    // La búsqueda no debe aceptar interacción hasta que la carga completa haya
+    // entregado una lista coherente (aunque esa lista resulte vacía).
+    ready: false,
 
     // Compat temporal
     selected: null,
@@ -525,6 +534,8 @@ function finalizeState(rawState) {
   merged.search.filteredIds = uniqueStrings(merged.search.filteredIds);
   merged.search.selectedStudentIds = uniqueStrings(merged.search.selectedStudentIds);
   merged.search.lastSearchAt = merged.search.lastSearchAt || null;
+
+  merged.students.ready = Boolean(merged.students.ready);
 
   merged.filters = {
     sede: toStringSafe(merged.filters.sede),
@@ -973,6 +984,7 @@ export function setStudentsList(students = []) {
       allIds,
       currentStudentId: nextCurrentStudentId,
       loading: false,
+      ready: true,
     },
     search: {
       filteredIds: safeQueryHasValue(state.search.query) ? state.search.filteredIds : [],
@@ -1161,7 +1173,14 @@ export function setStudentRoute(studentId, route = {}) {
 }
 
 export function setStudentsLoading(isLoading) {
-  patchSlice("students", { loading: Boolean(isLoading) });
+  const loading = Boolean(isLoading);
+  patchSlice("students", {
+    loading,
+    // Al recargar, se bloquea la búsqueda hasta que llegue el nuevo conjunto.
+    // Si falla, `ready` se mantiene en false y queda disponible únicamente
+    // Recargar para que no se busque sobre una carga incompleta.
+    ready: loading ? false : state.students.ready,
+  });
 }
 
 export function setProfileLoading(isLoading) {
@@ -1224,21 +1243,35 @@ export function setBitacorasForStudent(studentId, items = []) {
 }
 
 export function addBitacoraForStudent(studentId, bitacora) {
-  const safeStudentId = toStringSafe(studentId);
+  addBitacoraForStudents([studentId], bitacora);
+}
+
+// Una bitácora grupal es un único documento compartido. Actualizar la caché
+// participante por participante emitía una notificación y un render completo
+// por cada estudiante, haciendo que el cierre visual del guardado creciera
+// con el tamaño del grupo. Se prepara todo el mapa y se notifica una sola vez.
+export function addBitacoraForStudents(studentIds = [], bitacora) {
+  const safeStudentIds = uniqueStrings(studentIds);
   const normalizedBitacora = normalizeBitacoraItem(bitacora);
 
-  if (!safeStudentId || !normalizedBitacora) return;
+  if (!safeStudentIds.length || !normalizedBitacora) return;
 
-  const current = state.bitacoras.byStudentId?.[safeStudentId] || [];
-  const withoutDuplicate = current.filter(
-    (item) => toStringSafe(item.id) !== normalizedBitacora.id
-  );
+  const byStudentId = { ...state.bitacoras.byStudentId };
+
+  safeStudentIds.forEach((studentId) => {
+    const current = byStudentId[studentId] || [];
+    const withoutDuplicate = current.filter(
+      (item) => toStringSafe(item.id) !== normalizedBitacora.id
+    );
+
+    byStudentId[studentId] = sortBitacoras([
+      normalizedBitacora,
+      ...withoutDuplicate,
+    ]);
+  });
 
   patchSlice("bitacoras", {
-    byStudentId: {
-      ...state.bitacoras.byStudentId,
-      [safeStudentId]: sortBitacoras([normalizedBitacora, ...withoutDuplicate]),
-    },
+    byStudentId,
   });
 }
 

@@ -6,7 +6,7 @@ import {
   setAppError,
   clearAppError,
   setAppLoading,
-} from "../state.js";
+} from "../state.js?v=20260815.2";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -14,6 +14,7 @@ import {
 } from "../api/catalogs.api.js";
 import {
   listStudentAccessUsers,
+  saveTeacherAccessProfile,
 } from "../api/users.api.js";
 import { getStudents } from "../api/students.api.js";
 import {
@@ -385,10 +386,6 @@ function buildMarkup(state) {
               <span class="field__label">Email</span>
               <input class="field__input" name="email" type="email" placeholder="correo@másicala.com" />
             </label>
-            <label class="field">
-              <span class="field__label">Orden</span>
-              <input class="field__input" name="orden" type="number" min="1" step="1" placeholder="1" />
-            </label>
             <div class="settings-form-actions">
               <button type="submit" class="btn btn--secondary">Agregar docente</button>
             </div>
@@ -399,7 +396,7 @@ function buildMarkup(state) {
               <span class="field__label">Importar docentes (.csv o .tsv)</span>
               <input type="file" class="field__input" id="settings-import-teachers" accept=".csv,.tsv,text/csv,text/tab-separated-values" />
             </label>
-            <p class="field__hint">Si el archivo tiene encabezados, usa las columnas nombre, alias, email, activo y orden. Si no, se toma la primera columna como nombre.</p>
+            <p class="field__hint">Si el archivo tiene encabezados, usa las columnas nombre, alias, email y activo. Si no, se toma la primera columna como nombre.</p>
           </div>
 
           ${buildCollapsibleList({
@@ -762,12 +759,12 @@ function renderTeachersList(teachers = []) {
 
   return teachers
     .map(
-      (teacher, index) => `
+      (teacher) => `
         <article class="settings-item-card">
           <div class="settings-item-card__content">
             <h3>${escapeHtml(teacher.alias || teacher.nombre)}</h3>
             <p>${escapeHtml(teacher.nombre)}</p>
-            <small>${escapeHtml(teacher.email || "Sin email")} · Orden ${escapeHtml(String(teacher.orden || index + 1))}</small>
+            <small>${escapeHtml(teacher.email || "Sin email")}</small>
           </div>
           <button type="button" class="btn btn--ghost btn--sm" data-remove-teacher="${escapeHtml(teacher.id || teacher.nombre)}">
             Quitar
@@ -1032,9 +1029,20 @@ function bindEvents(state) {
         async () => {
           clearAppError();
           currentCatalogs = await saveCatalogs(compactCatalogsForSave(currentCatalogs));
+
+          const actor = getState()?.auth?.user || null;
+          const teachersWithEmail = (currentCatalogs.docentes || []).filter(
+            (teacher) => toStringSafe(teacher.email)
+          );
+          const accessResults = await Promise.all(
+            teachersWithEmail.map((teacher) =>
+              saveTeacherAccessProfile(teacher, actor)
+            )
+          );
+          const syncedAccesses = accessResults.filter((result) => result.updated).length;
           currentMessage = {
             type: "success",
-            text: "Los catálogos se guardaron correctamente en Firestore.",
+            text: `Catálogos guardados. ${syncedAccesses} acceso${syncedAccesses === 1 ? "" : "s"} docente${syncedAccesses === 1 ? "" : "s"} sincronizado${syncedAccesses === 1 ? "" : "s"}.`,
           };
           renderView(getState());
         },
@@ -1079,7 +1087,6 @@ function bindEvents(state) {
         alias: toStringSafe(form.get("alias")),
         email: toStringSafe(form.get("email")),
         activo: true,
-        orden: Number(form.get("orden")) || currentCatalogs.docentes.length + 1,
       };
 
       currentCatalogs = {
@@ -1608,7 +1615,7 @@ function normalizeTeachersList(items = []) {
   const seen = new Set();
 
   return items
-    .map((item, index) => {
+    .map((item) => {
       if (!isPlainObject(item)) return null;
 
       const nombre = toStringSafe(item.nombre);
@@ -1620,7 +1627,6 @@ function normalizeTeachersList(items = []) {
         alias: toStringSafe(item.alias),
         email: toStringSafe(item.email),
         activo: item.activo !== false,
-        orden: Number(item.orden) || index + 1,
       };
 
       const key = `${teacher.nombre.toLowerCase()}__${teacher.alias.toLowerCase()}__${teacher.email.toLowerCase()}`;
@@ -1629,11 +1635,7 @@ function normalizeTeachersList(items = []) {
       return teacher;
     })
     .filter(Boolean)
-    .sort((a, b) => {
-      const orderDiff = (a.orden || 999999) - (b.orden || 999999);
-      if (orderDiff !== 0) return orderDiff;
-      return a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" });
-    });
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
 }
 
 function buildCatalogId(value) {
@@ -1732,7 +1734,6 @@ async function parseTeacherFile(file) {
           alias: getValue("alias"),
           email: getValue("email"),
           activo: !["0", "false", "no", "inactivo"].includes(buildCatalogId(getValue("activo"))),
-          orden: Number(getValue("orden")) || index + 1,
         };
       }
 
@@ -1742,7 +1743,6 @@ async function parseTeacherFile(file) {
         alias: toStringSafe(row[1]),
         email: toStringSafe(row[2]),
         activo: true,
-        orden: Number(row[3]) || index + 1,
       };
     })
   );
