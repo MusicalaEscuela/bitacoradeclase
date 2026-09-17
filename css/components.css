@@ -853,6 +853,19 @@
   font-size: 0.95rem;
 }
 
+.profile-repertoire-link {
+  color: var(--color-primary, #5d34ff);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.14em;
+  overflow-wrap: anywhere;
+}
+
+.profile-repertoire-link:hover,
+.profile-repertoire-link:focus-visible {
+  color: var(--color-primary-strong, #351fa0);
+}
+
 .profile-repertoire-item__main span {
   color: var(--color-ink-muted);
   font-size: 0.78rem;

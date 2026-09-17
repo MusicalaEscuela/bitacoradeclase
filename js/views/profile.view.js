@@ -2999,6 +2999,7 @@ function renderRepertoireColumn(status, items = [], canEdit = false) {
 
 function renderRepertoireItemCard(item, canEdit = false) {
   const safeName = escapeHtml(item.nombre);
+  const linkedName = renderRepertoireTextWithLinks(item.nombre);
   const priorityLabel =
     REPERTOIRE_PRIORITIES.find((priority) => priority.id === item.prioridad)?.label || "Media";
   const dateLabel = item.fechaLogro
@@ -3010,9 +3011,9 @@ function renderRepertoireItemCard(item, canEdit = false) {
   return `
     <article class="profile-repertoire-item" data-repertoire-item="${safeName}">
       <div class="profile-repertoire-item__main">
-        <strong>${safeName}</strong>
+        <strong>${linkedName}</strong>
         <span>${renderRepertoireMeta(priorityLabel, dateLabel)}</span>
-        ${item.notas ? `<p>${escapeHtml(item.notas)}</p>` : ""}
+        ${item.notas ? `<p>${renderRepertoireTextWithLinks(item.notas)}</p>` : ""}
       </div>
       ${
         canEdit
@@ -3067,6 +3068,35 @@ function renderRepertoireItemCard(item, canEdit = false) {
       }
     </article>
   `;
+}
+
+function renderRepertoireTextWithLinks(value) {
+  const text = toStringSafe(value);
+  if (!text) return "";
+
+  const urlPattern = /https?:\/\/[^\s<>"']+/gi;
+  let lastIndex = 0;
+  let output = "";
+
+  for (const match of text.matchAll(urlPattern)) {
+    const start = match.index ?? 0;
+    const rawUrl = match[0];
+    // La puntuación al final de una frase no forma parte del enlace.
+    const url = rawUrl.replace(/[.,;:!?]+$/, "");
+    output += escapeHtml(text.slice(lastIndex, start));
+
+    if (!url) {
+      output += escapeHtml(rawUrl);
+      lastIndex = start + rawUrl.length;
+      continue;
+    }
+
+    output += `<a class="profile-repertoire-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`;
+    output += escapeHtml(rawUrl.slice(url.length));
+    lastIndex = start + rawUrl.length;
+  }
+
+  return output + escapeHtml(text.slice(lastIndex));
 }
 
 function renderRepertoireMeta(priorityLabel, dateLabel) {
