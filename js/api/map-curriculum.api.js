@@ -11,6 +11,7 @@ import {
   adaptPublishedPianoCurriculum,
   adaptPublishedGuitarCurriculum,
   adaptPublishedViolinCurriculum,
+  adaptPublishedBateriaCurriculum,
   MAP_PIANO_CURRICULUM_COLLECTION,
   MAP_PIANO_CURRICULUM_DOCUMENT,
 } from "../utils/map-piano-route.js";
@@ -33,6 +34,7 @@ const mapDb = getFirestore(mapApp);
 let pianoCurriculumPromise = null;
 let guitarCurriculumPromise = null;
 let violinCurriculumPromise = null;
+let bateriaCurriculumPromise = null;
 
 function createCurriculumError(message, extra = {}) {
   const error = new Error(message);
@@ -109,18 +111,32 @@ export async function getPublishedViolinCurriculum(options = {}) {
   }
 }
 
+export async function getPublishedBateriaCurriculum(options = {}) {
+  const forceReload = options?.forceReload === true;
+  if (bateriaCurriculumPromise && !forceReload) return bateriaCurriculumPromise;
+  bateriaCurriculumPromise = (async () => {
+    const snapshot = await getDoc(doc(mapDb, MAP_PIANO_CURRICULUM_COLLECTION, "bateria"));
+    if (!snapshot.exists()) throw createCurriculumError("La ruta publicada de Batería no está disponible en Mapa de Experiencias.", { code: "MAP_BATERIA_CURRICULUM_NOT_FOUND" });
+    return adaptPublishedBateriaCurriculum(snapshot.data());
+  })();
+  try { return await bateriaCurriculumPromise; } catch (error) { bateriaCurriculumPromise = null; throw error; }
+}
+
 export function clearPublishedPianoCurriculumCache() {
   pianoCurriculumPromise = null;
 }
 
 export function clearPublishedGuitarCurriculumCache() { guitarCurriculumPromise = null; }
 export function clearPublishedViolinCurriculumCache() { violinCurriculumPromise = null; }
+export function clearPublishedBateriaCurriculumCache() { bateriaCurriculumPromise = null; }
 
 export default {
   getPublishedPianoCurriculum,
   getPublishedGuitarCurriculum,
   getPublishedViolinCurriculum,
+  getPublishedBateriaCurriculum,
   clearPublishedPianoCurriculumCache,
   clearPublishedGuitarCurriculumCache,
   clearPublishedViolinCurriculumCache,
+  clearPublishedBateriaCurriculumCache,
 };

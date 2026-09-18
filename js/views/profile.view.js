@@ -48,30 +48,36 @@ import {
   getMapPianoProgressRecord,
   getMapGuitarProgressRecord,
   getMapViolinProgressRecord,
+  getMapBateriaProgressRecord,
   getStudentRouteRecord,
   saveMapPianoProgressRecord,
   saveMapGuitarProgressRecord,
   saveMapViolinProgressRecord,
+  saveMapBateriaProgressRecord,
   saveStudentRouteProgressRecord,
   saveStudentRouteRecord,
-} from "../api/student-routes.api.js?v=20260831.5";
-import { getPublishedPianoCurriculum, getPublishedGuitarCurriculum, getPublishedViolinCurriculum } from "../api/map-curriculum.api.js?v=20260831.5";
+} from "../api/student-routes.api.js?v=20260918.1";
+import { getPublishedPianoCurriculum, getPublishedGuitarCurriculum, getPublishedViolinCurriculum, getPublishedBateriaCurriculum } from "../api/map-curriculum.api.js?v=20260918.1";
 import {
   deriveMapPianoRouteProgress,
   getMapPianoProgressIdentity,
   isMapPianoProcess,
   isMapGuitarProcess,
   isMapViolinProcess,
+  isMapBateriaProcess,
   isMapPianoRoute,
   isMapGuitarRoute,
   isMapViolinRoute,
+  isMapBateriaRoute,
   MAP_GUITAR_PROGRESS_EPOCH,
   MAP_GUITAR_ROUTE_TEMPLATE_ID,
   MAP_VIOLIN_PROGRESS_EPOCH,
   MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+  MAP_BATERIA_PROGRESS_EPOCH,
+  MAP_BATERIA_ROUTE_TEMPLATE_ID,
   MAP_PIANO_PROGRESS_EPOCH,
   MAP_PIANO_ROUTE_TEMPLATE_ID,
-} from "../utils/map-piano-route.js?v=20260831.5";
+} from "../utils/map-piano-route.js?v=20260918.1";
 import {
   escapeHtml,
   firstNonEmpty,
@@ -3679,7 +3685,7 @@ async function ensureLearningRouteLoaded(student, options = {}) {
     currentProfileProcessKey || activeProcess?.processKey
   );
 
-  if (isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess)) {
+  if (isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess) || isMapBateriaProcess(activeProcess)) {
     await ensureMapPianoLearningRouteLoaded(student, {
       forceReload,
       studentId,
@@ -3862,15 +3868,18 @@ function getActiveProcessContext(student) {
 
 function isActiveMapPianoStudent(student) {
   const process = getActiveProcessContext(student);
-  return isMapPianoProcess(process) || isMapGuitarProcess(process) || isMapViolinProcess(process);
+  return isMapPianoProcess(process) || isMapGuitarProcess(process) || isMapViolinProcess(process) || isMapBateriaProcess(process);
 }
 
-function isMapManagedRoute(route = {}) { return isMapPianoRoute(route) || isMapGuitarRoute(route) || isMapViolinRoute(route); }
+function isMapManagedRoute(route = {}) { return isMapPianoRoute(route) || isMapGuitarRoute(route) || isMapViolinRoute(route) || isMapBateriaRoute(route); }
 function isActiveMapGuitarStudent(student) { return isMapGuitarProcess(getActiveProcessContext(student)); }
 function isActiveMapViolinStudent(student) { return isMapViolinProcess(getActiveProcessContext(student)); }
+function isActiveMapBateriaStudent(student) { return isMapBateriaProcess(getActiveProcessContext(student)); }
 function getMapRouteConfig(student, route = {}) {
+  const bateria = isMapBateriaRoute(route) || isActiveMapBateriaStudent(student);
   const violin = isMapViolinRoute(route) || isActiveMapViolinStudent(student);
   const guitar = isMapGuitarRoute(route) || isActiveMapGuitarStudent(student);
+  if (bateria) return { label: "Batería", routeTemplateId: MAP_BATERIA_ROUTE_TEMPLATE_ID, progressEpoch: MAP_BATERIA_PROGRESS_EPOCH, getCurriculum: getPublishedBateriaCurriculum, getProgress: getMapBateriaProgressRecord, saveProgress: saveMapBateriaProgressRecord };
   if (violin) return { label: "Violín", routeTemplateId: MAP_VIOLIN_ROUTE_TEMPLATE_ID, progressEpoch: MAP_VIOLIN_PROGRESS_EPOCH, getCurriculum: getPublishedViolinCurriculum, getProgress: getMapViolinProgressRecord, saveProgress: saveMapViolinProgressRecord };
   return guitar
     ? { label: "Guitarra", routeTemplateId: MAP_GUITAR_ROUTE_TEMPLATE_ID, progressEpoch: MAP_GUITAR_PROGRESS_EPOCH, getCurriculum: getPublishedGuitarCurriculum, getProgress: getMapGuitarProgressRecord, saveProgress: saveMapGuitarProgressRecord }
@@ -3879,7 +3888,7 @@ function getMapRouteConfig(student, route = {}) {
 
 function getRouteSaveOptions(student) {
   const activeProcess = getActiveProcessContext(student);
-  const mapManagedPiano = isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess);
+  const mapManagedPiano = isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess) || isMapBateriaProcess(activeProcess);
   const mapConfig = getMapRouteConfig(student);
   const routeTemplateId = mapManagedPiano
     ? mapConfig.routeTemplateId
@@ -4045,7 +4054,7 @@ function buildGenericRoutePreset(artKey, artLabel) {
 function resolveRoutePreset(student, baseRoute = {}) {
   const activeProcess = getActiveProcessContext(student);
   const mapManagedPiano =
-    isMapManagedRoute(baseRoute) || isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess);
+    isMapManagedRoute(baseRoute) || isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess) || isMapBateriaProcess(activeProcess);
   const customGoals = normalizeManualRouteGoals(baseRoute?.customGoals);
   if (customGoals.length && (!mapManagedPiano || isMapManagedRoute(baseRoute))) {
     return {
@@ -4135,7 +4144,7 @@ function buildDefaultRouteState(student, baseRoute = {}) {
   if (isMapManagedRoute(baseRoute)) {
     return buildMapPianoRouteState(student, baseRoute, activeProcess);
   }
-  if (isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess)) {
+  if (isMapPianoProcess(activeProcess) || isMapGuitarProcess(activeProcess) || isMapViolinProcess(activeProcess) || isMapBateriaProcess(activeProcess)) {
     const mapConfig = getMapRouteConfig(student, baseRoute);
     return {
       ...(baseRoute && typeof baseRoute === "object" ? baseRoute : {}),

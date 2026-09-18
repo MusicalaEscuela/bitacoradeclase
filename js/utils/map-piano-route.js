@@ -8,6 +8,9 @@ export const MAP_GUITAR_CURRICULUM_DOCUMENT = "guitarra";
 export const MAP_VIOLIN_ROUTE_TEMPLATE_ID = "mapa-violin";
 export const MAP_VIOLIN_PROGRESS_EPOCH = "mapa-violin-20260831-v1";
 export const MAP_VIOLIN_CURRICULUM_DOCUMENT = "violin";
+export const MAP_BATERIA_ROUTE_TEMPLATE_ID = "mapa-bateria";
+export const MAP_BATERIA_PROGRESS_EPOCH = "mapa-bateria-20260918-v1";
+export const MAP_BATERIA_CURRICULUM_DOCUMENT = "bateria";
 
 const MAP_PIANO_SCHEMA_VERSION = 1;
 
@@ -24,6 +27,13 @@ const MAP_VIOLIN_CONFIG = Object.freeze({
   progressEpoch: MAP_VIOLIN_PROGRESS_EPOCH,
   label: "Violín",
   pattern: /(^|[^a-z0-9])(violin|violinista)([^a-z0-9]|$)/,
+});
+const MAP_BATERIA_CONFIG = Object.freeze({
+  documentId: MAP_BATERIA_CURRICULUM_DOCUMENT,
+  routeTemplateId: MAP_BATERIA_ROUTE_TEMPLATE_ID,
+  progressEpoch: MAP_BATERIA_PROGRESS_EPOCH,
+  label: "Batería",
+  pattern: /(^|[^a-z0-9])(bateria|baterista|percusion)([^a-z0-9]|$)/,
 });
 
 function text(value) {
@@ -85,6 +95,7 @@ export function isMapGuitarProcess(process = null) {
 export function isMapViolinProcess(process = null) {
   return isMapCurriculumProcess(process, MAP_VIOLIN_CONFIG);
 }
+export function isMapBateriaProcess(process = null) { return isMapCurriculumProcess(process, MAP_BATERIA_CONFIG); }
 
 function isMapCurriculumProcess(process = null, config = {}) {
   if (!process || typeof process !== "object") return false;
@@ -116,6 +127,7 @@ export function getMapGuitarProgressIdentity(student = {}) {
 export function getMapViolinProgressIdentity(student = {}) {
   return getMapCurriculumProgressIdentity(student);
 }
+export function getMapBateriaProgressIdentity(student = {}) { return getMapCurriculumProgressIdentity(student); }
 
 function getMapCurriculumProgressIdentity(student = {}) {
   const canonicalStudentId = text(student?.canonicalStudentId);
@@ -170,6 +182,7 @@ export function isMapGuitarRoute(route = {}) {
 export function isMapViolinRoute(route = {}) {
   return isMapCurriculumRoute(route, MAP_VIOLIN_ROUTE_TEMPLATE_ID);
 }
+export function isMapBateriaRoute(route = {}) { return isMapCurriculumRoute(route, MAP_BATERIA_ROUTE_TEMPLATE_ID); }
 
 export function isMapCurriculumRoute(route = {}, routeTemplateId = "") {
   return (
@@ -195,6 +208,7 @@ export function isCurrentMapGuitarProgressRecord(progress = {}, canonicalStudent
 export function isCurrentMapViolinProgressRecord(progress = {}, canonicalStudentId = "") {
   return isCurrentMapCurriculumProgressRecord(progress, canonicalStudentId, MAP_VIOLIN_CONFIG);
 }
+export function isCurrentMapBateriaProgressRecord(progress = {}, canonicalStudentId = "") { return isCurrentMapCurriculumProgressRecord(progress, canonicalStudentId, MAP_BATERIA_CONFIG); }
 
 export function isCurrentMapCurriculumProgressRecord(progress = {}, canonicalStudentId = "", config = {}) {
   const safeStudentId = text(canonicalStudentId);
@@ -417,6 +431,11 @@ export function adaptPublishedViolinCurriculum(payload = {}) {
     routeName: text(payload?.route?.name) || "Ruta de Violín",
     source: payload?.source && typeof payload.source === "object" ? payload.source : {},
   };
+}
+
+export function adaptPublishedBateriaCurriculum(payload = {}) {
+  const adapted = adaptPublishedPianoCurriculum({ ...payload, routeKey: "piano", source: { ...(payload?.source || {}), slug: "piano" } });
+  return { ...adapted, routeTemplateId: MAP_BATERIA_ROUTE_TEMPLATE_ID, progressEpoch: MAP_BATERIA_PROGRESS_EPOCH, presetId: MAP_BATERIA_ROUTE_TEMPLATE_ID, routeName: text(payload?.route?.name) || "Ruta de Batería", source: payload?.source && typeof payload.source === "object" ? payload.source : {} };
 }
 
 export function deriveMapPianoRouteProgress(route = {}, completedGoalIds = []) {

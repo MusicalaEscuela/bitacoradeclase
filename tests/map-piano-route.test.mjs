@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   adaptPublishedPianoCurriculum,
+  adaptPublishedBateriaCurriculum,
   adaptPublishedViolinCurriculum,
   deriveMapPianoRouteProgress,
   getMapPianoProgressIdentity,
@@ -8,6 +9,7 @@ import {
   isMapPianoProcess,
   MAP_PIANO_PROGRESS_EPOCH,
   MAP_PIANO_ROUTE_TEMPLATE_ID,
+  MAP_BATERIA_ROUTE_TEMPLATE_ID,
   MAP_VIOLIN_ROUTE_TEMPLATE_ID,
 } from "../js/utils/map-piano-route.js";
 
@@ -82,6 +84,18 @@ const violinPublished = {
 const violinRoute = adaptPublishedViolinCurriculum(violinPublished);
 assert.equal(violinRoute.routeTemplateId, MAP_VIOLIN_ROUTE_TEMPLATE_ID);
 assert.equal(violinRoute.experiences.length, 2);
+
+const bateriaRoute = adaptPublishedBateriaCurriculum({
+  ...structuredClone(published),
+  routeKey: "bateria",
+  source: { ...published.source, slug: "bateria" },
+  route: { ...published.route, name: "Ruta oficial de Batería" },
+  experiences: published.experiences.slice(0, 3),
+  experienceCount: 3,
+  goalCount: 6,
+});
+assert.equal(bateriaRoute.routeTemplateId, MAP_BATERIA_ROUTE_TEMPLATE_ID);
+assert.equal(bateriaRoute.experiences.length, 3);
 
 const invalidPublished = structuredClone(published);
 invalidPublished.experiences[0].skills[0].goalId = "meta-inestable";

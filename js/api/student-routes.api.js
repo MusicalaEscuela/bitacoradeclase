@@ -22,10 +22,13 @@ import {
   isCurrentMapPianoProgressRecord,
   isCurrentMapGuitarProgressRecord,
   isCurrentMapViolinProgressRecord,
+  isCurrentMapBateriaProgressRecord,
   MAP_GUITAR_PROGRESS_EPOCH,
   MAP_GUITAR_ROUTE_TEMPLATE_ID,
   MAP_VIOLIN_PROGRESS_EPOCH,
   MAP_VIOLIN_ROUTE_TEMPLATE_ID,
+  MAP_BATERIA_PROGRESS_EPOCH,
+  MAP_BATERIA_ROUTE_TEMPLATE_ID,
   MAP_PIANO_PROGRESS_EPOCH,
   MAP_PIANO_ROUTE_TEMPLATE_ID,
 } from "../utils/map-piano-route.js";
@@ -422,6 +425,12 @@ export async function getMapViolinProgressRecord(canonicalStudentId) {
   if (!snapshot.exists() || !isCurrentMapViolinProgressRecord(snapshot.data(), safeStudentId)) return null;
   return splitRouteProgress(normalizeStudentRouteRecord(snapshot.data(), safeStudentId));
 }
+export async function getMapBateriaProgressRecord(canonicalStudentId) {
+  assertAuthenticated(); const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const snapshot = await getDoc(doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, buildStudentRouteProgressDocId(safeStudentId, MAP_BATERIA_ROUTE_TEMPLATE_ID)));
+  if (!snapshot.exists() || !isCurrentMapBateriaProgressRecord(snapshot.data(), safeStudentId)) return null;
+  return splitRouteProgress(normalizeStudentRouteRecord(snapshot.data(), safeStudentId));
+}
 
 async function saveRouteDocument(collectionName, studentId, route = {}, options = {}, picker) {
   const safeStudentId = toStringSafe(studentId);
@@ -596,14 +605,25 @@ export async function saveMapViolinProgressRecord(canonicalStudentId, route = {}
   return (await getMapViolinProgressRecord(safeStudentId)) || persistedPayload;
 }
 
+export async function saveMapBateriaProgressRecord(canonicalStudentId, route = {}, options = {}) {
+  const safeStudentId = assertMapPianoCanonicalStudentId(canonicalStudentId);
+  const strictOptions = { ...options, routeTemplateId: MAP_BATERIA_ROUTE_TEMPLATE_ID, instrumentKey: MAP_BATERIA_ROUTE_TEMPLATE_ID, areaKey: MAP_BATERIA_ROUTE_TEMPLATE_ID, student: { ...(isPlainObject(options?.student) ? options.student : {}), studentId: safeStudentId, studentKey: safeStudentId } };
+  const payload = buildPersistedRoutePayload(safeStudentId, { ...route, managedByMap: true, routeTemplateId: MAP_BATERIA_ROUTE_TEMPLATE_ID, progressEpoch: MAP_BATERIA_PROGRESS_EPOCH, curriculumRevision: toStringSafe(route?.curriculumRevision || route?.revision) }, strictOptions);
+  const persistedPayload = { ...splitRouteProgress(payload), studentId: safeStudentId, studentKey: safeStudentId, managedByMap: true, routeTemplateId: MAP_BATERIA_ROUTE_TEMPLATE_ID, progressEpoch: MAP_BATERIA_PROGRESS_EPOCH, curriculumRevision: toStringSafe(route?.curriculumRevision || route?.revision) };
+  await setDoc(doc(db, STUDENT_ROUTE_PROGRESS_COLLECTION, buildStudentRouteProgressDocId(safeStudentId, MAP_BATERIA_ROUTE_TEMPLATE_ID)), { ...persistedPayload, updatedAt: serverTimestamp(), createdAt: persistedPayload.createdAt || serverTimestamp() }, { merge: true });
+  return (await getMapBateriaProgressRecord(safeStudentId)) || persistedPayload;
+}
+
 export default {
   getStudentRouteRecord,
   getMapPianoProgressRecord,
   getMapGuitarProgressRecord,
   getMapViolinProgressRecord,
+  getMapBateriaProgressRecord,
   saveStudentRouteRecord,
   saveStudentRouteProgressRecord,
   saveMapPianoProgressRecord,
   saveMapGuitarProgressRecord,
   saveMapViolinProgressRecord,
+  saveMapBateriaProgressRecord,
 };
