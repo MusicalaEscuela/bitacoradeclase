@@ -2217,9 +2217,11 @@ function getMapPianoProgress(route = {}) {
 }
 
 function renderMapPianoUnavailable(route = {}, { compact = false } = {}) {
+  const routeLabel = toStringSafe(route?.routeName)
+    .replace(/^Ruta de\s+/i, "") || "Mapa de Experiencias";
   return `
     <div class="route-history-card route-history-card--wide">
-      <p class="route-history-card__title">Ruta de Piano no disponible</p>
+      <p class="route-history-card__title">Ruta de ${escapeHtml(routeLabel)} no disponible</p>
       <p class="route-overview__text">
         ${escapeHtml(
           route?.mapErrorMessage ||
