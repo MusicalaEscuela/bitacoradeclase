@@ -132,6 +132,12 @@ export function getMapBateriaProgressIdentity(student = {}) { return getMapCurri
 function getMapCurriculumProgressIdentity(student = {}) {
   const canonicalStudentId = text(student?.canonicalStudentId);
   const resolutionStatus = normalizedText(student?.identityResolutionStatus);
+  // El resolvedor fusiona datos académicos de los alias para conservar el
+  // historial. La protección debe mirar el documento de identidad elegido,
+  // no un campo legacy heredado durante esa fusión.
+  const legacyAliasOf = text(
+    student?.identityDocument?.legacyAliasOf ?? student?.legacyAliasOf
+  );
 
   if (resolutionStatus === "pending") {
     return {
@@ -153,7 +159,10 @@ function getMapCurriculumProgressIdentity(student = {}) {
     };
   }
 
-  if (/^stu_/i.test(canonicalStudentId)) {
+  // Los perfiles vigentes de Estudiantes Musicala usan IDs `stu_…`. El prefijo
+  // ya no identifica por sí solo un alias: solo protegemos un alias declarado
+  // explícitamente, para no impedir el avance de una ficha canónica actual.
+  if (legacyAliasOf && legacyAliasOf !== canonicalStudentId) {
     return {
       ok: false,
       studentId: "",
@@ -212,7 +221,7 @@ export function isCurrentMapBateriaProgressRecord(progress = {}, canonicalStuden
 
 export function isCurrentMapCurriculumProgressRecord(progress = {}, canonicalStudentId = "", config = {}) {
   const safeStudentId = text(canonicalStudentId);
-  if (!safeStudentId || /^stu_/i.test(safeStudentId)) return false;
+  if (!safeStudentId) return false;
   return (
     text(progress?.studentId) === safeStudentId &&
     text(progress?.studentKey) === safeStudentId &&

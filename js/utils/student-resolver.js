@@ -164,10 +164,24 @@ function groupBy(items = [], getKey) {
 }
 
 function buildLogicalStudent(group = [], evidence = [], confirmedLink = null) {
-  const canonical =
-    group.find((item) => item.id === confirmedLink?.canonicalStudentId) ||
+  const linkedCanonical = group.find(
+    (item) => item.id === confirmedLink?.canonicalStudentId
+  );
+  const strongestCanonical =
     [...group].sort((left, right) => canonicalScore(right) - canonicalScore(left))[0] ||
     group[0];
+  // Algunos vínculos creados antes de la sincronización operativa apuntan a
+  // un correo histórico que luego fue marcado como alias del registro real.
+  // Conservamos el vínculo y su expediente académico, pero no dejamos que ese
+  // alias gane la identidad usada para guardar avances.
+  const confirmedCanonicalIsHistoricalAlias = Boolean(
+    linkedCanonical &&
+      toStringSafe(linkedCanonical.data?.legacyAliasOf) &&
+      toStringSafe(linkedCanonical.data?.legacyAliasOf) !== linkedCanonical.id
+  );
+  const canonical =
+    (confirmedCanonicalIsHistoricalAlias ? strongestCanonical : linkedCanonical) ||
+    strongestCanonical;
   const academicCandidates = [...group].sort((left, right) => {
     const scoreDelta = academicScore(right) - academicScore(left);
     if (scoreDelta) return scoreDelta;

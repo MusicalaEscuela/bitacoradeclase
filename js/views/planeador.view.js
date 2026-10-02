@@ -50,7 +50,7 @@ import {
   buildAreaCatalog,
   getCatalogTeachers,
 } from "../api/planeador.api.js";
-import { getStudents } from "../api/students.api.js?v=20260818.1";
+import { getStudents } from "../api/students.api.js?v=20260926.1";
 
 import {
   ARTES,

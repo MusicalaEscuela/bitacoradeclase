@@ -376,7 +376,7 @@ export async function getStudentRouteRecord(studentId, options = {}) {
 
 function assertMapPianoCanonicalStudentId(studentId) {
   const safeStudentId = toStringSafe(studentId);
-  if (!safeStudentId || /^stu_/i.test(safeStudentId)) {
+  if (!safeStudentId) {
     throw createApiError(
       "Se requiere un ID canónico explícito para guardar el avance de Piano.",
       { code: "INVALID_CANONICAL_STUDENT_ID" }

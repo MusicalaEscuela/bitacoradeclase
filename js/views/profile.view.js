@@ -39,7 +39,7 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20260911.2";
+} from "../api/students.api.js?v=20260926.1";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -2393,7 +2393,7 @@ function renderMapPianoRoutePreview(route = {}, access = {}) {
                   .join("")}
               </div>
             `
-            : `<p class="route-component-card__done">Todas las experiencias y metas de Piano están completadas.</p>`
+            : `<p class="route-component-card__done">Todas las experiencias y metas de ${escapeHtml(route.routeName || "esta ruta")} están completadas.</p>`
         }
       </section>
       <div class="profile-panel-actions">

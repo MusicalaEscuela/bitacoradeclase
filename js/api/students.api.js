@@ -23,7 +23,7 @@ import {
 import {
   getLogicalStudentLinkedIds,
   resolveLogicalStudents,
-} from "../utils/student-resolver.js?v=20260818.1";
+} from "../utils/student-resolver.js?v=20260926.1";
 import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260731.2";
 
 const DEFAULT_TIMEOUT =
@@ -1056,6 +1056,39 @@ async function getStudentDocFromFirestore(studentRef) {
     getDoc(doc(db, STUDENT_IDENTITY_LINKS_COLLECTION, studentKey)),
   ]);
   if (!snapshot.exists()) return null;
+
+  // Una bitácora histórica puede abrirse con el ID de un alias. Si ese alias
+  // ya declara su canónico, resolvemos la ficha completa desde el canónico en
+  // lugar de mostrar el alias aislado (que no debe guardar avance propio).
+  const declaredCanonicalId = normalizeStudentIdentifier(
+    snapshot.data()?.canonicalStudentId
+  );
+  if (declaredCanonicalId && declaredCanonicalId !== studentKey) {
+    const [canonicalSnapshot, declaredAliasesSnapshot] = await Promise.all([
+      getDoc(doc(db, STUDENTS_COLLECTION, declaredCanonicalId)),
+      getDocs(
+        query(
+          collection(db, STUDENTS_COLLECTION),
+          where("canonicalStudentId", "==", declaredCanonicalId)
+        )
+      ),
+    ]);
+    if (canonicalSnapshot.exists()) {
+      const declaredRecords = [
+        { id: snapshot.id, ...snapshot.data() },
+        { id: canonicalSnapshot.id, ...canonicalSnapshot.data() },
+        ...declaredAliasesSnapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        })),
+      ];
+      const resolved = resolveLogicalStudents(declaredRecords, [])
+        .map((item) => normalizeStudentRecord(item))
+        .filter(Boolean)
+        .find((item) => item.canonicalStudentId === declaredCanonicalId);
+      if (resolved) return resolved;
+    }
+  }
 
   const link = linkSnapshot.exists() ? linkSnapshot.data() || {} : {};
   const linkedStudentIds = Array.isArray(link.linkedStudentIds)
