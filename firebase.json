@@ -5,6 +5,19 @@
   "storage": {
     "rules": "firebase rules/storage.rules"
   },
+  "functions": [
+    {
+      "source": "functions-ai",
+      "codebase": "ai-reports",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "test",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ],
   "hosting": {
     "site": "bitacoras-de-clase",
     "public": ".firebase-hosting",

@@ -86,6 +86,19 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 
 /* ==========================================================================
+   CLOUD FUNCTIONS (carga diferida: solo se usa en el informe con IA)
+   ========================================================================== */
+
+async function callFunction(name, data = {}, { timeout = 70000 } = {}) {
+  const { getFunctions, httpsCallable } = await import(
+    "https://www.gstatic.com/firebasejs/12.7.0/firebase-functions.js"
+  );
+  const callable = httpsCallable(getFunctions(app, "us-central1"), name, { timeout });
+  const result = await callable(data);
+  return result.data;
+}
+
+/* ==========================================================================
    HELPERS
    ========================================================================== */
 
@@ -362,6 +375,7 @@ export {
   auth,
   db,
   storage,
+  callFunction,
 
   // auth helpers
   googleProvider,

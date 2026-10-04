@@ -1,4 +1,4 @@
-﻿// js/views/profile.view.js
+// js/views/profile.view.js
 
 import { CONFIG } from "../config.js";
 import { canViewStudent, resolveUserAccess } from "../authz.js";
@@ -118,6 +118,8 @@ import {
   parseBitacoraSheetText,
   splitDelimitedRows,
 } from "../utils/bitacoras-import.js";
+import { callFunction } from "../firebase.client.js";
+import { downloadAiReportPdf } from "../utils/ai-report-pdf.js?v=20261004.1";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -2420,7 +2422,7 @@ function renderQuickActions(access = {}, student = {}) {
       ${
         access.role === CONFIG.roles.admin
           ? `<button type="button" class="btn btn--ghost" data-profile-report>
-              Descargar informe para IA
+              Informe con IA (PDF)
             </button>`
           : ""
       }
@@ -2522,7 +2524,9 @@ const AI_REPORT_TONES = Object.freeze({
   },
 });
 
-function buildStudentAiReport(student, range = {}, tone = "tecnico") {
+// forModel: true omite la instrucción para la IA (en el servidor la pone la
+// Cloud Function) y deja solo los datos del expediente.
+function buildStudentAiReport(student, range = {}, tone = "tecnico", { forModel = false } = {}) {
   const studentId = getStudentIdentity(student);
   const bitacoras = getBitacorasFromState(student);
   // Rango opcional (inclusivo). Vacío = todo el tiempo.
@@ -2566,7 +2570,7 @@ function buildStudentAiReport(student, range = {}, tone = "tecnico") {
   const parts = [
     `# Informe de proceso musical — ${getStudentName(student)}`,
     "",
-    `> **Instrucción para la IA:** Con la información de este documento, redacta un informe pedagógico claro y bien escrito sobre el proceso musical del estudiante${periodDescription}. Resume qué se ha trabajado clase a clase (sin listar cada clase una por una), destaca los avances y logros, el repertorio trabajado, y sugiere posibles siguientes pasos. ${toneConfig.instruction}`,
+    forModel ? "" : `> **Instrucción para la IA:** Con la información de este documento, redacta un informe pedagógico claro y bien escrito sobre el proceso musical del estudiante${periodDescription}. Resume qué se ha trabajado clase a clase (sin listar cada clase una por una), destaca los avances y logros, el repertorio trabajado, y sugiere posibles siguientes pasos. ${toneConfig.instruction}`,
     "",
     buildAiReportSection("Datos generales", [
       `- **Nombre:** ${getStudentName(student)}`,
@@ -2649,6 +2653,48 @@ function downloadStudentAiReport(student, range = {}, tone = "tecnico") {
     console.error("No se pudo generar el informe del estudiante:", error);
     setAppError("No se pudo generar el informe del estudiante.");
   }
+}
+
+function getAiReportFileName(student, range = {}, tone = "tecnico") {
+  const safeName = slugifyForFilename(getStudentName(student), "estudiante");
+  const periodSuffix = range?.slug ? `-${slugifyForFilename(range.slug, "periodo")}` : "";
+  return `informe-${safeName}${periodSuffix}-${tone === "sencillo" ? "sencillo" : "tecnico"}`;
+}
+
+const AI_REPORT_ERRORS = Object.freeze({
+  "functions/resource-exhausted": null, // el mensaje del servidor ya es claro
+  "functions/permission-denied": null,
+  "functions/invalid-argument": null,
+  "functions/unauthenticated": "Tu sesión expiró. Vuelve a iniciar sesión.",
+  "functions/deadline-exceeded": "La IA tardó demasiado. Intenta con un período más corto.",
+});
+
+// La IA (Gemini, vía Cloud Function) redacta el informe y se descarga en PDF.
+async function generateStudentAiReportPdf(student, range = {}, tone = "tecnico") {
+  const dossier = buildStudentAiReport(student, range, tone, { forModel: true });
+  const result = await callFunction("generateStudentReport", {
+    studentId: getStudentIdentity(student),
+    dossier,
+    tone,
+    periodLabel: toStringSafe(range?.label),
+  });
+  await downloadAiReportPdf({
+    markdown: result?.markdown || "",
+    studentName: getStudentName(student),
+    periodLabel: toStringSafe(range?.label),
+    fileName: getAiReportFileName(student, range, tone),
+  });
+}
+
+function getAiReportErrorMessage(error) {
+  const code = toStringSafe(error?.code);
+  if (code in AI_REPORT_ERRORS) {
+    return AI_REPORT_ERRORS[code] || toStringSafe(error?.message) || "No se pudo generar el informe.";
+  }
+  if (code.startsWith("functions/")) {
+    return toStringSafe(error?.message) || "La IA no pudo redactar el informe. Intenta de nuevo.";
+  }
+  return "No se pudo generar el informe. Revisa tu conexión e intenta de nuevo.";
 }
 
 // Devuelve una fecha YYYY-MM-DD desplazada n meses hacia atrás desde hoy.
@@ -2753,16 +2799,48 @@ function openAiReportModal(student) {
     }
   });
 
-  modalRoot.querySelector("[data-ai-report-download]")?.addEventListener("click", () => {
-    const preset = getSelectedPreset();
-    const range = resolveAiReportRange(preset, fromInput?.value, toInput?.value);
-    if (range === null) {
-      if (status) {
-        status.textContent = "Elige al menos una fecha para el período personalizado.";
-        status.dataset.type = "warning";
-      }
-      return;
+  const setStatus = (message = "", type = "") => {
+    if (!status) return;
+    status.textContent = message;
+    status.dataset.type = type;
+  };
+
+  const getSelectedRange = () => {
+    const range = resolveAiReportRange(getSelectedPreset(), fromInput?.value, toInput?.value);
+    if (range === null) setStatus("Elige al menos una fecha para el período personalizado.", "warning");
+    return range;
+  };
+
+  const actionButtons = modalRoot.querySelectorAll(
+    "[data-ai-report-generate], [data-ai-report-download], [data-ai-report-cancel]"
+  );
+  let generating = false;
+
+  modalRoot.querySelector("[data-ai-report-generate]")?.addEventListener("click", async (event) => {
+    if (generating) return;
+    const range = getSelectedRange();
+    if (range === null) return;
+    const button = event.currentTarget;
+    const originalLabel = button.textContent;
+    generating = true;
+    actionButtons.forEach((item) => { item.disabled = true; });
+    button.textContent = "Redactando…";
+    setStatus("La IA está redactando el informe. Puede tardar hasta un minuto.");
+    try {
+      await generateStudentAiReportPdf(student, range, getSelectedTone());
+      close();
+    } catch (error) {
+      console.error("No se pudo generar el informe con IA:", error);
+      setStatus(getAiReportErrorMessage(error), "warning");
+      actionButtons.forEach((item) => { item.disabled = false; });
+      button.textContent = originalLabel;
+      generating = false;
     }
+  });
+
+  modalRoot.querySelector("[data-ai-report-download]")?.addEventListener("click", () => {
+    const range = getSelectedRange();
+    if (range === null) return;
     downloadStudentAiReport(student, range, getSelectedTone());
     close();
   });
@@ -2795,9 +2873,9 @@ function renderAiReportModal() {
     <section class="text-bitacoras-modal ai-report-modal" role="dialog" aria-modal="true" aria-labelledby="ai-report-title">
       <header class="text-bitacoras-modal__header">
         <div>
-          <p class="panel-header__eyebrow">Informe para IA</p>
+          <p class="panel-header__eyebrow">Informe con IA</p>
           <h2 class="panel-header__title" id="ai-report-title">Configura el informe</h2>
-          <p class="section-text">Elige el período y el lenguaje. Se descargará un .md listo para pegar en cualquier IA.</p>
+          <p class="section-text">Elige el período y el lenguaje. La IA redacta el informe a partir de las bitácoras y se descarga en PDF.</p>
         </div>
         <button type="button" class="btn btn--ghost btn--sm" data-ai-report-cancel>Cancelar</button>
       </header>
@@ -2849,7 +2927,8 @@ function renderAiReportModal() {
       <p class="text-bitacoras-modal__status" data-ai-report-status role="status"></p>
 
       <div class="text-bitacoras-modal__actions">
-        <button type="button" class="btn btn--primary" data-ai-report-download>Descargar informe</button>
+        <button type="button" class="btn btn--primary" data-ai-report-generate>Generar informe en PDF</button>
+        <button type="button" class="btn btn--ghost" data-ai-report-download title="Descarga el expediente en .md para pegarlo en otra IA">Descargar expediente (.md)</button>
         <button type="button" class="btn btn--ghost" data-ai-report-cancel>Cancelar</button>
       </div>
     </section>
