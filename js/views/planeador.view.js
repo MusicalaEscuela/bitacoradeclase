@@ -15,7 +15,7 @@
  * para no perder lo escrito, y luego re-renderiza.
  */
 
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config.js?v=20261009.1";
 import { resolveUserAccess } from "../authz.js";
 import { getState } from "../state.js?v=20260815.2";
 import {
@@ -50,7 +50,7 @@ import {
   buildAreaCatalog,
   getCatalogTeachers,
 } from "../api/planeador.api.js";
-import { getStudents } from "../api/students.api.js?v=20260926.1";
+import { getStudents } from "../api/students.api.js?v=20261009.1";
 
 import {
   ARTES,

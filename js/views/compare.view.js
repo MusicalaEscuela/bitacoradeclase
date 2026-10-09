@@ -1,4 +1,4 @@
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config.js?v=20261009.1";
 import { resolveUserAccess } from "../authz.js";
 import {
   getState,
@@ -11,8 +11,8 @@ import {
   clearSelectedStudentIds,
   getSelectedStudentIds,
 } from "../state.js?v=20260815.2";
-import { getStudents } from "../api/students.api.js";
-import { getBitacorasByStudentIds } from "../api/bitacoras.api.js";
+import { getStudents } from "../api/students.api.js?v=20261009.1";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20261009.1";
 import {
   escapeHtml,
   formatDisplayDate,

@@ -1,6 +1,6 @@
 // js/api/uploads.api.js
 
-import { CONFIG, getApiUrl } from '../config.js';
+import { CONFIG, getApiUrl } from '../config.js?v=20261009.1';
 
 const DEFAULT_TIMEOUT = 30000;
 

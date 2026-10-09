@@ -5,7 +5,7 @@ import {
   assertValidBitacoraMode,
   canUseFirestoreBitacoras,
   getBitacorasCollectionName,
-} from "../config.js";
+} from "../config.js?v=20261009.1";
 
 import {
   db,
@@ -13,6 +13,7 @@ import {
   doc,
   addDoc,
   getDoc,
+  getDocFromServer,
   getDocs,
   query,
   where,
@@ -23,7 +24,7 @@ import {
   serverTimestamp,
   normalizeTimestamps,
   getCurrentUser,
-} from "../firebase.client.js?v=20260731.2";
+} from "../firebase.client.js?v=20261009.1";
 
 import {
   isPlainObject,
@@ -641,7 +642,7 @@ export async function getBitacorasByStudentIds(studentIds = [], options = {}) {
 /**
  * Consulta una bitácora puntual por id.
  */
-export async function getBitacoraById(bitacoraId) {
+export async function getBitacoraById(bitacoraId, options = {}) {
   assertFirestoreEnabled();
   assertAuthenticated();
 
@@ -654,7 +655,7 @@ export async function getBitacoraById(bitacoraId) {
   }
 
   const ref = doc(db, BITACORAS_COLLECTION, safeBitacoraId);
-  const snapshot = await getDoc(ref);
+  const snapshot = options.fromServer ? await getDocFromServer(ref) : await getDoc(ref);
 
   if (!snapshot.exists()) {
     return null;
@@ -723,11 +724,12 @@ export async function updateBitacora(bitacoraId, updates = {}, options = {}) {
         { code: "BITACORA_CONFLICT", bitacoraId: safeBitacoraId }
       );
     }
+    const author = options.preserveAuthor ? current.author : currentUser;
     const merged = options.fullPayload
       ? { ...(isPlainObject(updates) ? updates : {}), author: currentUser, id: current.id, createdAt: current.createdAt }
-      : { ...current, ...(isPlainObject(updates) ? updates : {}), author: currentUser, id: current.id, createdAt: current.createdAt };
+      : { ...current, ...(isPlainObject(updates) ? updates : {}), author, id: current.id, createdAt: current.createdAt };
     normalized = normalizeBitacoraPayload(merged, options);
-    transaction.update(ref, { ...normalized, author: currentUser, updatedAt: serverTimestamp() });
+    transaction.update(ref, { ...normalized, updatedAt: serverTimestamp() });
   });
   return { id: safeBitacoraId, ...normalized, createdAt: current?.createdAt || null, updatedAt: new Date() };
 }

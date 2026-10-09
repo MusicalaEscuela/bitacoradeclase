@@ -1,9 +1,10 @@
-import { CONFIG, getApiUrl, getStudentsCollectionName } from "../config.js";
+import { CONFIG, getApiUrl, getStudentsCollectionName } from "../config.js?v=20261009.1";
 import {
   collection,
   db,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   limit,
   normalizeTimestamps,
@@ -13,7 +14,7 @@ import {
   updateDoc,
   where,
   writeBatch,
-} from "../firebase.client.js";
+} from "../firebase.client.js?v=20261009.1";
 import {
   isPlainObject,
   normalizeText,
@@ -187,6 +188,11 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
   }
 
   const repertorioProceso = normalizeRepertoireForWrite(repertoire);
+  if (repertorioProceso.length > 20) {
+    throw createApiError("El repertorio permite hasta 20 canciones. Quita una antes de agregar otra.", {
+      code: "REPERTOIRE_TOO_LARGE",
+    });
+  }
   const repertorioEscogido = [
     ...new Set(repertorioProceso.map((item) => item.nombre).filter(Boolean)),
   ];
@@ -223,6 +229,29 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
     await batch.commit();
   } else {
     await updateDoc(ref, repertoirePayload);
+  }
+
+  // A successful write is followed by a server read, never a cached result.
+  try {
+    const refs = [ref];
+    if (canonicalStudentId && canonicalStudentId !== safeStudentId) {
+      refs.push(doc(db, STUDENTS_COLLECTION, canonicalStudentId));
+    }
+    const confirmed = await Promise.all(refs.map((target) => getDocFromServer(target)));
+    for (const saved of confirmed) {
+      const data = saved.data() || {};
+      if (!saved.exists() ||
+        JSON.stringify(data.repertorioEscogido) !== JSON.stringify(repertorioEscogido) ||
+        JSON.stringify(data.repertoire) !== JSON.stringify(repertorioEscogido) ||
+        JSON.stringify(normalizeRepertoireForWrite(data.repertorioProceso || [])) !== JSON.stringify(repertorioProceso) ||
+        JSON.stringify(normalizeRepertoireForWrite(data.repertoireProgress || [])) !== JSON.stringify(repertorioProceso)) {
+        throw new Error("El repertorio leído no coincide con lo enviado.");
+      }
+    }
+  } catch (error) {
+    throw createApiError("Firebase recibió el repertorio, pero no se pudo confirmar su contenido. Recarga la ficha antes de reintentar.", {
+      code: "REPERTOIRE_CONFIRMATION_FAILED", cause: error,
+    });
   }
 
   return {

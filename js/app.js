@@ -1,6 +1,6 @@
 // js/app.js
 
-import { CONFIG } from "./config.js";
+import { CONFIG } from "./config.js?v=20261009.1";
 import {
   canAccessRoute,
   getDefaultViewForUser,
@@ -24,7 +24,7 @@ import {
   loginWithGoogle,
   logoutUser,
   observeAuth,
-} from "./firebase.client.js";
+} from "./firebase.client.js?v=20261009.1";
 import { getUserAccessProfile } from "./api/users.api.js";
 
 // ============================================================
@@ -33,7 +33,7 @@ import { getUserAccessProfile } from "./api/users.api.js";
 // todos los usuarios carguen la última versión sin limpiar la caché.
 // Debe coincidir con el ?v= de las hojas de estilo y del script en index.html.
 // ============================================================
-export const APP_VERSION = "20260926.1";
+export const APP_VERSION = "20261009.1";
 
 const appModules = {
   views: new Map(),
@@ -844,6 +844,7 @@ function setStatusBadge(status, message, options = {}) {
   dom.status.classList.toggle("is-loading", status === "loading");
   dom.status.classList.toggle("is-saving", status === "saving");
   dom.status.classList.toggle("is-error", status === "error");
+  dom.status.closest(".topbar__status")?.classList.toggle("has-error", status === "error");
   dom.status.classList.toggle("is-ready", status === "ready");
   dom.status.classList.toggle("is-actionable", interactive);
   dom.status.setAttribute("role", interactive ? "button" : "status");

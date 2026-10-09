@@ -6,7 +6,7 @@ const LOCAL_HOSTNAMES = new Set([
   "::1",
 ]);
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 
 function detectEnvironment() {
   const hostname = window.location.hostname || "";

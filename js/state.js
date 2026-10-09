@@ -5,7 +5,7 @@ import {
   buildDraftKey,
   buildGroupDraftKey,
   getDefaultEditorState,
-} from "./config.js";
+} from "./config.js?v=20261009.1";
 
 import {
   toStringSafe,

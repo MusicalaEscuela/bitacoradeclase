@@ -1574,6 +1574,29 @@ body::before {
 .status-badge {
   display: none !important;
 }
+.topbar__status.has-error,
+.status-badge.is-error {
+  display: flex !important;
+}
+.status-badge.is-error {
+  max-width: min(560px, 85vw);
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  color: #8b1e37;
+  background: #fff0f3 !important;
+}
+.profile-save-message {
+  margin: 0;
+  padding: 0;
+  grid-column: 1 / -1;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.profile-save-message:not(:empty) { padding: 0.65rem 0.8rem; border-radius: 12px; }
+.profile-save-message[data-status="saving"] { color: #403096; background: #f0edff; }
+.profile-save-message[data-status="success"] { color: #176443; background: #eaf8f0; }
+.profile-save-message[data-status="error"] { color: #8b1e37; background: #fff0f3; }
 /* El botón superior sobra en la pantalla de login (queda el de la tarjeta).
    Con sesión iniciada su acción es "logout-user", así que "Salir" sí se ve. */
 .topbar__auth-button[data-action="login-google"] {

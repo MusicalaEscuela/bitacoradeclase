@@ -1,6 +1,6 @@
 ﻿// js/views/editor.view.js
 
-import { CONFIG, canUseGroupBitacoras } from "../config.js";
+import { CONFIG, canUseGroupBitacoras } from "../config.js?v=20261009.1";
 import { canViewStudent, resolveUserAccess } from "../authz.js";
 import {
   getState,
@@ -30,16 +30,16 @@ import {
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20260731.2";
+} from "../api/bitacoras.api.js?v=20261009.1";
 
-import { getStudentProfile } from "../api/students.api.js?v=20260926.1";
+import { getStudentProfile } from "../api/students.api.js?v=20261009.1";
 
 import {
   getCatalogs,
   getEmptyCatalogs,
 } from "../api/catalogs.api.js";
 
-import { uploadFileResumable } from "../firebase.client.js";
+import { uploadFileResumable } from "../firebase.client.js?v=20261009.1";
 import {
   showSuccess,
   showLoadingToast,

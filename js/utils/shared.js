@@ -1,6 +1,6 @@
 // js/utils/shared.js
 
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config.js?v=20261009.1";
 
 /* ==========================================================================
    BASE

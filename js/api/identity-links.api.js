@@ -7,7 +7,7 @@ import {
   normalizeTimestamps,
   serverTimestamp,
   writeBatch,
-} from "../firebase.client.js";
+} from "../firebase.client.js?v=20261009.1";
 import { toStringSafe } from "../utils/shared.js";
 
 const LINKS_COLLECTION = "student_identity_links";

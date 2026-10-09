@@ -1,4 +1,4 @@
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config.js?v=20261009.1";
 import { resolveUserAccess } from "../authz.js";
 import {
   getState,
@@ -18,8 +18,8 @@ import {
 import {
   getStudents,
   getTeacherListStudents,
-} from "../api/students.api.js?v=20260926.1";
-import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20260731.2";
+} from "../api/students.api.js?v=20261009.1";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20261009.1";
 import {
   getCachedStudentIdentityLinkRecords,
   listStudentIdentityLinkRecords,

@@ -1,0 +1,40 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><title>Pruebas de formularios de Bitácoras</title>
+<h1>Pruebas de conservación y avisos</h1><pre id="results">Probando…</pre><div id="fixture"></div>
+<script type="module">
+import { captureProfileDrafts, restoreProfileDrafts, ProfileSaveFeedback } from '../js/ui/profile-save.ui.js';
+const fixture = document.querySelector('#fixture');
+const html = `<section id="profile-repertoire-content"><div data-profile-save-scope="repertoire"><input data-repertoire-input><select data-repertoire-status-new><option value="quiere">Quiere tocar</option><option value="proceso">Está sacando</option></select><button data-repertoire-add>Agregar</button><p data-profile-save-message></p></div></section><section id="profile-all-history-content"><article data-history-card><button data-bitacora-id="clase">Editar</button><details data-profile-save-scope="process:clase"><summary>Cambiar proceso</summary><select data-history-process-select><option value="vacacional">Vacacional</option><option value="bateria">Batería</option></select><input type="time" data-history-time-input value="11:00"><button data-history-action="assign-process">Guardar proceso</button><p data-profile-save-message></p></details></article></section>`;
+const results = [];
+function check(condition, message) { if (!condition) throw new Error(message); results.push(`OK ${message}`); }
+try {
+  fixture.innerHTML = html;
+  const song = fixture.querySelector('[data-repertoire-input]');
+  song.value = 'Canción sin guardar'; song.focus(); song.setSelectionRange(4, 8);
+  fixture.querySelector('[data-repertoire-status-new]').value = 'proceso';
+  fixture.querySelector('[data-history-process-select]').value = 'bateria';
+  fixture.querySelector('[data-history-time-input]').value = '12:30';
+  fixture.querySelector('details').open = true;
+  const drafts = captureProfileDrafts(fixture);
+  fixture.innerHTML = html;
+  restoreProfileDrafts(fixture, drafts);
+  check(fixture.querySelector('[data-repertoire-input]').value === 'Canción sin guardar', 'canción conservada tras reconstruir pantalla');
+  check(fixture.querySelector('[data-repertoire-status-new]').value === 'proceso', 'estado de canción conservado');
+  check(fixture.querySelector('[data-history-process-select]').value === 'bateria', 'proceso sin guardar conservado');
+  check(fixture.querySelector('[data-history-time-input]').value === '12:30', 'hora sin guardar conservada');
+  check(fixture.querySelector('details').open, 'panel de edición permanece abierto');
+  check(document.activeElement === fixture.querySelector('[data-repertoire-input]') && document.activeElement.selectionStart === 4, 'foco y selección conservados');
+  const feedback = new ProfileSaveFeedback();
+  feedback.begin('ana', 'repertoire'); feedback.render(fixture, 'ana');
+  check(fixture.querySelector('[data-repertoire-add]').disabled && fixture.querySelector('[data-repertoire-add]').textContent === 'Guardando…', 'botón bloqueado y aviso de guardado');
+  feedback.finish('ana', 'repertoire', 'error', 'No se guardó. Reintenta.'); feedback.render(fixture, 'ana');
+  check(!fixture.querySelector('[data-repertoire-add]').disabled && fixture.querySelector('[data-profile-save-message]').getAttribute('role') === 'alert', 'error visible y reintento disponible');
+  fixture.querySelector('[data-repertoire-input]').value = '';
+  const cleared = captureProfileDrafts(fixture); fixture.innerHTML = html; restoreProfileDrafts(fixture, cleared);
+  check(fixture.querySelector('[data-repertoire-input]').value === '', 'entrada confirmada no reaparece');
+  // An untouched field must accept a refreshed value from the server.
+  fixture.innerHTML = html; const untouched = captureProfileDrafts(fixture);
+  fixture.innerHTML = html.replace('value="vacacional"', 'value="nuevo"'); restoreProfileDrafts(fixture, untouched);
+  check(fixture.querySelector('[data-history-process-select]').value === 'nuevo', 'datos actualizados prevalecen si no había edición');
+  document.querySelector('#results').textContent = `${results.join('\n')}\n${results.length} pruebas aprobadas.`;
+} catch (error) { document.querySelector('#results').textContent = `${results.join('\n')}\nFALLO: ${error.message}`; throw error; }
+</script></html>

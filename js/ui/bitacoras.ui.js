@@ -1,7 +1,7 @@
 // js/ui/bitacoras.ui.js
 
 import { getState } from "../state.js?v=20260815.2";
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config.js?v=20261009.1";
 import {
   qs,
   renderHtml,

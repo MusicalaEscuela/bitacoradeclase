@@ -1,7 +1,7 @@
 import {
   getAppConfigCollectionName,
   getCatalogsDocumentId,
-} from "../config.js";
+} from "../config.js?v=20261009.1";
 
 import {
   db,
@@ -10,7 +10,7 @@ import {
   normalizeTimestamps,
   serverTimestamp,
   setDoc,
-} from "../firebase.client.js";
+} from "../firebase.client.js?v=20261009.1";
 
 import {
   isPlainObject,

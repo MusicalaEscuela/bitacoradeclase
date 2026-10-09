@@ -1,4 +1,4 @@
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config.js?v=20261009.1";
 import { resolveUserAccess } from "../authz.js";
 import {
   getState,
@@ -16,12 +16,12 @@ import {
   listStudentAccessUsers,
   saveTeacherAccessProfile,
 } from "../api/users.api.js";
-import { getStudents } from "../api/students.api.js";
+import { getStudents } from "../api/students.api.js?v=20261009.1";
 import {
   createBitacora,
   getBitacorasByStudent,
   updateBitacora,
-} from "../api/bitacoras.api.js";
+} from "../api/bitacoras.api.js?v=20261009.1";
 import {
   escapeHtml,
   isPlainObject,

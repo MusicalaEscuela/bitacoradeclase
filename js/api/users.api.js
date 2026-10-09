@@ -9,7 +9,7 @@ import {
   serverTimestamp,
   setDoc,
   where,
-} from "../firebase.client.js";
+} from "../firebase.client.js?v=20261009.1";
 import { toStringSafe } from "../utils/shared.js";
 
 const USERS_COLLECTION = "users";

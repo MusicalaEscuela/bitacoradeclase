@@ -2,7 +2,7 @@ import {
   getRouteTemplatesCollectionName,
   getStudentRouteProgressCollectionName,
   getStudentRoutesCollectionName,
-} from "../config.js";
+} from "../config.js?v=20261009.1";
 import {
   db,
   doc,
@@ -11,7 +11,7 @@ import {
   normalizeTimestamps,
   serverTimestamp,
   setDoc,
-} from "../firebase.client.js";
+} from "../firebase.client.js?v=20261009.1";
 import {
   isPlainObject,
   toArraySafe,

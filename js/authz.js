@@ -1,4 +1,4 @@
-import { CONFIG } from "./config.js";
+import { CONFIG } from "./config.js?v=20261009.1";
 import { toStringSafe } from "./utils/shared.js";
 
 const ADMIN_ROLE_ALIASES = new Set([

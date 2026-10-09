@@ -26,12 +26,12 @@ import {
   normalizeDoc,
   normalizeDocs,
   normalizeTimestamps,
-} from "../firebase.client.js";
+} from "../firebase.client.js?v=20261009.1";
 
 import {
   getPlaneacionesCollectionName,
   getPlaneadorPostitsCollectionName,
-} from "../config.js";
+} from "../config.js?v=20261009.1";
 
 import { getCatalogs, getEmptyCatalogs } from "./catalogs.api.js";
 import {

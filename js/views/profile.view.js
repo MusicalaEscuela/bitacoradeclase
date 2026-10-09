@@ -1,6 +1,6 @@
 // js/views/profile.view.js
 
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config.js?v=20261009.1";
 import { canViewStudent, resolveUserAccess } from "../authz.js";
 import {
   getState,
@@ -28,7 +28,7 @@ import {
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20260731.2";
+} from "../api/bitacoras.api.js?v=20261009.1";
 import {
   getStudentProfile,
   updateStudentTeacher,
@@ -39,7 +39,7 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20260926.1";
+} from "../api/students.api.js?v=20261009.1";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -118,8 +118,24 @@ import {
   parseBitacoraSheetText,
   splitDelimitedRows,
 } from "../utils/bitacoras-import.js";
-import { callFunction } from "../firebase.client.js";
+import { callFunction } from "../firebase.client.js?v=20261009.1";
 import { downloadAiReportPdf } from "../utils/ai-report-pdf.js?v=20261004.1";
+import { showSuccess, showError } from "../ui/alerts.ui.js";
+import {
+  captureProfileDrafts, restoreProfileDrafts, ProfileSaveFeedback, profileSaveErrorMessage,
+} from "../ui/profile-save.ui.js?v=20261009.1";
+
+const profileSaveFeedback = new ProfileSaveFeedback();
+
+function refreshProfileSaveFeedback() {
+  profileSaveFeedback.render(viewRoot, currentProfileStudentKey);
+}
+
+function assertProfileOnline() {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw Object.assign(new Error("Sin conexión a internet."), { code: "offline" });
+  }
+}
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -1387,6 +1403,8 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
 
   if (!student || !viewRoot) return;
 
+  const profileDrafts = captureProfileDrafts(viewRoot);
+
   const summaryContainer = viewRoot.querySelector("#profile-summary-content");
   const historyContainer = viewRoot.querySelector("#profile-history-content");
   const allHistoryContainer = viewRoot.querySelector("#profile-all-history-content");
@@ -1473,6 +1491,8 @@ function renderReactiveBlocks(state, config, preferredStudentRef = null) {
   }
 
   applyProfileFocusLayout(student);
+  restoreProfileDrafts(viewRoot, profileDrafts);
+  refreshProfileSaveFeedback();
 }
 
 function renderStudentBadges(student) {
@@ -3021,7 +3041,7 @@ function renderStudentRepertoireCard(student = {}, access = {}) {
   const options = normalizeTags(cachedCatalogs?.componenteObras || []);
 
   return `
-    <div class="profile-repertoire">
+    <div class="profile-repertoire" data-profile-save-scope="repertoire">
       <p class="field__hint">Obras que el estudiante quiere trabajar, está trabajando o ya logró.</p>
       <div class="profile-repertoire__board" data-repertoire-list>
         ${REPERTOIRE_STATUSES.map((status) =>
@@ -3036,6 +3056,7 @@ function renderStudentRepertoireCard(student = {}, access = {}) {
                 type="text"
                 class="field__input"
                 data-repertoire-input
+                maxlength="300"
                 list="profile-repertoire-options"
                 placeholder="Escribe o elige una canción..."
                 autocomplete="off"
@@ -3053,6 +3074,7 @@ function renderStudentRepertoireCard(student = {}, access = {}) {
           `
           : ""
       }
+      <p class="profile-save-message" data-profile-save-message role="status" aria-live="polite"></p>
     </div>
   `;
 }
@@ -3255,27 +3277,38 @@ function formatRepertoireForAiReport(items = []) {
     .join("\n\n");
 }
 
-async function saveProfileRepertoire(student, values = []) {
+async function saveProfileRepertoire(student, values = [], options = {}) {
   const studentId = getStudentAcademicRecordId(student);
-  if (!studentId) return;
+  const feedbackStudentId = getStudentIdentity(student);
+  if (!studentId || !profileSaveFeedback.begin(feedbackStudentId, "repertoire")) return false;
 
+  refreshProfileSaveFeedback();
   clearAppError();
 
   try {
+    assertProfileOnline();
     const updated = await updateStudentRepertoire(studentId, values);
+    // The original element may have been replaced while Firebase was saving.
+    if (options.clearEntry && currentProfileStudentKey === feedbackStudentId) {
+      const entry = viewRoot?.querySelector("[data-repertoire-input]");
+      if (entry) entry.value = "";
+    }
+    profileSaveFeedback.finish(feedbackStudentId, "repertoire", "success", "Repertorio guardado y verificado en Firebase.");
     const nextStudent = mergePedagogicalUpdate(student, updated);
     updateStudentProfile(nextStudent);
     setSelectedStudent(nextStudent);
     renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+    showSuccess("Repertorio guardado y verificado en Firebase.");
     return true;
   } catch (error) {
     console.error("No se pudo guardar repertorio:", error);
-    setAppError(
-      `No se guardó la canción. ${
-        error?.message || "Firebase no permitió actualizar el repertorio del estudiante."
-      }`
-    );
+    const message = profileSaveErrorMessage(error);
+    profileSaveFeedback.finish(feedbackStudentId, "repertoire", "error", message);
+    setAppError(message);
+    showError(message, { duration: 7000 });
     return false;
+  } finally {
+    refreshProfileSaveFeedback();
   }
 }
 
@@ -3285,7 +3318,18 @@ async function addProfileRepertoireItem(student) {
   const input = viewRoot?.querySelector("[data-repertoire-input]");
   const statusSelect = viewRoot?.querySelector("[data-repertoire-status-new]");
   const value = toStringSafe(input?.value);
-  if (!value) return;
+  if (!value) {
+    const message = "Escribe o elige una canción antes de agregarla.";
+    profileSaveFeedback.finish(getStudentIdentity(student), "repertoire", "error", message);
+    refreshProfileSaveFeedback();
+    input?.focus();
+    return;
+  }
+  if (getStudentRepertoireItems(currentStudent).some((item) => normalizeText(item.nombre) === normalizeText(value))) {
+    profileSaveFeedback.finish(getStudentIdentity(student), "repertoire", "error", "Esta canción ya está en el repertorio.");
+    refreshProfileSaveFeedback();
+    return;
+  }
 
   const nextValues = [
     ...getStudentRepertoireItems(currentStudent),
@@ -3298,7 +3342,7 @@ async function addProfileRepertoireItem(student) {
       fechaLogro: "",
     },
   ];
-  const added = await saveProfileRepertoire(currentStudent, nextValues);
+  const added = await saveProfileRepertoire(currentStudent, nextValues, { clearEntry: true });
   // No borrar lo escrito hasta que Firebase confirme la operación. Si hay un
   // error de permisos o conexión, el docente puede corregir o reintentar sin
   // volver a digitar el nombre de la canción.
@@ -6037,7 +6081,7 @@ function renderHistoryCard(item, processOptions = [], options = {}) {
       ${
         compact
           ? ""
-          : `<div class="history-preview-card__group">
+          : `<div class="history-preview-card__group" data-profile-save-scope="process:${escapeHtml(item.id)}">
               <p class="history-preview-card__group-title">Proceso</p>
               <div class="empty-state__actions">
                 <select class="field__input" data-history-process-select>
@@ -6059,6 +6103,7 @@ function renderHistoryCard(item, processOptions = [], options = {}) {
                 >
                   Guardar proceso
                 </button>
+                <p class="profile-save-message" data-profile-save-message role="status" aria-live="polite"></p>
               </div>
             </div>`
       }
@@ -6164,7 +6209,7 @@ function normalizeHistoryClassTime(value) {
 
 function renderProcessAssignmentControl(item, processOptions = [], selectedProcessKey = "") {
   return `
-    <details class="teaching-history-process">
+    <details class="teaching-history-process" data-profile-save-scope="process:${escapeHtml(item.id)}">
       <summary>Cambiar proceso</summary>
       <div class="teaching-history-process__body">
         <select class="field__input" data-history-process-select>
@@ -6186,6 +6231,7 @@ function renderProcessAssignmentControl(item, processOptions = [], selectedProce
         >
           Guardar proceso
         </button>
+        <p class="profile-save-message" data-profile-save-message role="status" aria-live="polite"></p>
       </div>
     </details>
   `;
@@ -6425,11 +6471,16 @@ async function reloadHistory(student) {
 async function assignProcessToBitacora(student, bitacoraId, processKey = "", classTime = "") {
   const safeBitacoraId = toStringSafe(bitacoraId);
   if (!safeBitacoraId) return;
+  const feedbackStudentId = getStudentIdentity(student);
+  const scope = `process:${safeBitacoraId}`;
+  if (!profileSaveFeedback.begin(feedbackStudentId, scope)) return;
+  refreshProfileSaveFeedback();
 
   try {
     clearAppError();
+    assertProfileOnline();
 
-    const currentItem = await getBitacoraById(safeBitacoraId);
+    const currentItem = await getBitacoraById(safeBitacoraId, { fromServer: true });
     if (!currentItem) {
       throw new Error("No se encontró la bitácora para actualizar su proceso.");
     }
@@ -6444,6 +6495,9 @@ async function assignProcessToBitacora(student, bitacoraId, processKey = "", cla
         null
       : null;
     const currentProcess = currentItem?.process || {};
+    if (safeProcessKey && !selectedProcess) {
+      throw new Error("El proceso seleccionado ya no está disponible. Recarga la ficha antes de guardar.");
+    }
 
     const nextProcess = selectedProcess
       ? {
@@ -6496,8 +6550,11 @@ async function assignProcessToBitacora(student, bitacoraId, processKey = "", cla
       ? { horaClase: sessionTime, hora: sessionTime }
       : {};
 
-    if (isGroupBitacora(currentItem)) {
-      const overrideKey = resolveStudentOverrideKey(currentItem, student);
+    const group = isGroupBitacora(currentItem);
+    const updateOptions = { preserveAuthor: true, expectedUpdatedAt: getTimestamp(currentItem.updatedAt) };
+    let overrideKey = "";
+    if (group) {
+      overrideKey = resolveStudentOverrideKey(currentItem, student);
       if (!overrideKey) {
         throw new Error("No se pudo identificar al estudiante dentro de esta bitácora grupal.");
       }
@@ -6514,22 +6571,37 @@ async function assignProcessToBitacora(student, bitacoraId, processKey = "", cla
         },
         metadata: assignmentMetadata,
         ...sessionFields,
-      });
+      }, updateOptions);
     } else {
       await updateBitacora(safeBitacoraId, {
         process: nextProcess,
         metadata: assignmentMetadata,
         ...sessionFields,
-      });
+      }, updateOptions);
     }
 
+    try {
+      const confirmed = await getBitacoraById(safeBitacoraId, { fromServer: true });
+      const savedProcess = group ? confirmed?.studentOverrides?.[overrideKey]?.processKey : confirmed?.process?.processKey;
+      if (!confirmed || toStringSafe(savedProcess) !== safeProcessKey ||
+        (sessionTime && normalizeHistoryClassTime(confirmed.horaClase) !== sessionTime)) {
+        throw new Error("El proceso leído no coincide con lo enviado.");
+      }
+    } catch (error) {
+      throw Object.assign(new Error("No pudimos confirmar el proceso guardado."), { code: "PROCESS_CONFIRMATION_FAILED", cause: error });
+    }
+    profileSaveFeedback.finish(feedbackStudentId, scope, "success", "Proceso guardado y verificado en Firebase.");
     await reloadHistory(student);
     renderReactiveBlocks(getState(), CONFIG, currentProfileStudentKey);
+    showSuccess("Proceso guardado y verificado en Firebase.");
   } catch (error) {
     console.error("No se pudo actualizar el proceso de la bitácora:", error);
-    setAppError(
-      error?.message || "No se pudo guardar el proceso de la bitácora."
-    );
+    const message = profileSaveErrorMessage(error);
+    profileSaveFeedback.finish(feedbackStudentId, scope, "error", message);
+    setAppError(message);
+    showError(message, { duration: 7000 });
+  } finally {
+    refreshProfileSaveFeedback();
   }
 }
 
