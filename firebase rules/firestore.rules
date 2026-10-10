@@ -566,42 +566,34 @@ service cloud.firestore {
     }
 
     function validRepertoireItem(item) {
-      return item is map &&
-        item.keys().hasAll([
+      // Leer los seis campos rechaza claves ausentes; hasOnly rechaza extras.
+      // matches exige strings y valida longitud/formato sin helpers repetidos.
+      return item.keys().hasOnly([
           'nombre', 'estado', 'prioridad', 'notas',
           'fechaInicio', 'fechaLogro'
         ]) &&
-        item.keys().hasOnly([
-          'nombre', 'estado', 'prioridad', 'notas',
-          'fechaInicio', 'fechaLogro'
-        ]) &&
-        boundedString(item.nombre, 300) &&
-        item.nombre != '' &&
+        item.nombre.matches('(?s)^.{1,300}$') &&
         item.estado in ['quiere', 'proceso', 'lograda'] &&
         item.prioridad in ['alta', 'media', 'baja'] &&
-        boundedString(item.notas, 4000) &&
-        boundedString(item.fechaInicio, 10) &&
-        boundedString(item.fechaLogro, 10) &&
-        (
-          item.fechaInicio == '' ||
-          item.fechaInicio.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        ) &&
-        (
-          item.fechaLogro == '' ||
-          item.fechaLogro.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        );
+        item.notas is string && item.notas.size() <= 4000 &&
+        item.fechaInicio.matches('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        item.fechaLogro.matches('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
     function validRepertoireAt(names, items, index) {
-      return items.size() <= index ||
-        (
-          names.size() > index &&
-          validRepertoireItem(items[index]) &&
-          names[index] == items[index].nombre
-        );
+      return items.size() <= index || names[index] == items[index].nombre;
+    }
+
+    function validChangedRepertoireAt(items, index) {
+      return items.size() <= index || validRepertoireItem(items[index]);
     }
 
     function validRepertoirePayload(names, items) {
+      // No reevaluar el contenido idéntico ya almacenado: con 4 canciones
+      // el validador anterior excedía las 1000 expresiones. Cada canción
+      // nueva o modificada sigue pasando por el contrato completo. Las listas
+      // bilingües, nombres únicos, máximo 20, auditoría y permisos se conservan.
+      let changed = items.removeAll(resource.data.get('repertorioProceso', []));
       return names is list &&
         items is list &&
         names.size() == items.size() &&
@@ -626,7 +618,27 @@ service cloud.firestore {
         validRepertoireAt(names, items, 16) &&
         validRepertoireAt(names, items, 17) &&
         validRepertoireAt(names, items, 18) &&
-        validRepertoireAt(names, items, 19);
+        validRepertoireAt(names, items, 19) &&
+        validChangedRepertoireAt(changed, 0) &&
+        validChangedRepertoireAt(changed, 1) &&
+        validChangedRepertoireAt(changed, 2) &&
+        validChangedRepertoireAt(changed, 3) &&
+        validChangedRepertoireAt(changed, 4) &&
+        validChangedRepertoireAt(changed, 5) &&
+        validChangedRepertoireAt(changed, 6) &&
+        validChangedRepertoireAt(changed, 7) &&
+        validChangedRepertoireAt(changed, 8) &&
+        validChangedRepertoireAt(changed, 9) &&
+        validChangedRepertoireAt(changed, 10) &&
+        validChangedRepertoireAt(changed, 11) &&
+        validChangedRepertoireAt(changed, 12) &&
+        validChangedRepertoireAt(changed, 13) &&
+        validChangedRepertoireAt(changed, 14) &&
+        validChangedRepertoireAt(changed, 15) &&
+        validChangedRepertoireAt(changed, 16) &&
+        validChangedRepertoireAt(changed, 17) &&
+        validChangedRepertoireAt(changed, 18) &&
+        validChangedRepertoireAt(changed, 19);
     }
 
     function validRepertoireUpdate() {
@@ -643,6 +655,10 @@ service cloud.firestore {
           request.resource.data.repertoire &&
         request.resource.data.repertorioProceso ==
           request.resource.data.repertoireProgress &&
+        validRepertoirePayload(
+          request.resource.data.repertorioEscogido,
+          request.resource.data.repertorioProceso
+        ) &&
         validFixedPedagogicalAudit('profile_repertoire');
     }
 
@@ -688,7 +704,7 @@ service cloud.firestore {
       // aparecen en ninguna allowlist y permanecen exclusivas del backend.
       allow update: if
         (isAdmin() && validAdminPedagogicalUpdate()) ||
-        (isTeacher() && validTeacherPedagogicalUpdate());
+        (teacherCanEditStudent() && validTeacherPedagogicalUpdate());
 
       allow create, delete: if false;
     }
@@ -930,5 +946,16 @@ service cloud.firestore {
       allow read: if isAdmin() || isTeacher() || isActiveStudent();
       allow write: if false;
     }
+
+    // Resumen de clases esperadas usado por Docentes HUB.
+    // Las consultas deben filtrar por profesorEmail == authEmail(). No usamos
+    // isTeacher() aquí: el Hub comparte la autenticación de Google, pero no
+    // todos sus docentes tienen perfil en users/{correo} de esta aplicación.
+    match /expected_class_logs/{classLogId} {
+      allow get, list: if isAdmin() ||
+        (isSignedIn() && resource.data.profesorEmail == authEmail());
+      allow create, update, delete: if isAdmin();
+    }
+
   }
 }
