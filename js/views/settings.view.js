@@ -16,7 +16,7 @@ import {
   listStudentAccessUsers,
   saveTeacherAccessProfile,
 } from "../api/users.api.js";
-import { getStudents } from "../api/students.api.js?v=20261009.1";
+import { getStudents } from "../api/students.api.js?v=20261010.1";
 import {
   createBitacora,
   getBitacorasByStudent,

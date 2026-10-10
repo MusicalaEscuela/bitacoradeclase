@@ -11,7 +11,7 @@ import {
   clearSelectedStudentIds,
   getSelectedStudentIds,
 } from "../state.js?v=20260815.2";
-import { getStudents } from "../api/students.api.js?v=20261009.1";
+import { getStudents } from "../api/students.api.js?v=20261010.1";
 import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20261009.1";
 import {
   escapeHtml,

@@ -39,7 +39,7 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20261009.1";
+} from "../api/students.api.js?v=20261010.1";
 import {
   getCatalogs,
   getEmptyCatalogs,

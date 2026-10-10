@@ -18,7 +18,7 @@ import {
 import {
   getStudents,
   getTeacherListStudents,
-} from "../api/students.api.js?v=20261009.1";
+} from "../api/students.api.js?v=20261010.1";
 import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20261009.1";
 import {
   getCachedStudentIdentityLinkRecords,
@@ -39,6 +39,7 @@ import {
   resolveStudentRefFromPayload,
   toStringSafe,
 } from "../utils/shared.js";
+import { buildStudentSearchText, matchesStudentSearchText } from "../utils/student-search.js?v=20261010.1";
 
 let viewRoot = null;
 let unsubscribeView = null;
@@ -56,6 +57,7 @@ let identityLinkBusy = false;
 let identityTrayOpen = false;
 let studentSearchIndex = new Map();
 let inactiveSearchRequestId = 0;
+let inactiveSearchStatus = { query: "", loading: false, error: "" };
 
 // El filtrado es local; una espera larga solo hace que el teclado se sienta lento.
 // Dejamos un ciclo corto para agrupar eventos sin retrasar la respuesta visible.
@@ -168,6 +170,7 @@ async function ensureStudentsLoaded(payload = {}) {
       filterStudentIds(visibleStudents, state?.search?.query || "")
     );
     ensureInitialSelection(visibleStudents, state, payload);
+    await appendInactiveMatches(state?.search?.query || "", visibleStudents);
     return;
   }
 
@@ -190,6 +193,9 @@ async function refreshStudents(payload = {}, options = {}) {
 
     setFilteredStudentIds(filterStudentIds(visibleStudents, query));
     ensureInitialSelection(visibleStudents, state, payload);
+    // Recargar o volver a Búsqueda conserva también las coincidencias del
+    // histórico, aunque el estudiante no esté en la lista operativa de RIP.
+    await appendInactiveMatches(query, visibleStudents);
   } catch (error) {
     console.error("Error cargando estudiantes:", error);
     setAppError(error?.message || "No se pudieron cargar los estudiantes.");
@@ -1105,6 +1111,13 @@ function renderLoadingState() {
 function renderEmptyResultsState(state) {
   const query = String(state?.search?.query || "").trim();
 
+  if (query === inactiveSearchStatus.query && inactiveSearchStatus.loading) {
+    return `<div class="empty-state" role="status"><p class="empty-state__title">Buscando otros expedientes…</p></div>`;
+  }
+  if (query === inactiveSearchStatus.query && inactiveSearchStatus.error) {
+    return `<div class="empty-state" role="alert"><p class="empty-state__title">No se pudo completar la búsqueda</p><p class="empty-state__text">Pulsa Recargar para volver a consultar los estudiantes.</p></div>`;
+  }
+
   if (!query) {
     return `
           <div class="empty-state">
@@ -1263,8 +1276,6 @@ function filterStudents(students, query) {
   const normalizedQuery = normalizeText(rawQuery);
   if (!normalizedQuery || rawQuery.length < 2) return [];
 
-  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
-
   return students
     .filter((student) => {
       const studentId =
@@ -1275,47 +1286,11 @@ function filterStudents(students, query) {
 
       let searchableText = studentSearchIndex.get(studentId);
       if (!searchableText) {
-        const processStrings = Array.isArray(student.processes)
-          ? student.processes.flatMap((process) => [
-              process?.arte,
-              process?.detalle,
-              process?.label,
-            ])
-          : [];
-
-        searchableText = normalizeText(
-          [
-            student.id,
-            student.studentKey,
-            student.nombre,
-            student.name,
-            student.estudiante,
-            student.documento,
-            student.identificacion,
-            student.cc,
-            student.docente,
-            student.teacher,
-            student.acudiente,
-            student.responsable,
-            student.modalidad,
-            student.area,
-            student.programa,
-            student.instrumento,
-            student.sede,
-            student.correo,
-            student.email,
-            student.telefono,
-            student.estado,
-            student.interesesMusicales,
-            ...processStrings,
-          ]
-            .filter(Boolean)
-            .join(" ")
-        );
+        searchableText = buildStudentSearchText(student);
         studentSearchIndex.set(studentId, searchableText);
       }
 
-      return queryTokens.every((token) => searchableText.includes(token));
+      return matchesStudentSearchText(searchableText, normalizedQuery);
     })
     .slice(0, 12);
 }
@@ -1335,10 +1310,15 @@ function applySearchQuery(query, students) {
 }
 
 async function appendInactiveMatches(query, currentStudents = []) {
+  const requestId = ++inactiveSearchRequestId;
   const safeQuery = String(query || "").trim();
+  inactiveSearchStatus = { query: safeQuery, loading: false, error: "" };
   if (safeQuery.length < 2 || filterStudents(currentStudents, safeQuery).length) return;
 
-  const requestId = ++inactiveSearchRequestId;
+  const isCurrentRequest = () => requestId === inactiveSearchRequestId &&
+    String(getState()?.search?.query || "").trim() === safeQuery;
+  inactiveSearchStatus.loading = true;
+  renderResults(getState());
   try {
     // La lista inicial usa RIP para abrir rápido. Solo si la búsqueda concreta
     // no encuentra a nadie, consultamos el histórico: así Sara y otros
@@ -1347,7 +1327,7 @@ async function appendInactiveMatches(query, currentStudents = []) {
       q: safeQuery,
       includeInactive: true,
     }));
-    if (requestId !== inactiveSearchRequestId || getState()?.search?.query !== safeQuery) return;
+    if (!isCurrentRequest()) return;
     if (!matches.length) return;
 
     const byId = new Map(
@@ -1362,6 +1342,12 @@ async function appendInactiveMatches(query, currentStudents = []) {
     applySearchQuery(safeQuery, merged);
   } catch (error) {
     console.warn("No se pudieron buscar coincidencias históricas:", error);
+    if (isCurrentRequest()) inactiveSearchStatus.error = error?.message || "SEARCH_FAILED";
+  } finally {
+    if (isCurrentRequest()) {
+      inactiveSearchStatus.loading = false;
+      renderResults(getState());
+    }
   }
 }
 
@@ -1743,6 +1729,7 @@ function cleanupView() {
   }
   pendingSearchInputValue = null;
   inactiveSearchRequestId += 1;
+  inactiveSearchStatus = { query: "", loading: false, error: "" };
   studentSearchIndex.clear();
 
   currentModalStudentId = null;

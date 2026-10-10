@@ -26,6 +26,7 @@ import {
   resolveLogicalStudents,
 } from "../utils/student-resolver.js?v=20260926.1";
 import { listStudentIdentityLinkRecords } from "./identity-links.api.js?v=20260731.2";
+import { buildStudentSearchText, matchesStudentSearchText } from "../utils/student-search.js?v=20261010.1";
 
 const DEFAULT_TIMEOUT =
   Number.isFinite(CONFIG?.api?.timeoutMs) && CONFIG.api.timeoutMs > 0
@@ -933,27 +934,7 @@ function matchesAreaFilter(student, areaValue) {
 
 function matchesStudentQuery(student, queryValue) {
   if (!queryValue) return true;
-
-  const hayMatch =
-    normalizeText(student.nombre).includes(queryValue) ||
-    normalizeText(student.interesesMusicales).includes(queryValue) ||
-    normalizeText(student.email).includes(queryValue) ||
-    normalizeText(student.docente).includes(queryValue) ||
-    normalizeText(student.acudiente).includes(queryValue) ||
-    normalizeText(student.programa).includes(queryValue) ||
-    normalizeText(student.instrumento).includes(queryValue) ||
-    normalizeText(student.documento).includes(queryValue) ||
-    (Array.isArray(student.processes)
-      ? student.processes.some((process) =>
-          [
-            process.arte,
-            process.detalle,
-            process.label,
-          ].some((value) => normalizeText(value).includes(queryValue))
-        )
-      : false);
-
-  return hayMatch;
+  return matchesStudentSearchText(buildStudentSearchText(student), queryValue);
 }
 
 function sortStudents(students = []) {
