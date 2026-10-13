@@ -680,6 +680,19 @@ export async function createBitacora(bitacoraData, options = {}) {
   );
   const bitacorasRef = collection(db, BITACORAS_COLLECTION);
 
+  // Reintentar una importación no duplica las clases ya confirmadas.
+  if (/^import_[a-f0-9]{64}$/.test(options.importId || '')) {
+    const ref = doc(db, BITACORAS_COLLECTION, options.importId);
+    await runTransaction(db, async transaction => {
+      const existing = await transaction.get(ref);
+      if (!existing.exists()) transaction.set(ref, { ...payload,
+        createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    });
+    const confirmed = await getDocFromServer(ref);
+    if (!confirmed.exists()) throw createApiError('No se pudo confirmar la bitácora importada en Firebase. Reintenta.', { code: 'IMPORT_CONFIRMATION_FAILED' });
+    return normalizeBitacoraRecord(confirmed);
+  }
+
   const docRef = await addDoc(bitacorasRef, {
     ...payload,
     createdAt: serverTimestamp(),

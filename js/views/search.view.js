@@ -19,7 +19,7 @@ import {
   getStudents,
   getTeacherListStudents,
 } from "../api/students.api.js?v=20261010.1";
-import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20261009.1";
+import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20261013.1";
 import {
   getCachedStudentIdentityLinkRecords,
   listStudentIdentityLinkRecords,

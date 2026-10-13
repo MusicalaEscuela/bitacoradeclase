@@ -15,6 +15,7 @@ const { defineString } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { GoogleGenAI } = require("@google/genai");
 const report = require("./report");
+const bitacoraImport = require("./import");
 
 initializeApp();
 const db = getFirestore();
@@ -56,10 +57,11 @@ exports.generateStudentReport = onCall(
   {
     region: "us-central1",
     memory: "512MiB",
-    timeoutSeconds: 120,
+    timeoutSeconds: 180,
     maxInstances: 10,
   },
   async (request) => {
+    if (request.data?.operation === "normalize-bitacoras") return prepareBitacoraImport(request);
     const email = String(request.auth?.token?.email || "").toLowerCase();
     if (!request.auth || !email) {
       throw new HttpsError("unauthenticated", "Inicia sesión para generar el informe.");
@@ -105,3 +107,40 @@ exports.generateStudentReport = onCall(
     }
   }
 );
+
+// Solo prepara una vista previa. El guardado conserva el flujo y reglas actuales.
+async function prepareBitacoraImport(request) {
+    const email = String(request.auth?.token?.email || "").toLowerCase();
+    if (!request.auth || !email) throw new HttpsError("unauthenticated", "Inicia sesión para importar.");
+    const profile = await db.collection("users").doc(email).get();
+    const access = report.resolveAccess(profile.exists ? profile.data() : null, ["import-preview"]);
+    if (!access.allowed || access.kind !== "admin") throw new HttpsError("permission-denied", "Solo administración puede preparar importaciones.");
+    let input;
+    try { input = bitacoraImport.validateRequest(request.data); }
+    catch (error) { throw new HttpsError("invalid-argument", error.message); }
+    const usage = db.collection("ai_import_usage").doc(`${request.auth.uid}_${new Date().toISOString().slice(0, 10)}`);
+    await db.runTransaction(async tx => {
+      const snapshot = await tx.get(usage);
+      const count = Number(snapshot.get("count") || 0);
+      if (count >= 60) throw new HttpsError("resource-exhausted", "Alcanzaste 60 análisis hoy. Continúa mañana.");
+      tx.set(usage, { count: count + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    });
+    try {
+      const response = await getGenAI().models.generateContent({
+        model: AI_MODEL.value(),
+        contents: [{ role: "user", parts: [{ text: "Ordena estas bitácoras sin completar información ausente.\n" + input.text },
+          ...input.files.map(file => ({ inlineData: file }))] }],
+        config: { systemInstruction: bitacoraImport.instruction(), temperature: 0,
+          responseMimeType: "application/json", responseSchema: bitacoraImport.schema,
+          maxOutputTokens: 24576, thinkingConfig: { thinkingBudget: 0 } },
+      });
+      if (response.candidates?.[0]?.finishReason === "MAX_TOKENS") throw Error("El documento es demasiado largo. Divídelo en partes.");
+      const result = bitacoraImport.cleanOutput(response.text, input);
+      logger.info("Importación IA preparada", { classes: result.classes.length, files: input.files.length, usage: response.usageMetadata });
+      return result;
+    } catch (error) {
+      await usage.update({ count: FieldValue.increment(-1) }).catch(() => {});
+      logger.error("Falló importación IA", { error: error.message });
+      throw new HttpsError("unavailable", "No se pudo preparar la importación. " + (error.message?.includes("Divide") || error.message?.includes("Divídelo") ? error.message : "Tu contenido se conserva; intenta de nuevo."));
+    }
+}

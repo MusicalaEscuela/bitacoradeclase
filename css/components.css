@@ -2541,6 +2541,10 @@
   gap: 0.55rem;
 }
 
+.import-ai-defaults { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: .8rem; }
+.text-bitacoras-preview-card .field { margin-top: .6rem; }
+.text-bitacoras-preview-card textarea { width: 100%; min-height: 80px; resize: vertical; }
+
 .ai-report-modal__periods {
   display: grid;
   gap: 0.55rem;

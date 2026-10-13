@@ -21,7 +21,7 @@ import {
   createBitacora,
   getBitacorasByStudent,
   updateBitacora,
-} from "../api/bitacoras.api.js?v=20261009.1";
+} from "../api/bitacoras.api.js?v=20261013.1";
 import {
   escapeHtml,
   isPlainObject,

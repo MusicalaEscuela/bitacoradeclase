@@ -18,7 +18,7 @@ function apiContext(file, initial = {}) {
     CONFIG: { api: {}, limits: { maxBitacoraLength: 5000, maxTitleLength: 140 }, modes: { individual: "individual", group: "group" }, text: {} },
     getStudentsCollectionName: () => "students", getBitacorasCollectionName: () => "bitacoras",
     canUseFirestoreBitacoras: () => true, assertValidBitacoraMode: (mode) => mode,
-    db: {}, doc: (_, collection, id) => `${collection}/${id}`,
+    db: {}, doc: (_, collection, id) => `${collection}/${id}`, collection: (_, name) => name,
     getCurrentUser: () => user, getApiUrl: () => "",
     isPlainObject: (value) => value != null && typeof value === "object" && !Array.isArray(value),
     normalizeText: (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase(),
@@ -35,7 +35,7 @@ function apiContext(file, initial = {}) {
       if (pending.some(([id]) => !records[id])) throw Object.assign(new Error("Missing alias"), { code: "not-found" });
       for (const [id, data] of pending) { calls.writes.push(id); records[id] = { ...records[id], ...data }; }
     } }; },
-    runTransaction: async (_, fn) => fn({ get: async (id) => snapshot(id), update: (id, data) => { calls.writes.push(id); records[id] = { ...records[id], ...data }; } }),
+    runTransaction: async (_, fn) => fn({ get: async (id) => snapshot(id), set: (id, data) => { calls.writes.push(id); records[id] = data; }, update: (id, data) => { calls.writes.push(id); records[id] = { ...records[id], ...data }; } }),
     console,
   };
   vm.createContext(context);
@@ -54,6 +54,16 @@ await test("repertorio se confirma con lectura del servidor", async () => {
   assert.equal(result.repertorioProceso[0].nombre, song.nombre);
   assert.deepEqual(calls.reads, ["students/estudiante"]);
   assert.equal(records["students/estudiante"].updatedBy, "profile_repertoire");
+});
+await test("reintentar una importación no crea otra bitácora y confirma servidor", async () => {
+  const { context, calls } = apiContext("../js/api/bitacoras.api.js");
+  const payload = { studentIds: ['s1'], content: 'Clase de postura corporal', fechaClase: '2026-02-07' };
+  const importId = 'import_' + 'a'.repeat(64);
+  const first = await context.createBitacora(payload, { importId });
+  const second = await context.createBitacora(payload, { importId });
+  assert.equal(first.id, second.id);
+  assert.equal(calls.writes.length, 1);
+  assert.equal(calls.reads.length, 2);
 });
 await test("alias y canónico deben confirmar ambos el repertorio", async () => {
   const { context, calls } = apiContext("../js/api/students.api.js", { "students/alias": { canonicalStudentId: "canonico" }, "students/canonico": {} });

@@ -1,4 +1,5 @@
 // js/views/profile.view.js
+import { readAiImportFiles, validImportDate, matchImportStudents, importDocumentId } from "../utils/ai-bitacoras-import.js?v=20261013.1";
 
 import { CONFIG } from "../config.js?v=20261009.1";
 import { canViewStudent, resolveUserAccess } from "../authz.js";
@@ -28,7 +29,7 @@ import {
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20261009.1";
+} from "../api/bitacoras.api.js?v=20261013.1";
 import {
   getStudentProfile,
   updateStudentTeacher,
@@ -958,7 +959,7 @@ function buildProfileMarkup(student, state, config) {
             ${
               access.role === CONFIG.roles.admin
                 ? `<button type="button" class="btn btn--secondary" id="profile-import-text-bitacoras-btn">
-                    Agregar bitácoras en texto
+                  Importar bitácoras con IA
                   </button>`
                 : ""
             }
@@ -6711,7 +6712,22 @@ function openTextBitacorasImportModal(student) {
   const analyzeBtn = modalRoot.querySelector("[data-text-import-analyze]");
   const clearBtn = modalRoot.querySelector("[data-text-import-clear]");
   const allowDuplicates = modalRoot.querySelector("#text-bitacoras-allow-duplicates");
+  const aiBtn = modalRoot.querySelector("[data-text-import-ai]");
+  const fileStatus = modalRoot.querySelector("[data-import-files]");
+  const yearInput = modalRoot.querySelector("#text-import-year");
+  const teacherInput = modalRoot.querySelector("#text-import-teacher");
+  const studentsInput = modalRoot.querySelector("#text-import-students");
   let parsedItems = [];
+  let pendingFiles = [];
+  let aiRows = null;
+  let busy = false;
+  let previewValid = false;
+  const setBusy = value => {
+    busy = value;
+    [saveBtn, analyzeBtn, aiBtn, clearBtn, allowDuplicates, textarea, fileInput, processSelect, yearInput, teacherInput, studentsInput].forEach(node => { if (node) node.disabled = value; });
+    preview.querySelectorAll('input, textarea').forEach(node => { node.disabled = value || Boolean(aiRows?.[Number(node.dataset.importRow)]?.saved); });
+    if (!value) saveBtn.disabled = !previewValid || !parsedItems.some(item => item.canSave && !item.saved && !item.excluded);
+  };
 
   const setStatus = (message = "", type = "info") => {
     if (!status) return;
@@ -6733,6 +6749,8 @@ function openTextBitacorasImportModal(student) {
   };
 
   const analyze = () => {
+    if (busy) return;
+    aiRows = null;
     const context = getTextImportContext(student, processSelect?.value || "");
     parsedItems = parseBitacorasFromImportText(textarea?.value || "", context);
     preview.innerHTML = renderTextImportPreview(parsedItems);
@@ -6745,23 +6763,118 @@ function openTextBitacorasImportModal(student) {
       parsedItems.length && ready ? "success" : "warning"
     );
     saveBtn.disabled = !ready;
+    previewValid = true;
     setProgress({ visible: false });
   };
 
   analyzeBtn?.addEventListener("click", analyze);
-  fileInput?.addEventListener("change", async () => {
-    const files = Array.from(fileInput.files || []);
-    const text = await readTextImportFiles(files);
-    if (text && textarea) {
-      textarea.value = [textarea.value, text].filter(Boolean).join("\n\n");
-      setStatus(`${files.length} archivo(s) cargado(s). Revisa y analiza el contenido.`, "info");
+  const rebuildAiPreview = () => {
+    const context = getTextImportContext(student, processSelect?.value || "");
+    const seen = new Set();
+    parsedItems = (aiRows || []).map((row, index) => {
+      const matched = matchImportStudents(row.estudianteNombres || [], context.allStudents, student, getStudentIdentity, getStudentName);
+      const payload = buildImportedBitacoraPayload({ ...row, ...matched, aiGenerated: true }, context, index);
+      payload.title = row.label || payload.title;
+      payload.horaClase = row.horaClase || '';
+      payload.source = 'ai-document-import';
+      payload.metadata = { ...payload.metadata, aiNormalized: true, originalDate: row.dateText, sourceFiles: pendingFiles.map(f => f.name) };
+      const validation = validateImportedBitacora(payload, context);
+      if (!validImportDate(payload.fechaClase)) validation.errors.push('Completa una fecha válida, incluido el año.');
+      if (!payload.docente) validation.errors.push('Completa el docente.');
+      if (payload.content.length > CONFIG.limits.maxBitacoraLength) validation.errors.push('El contenido es demasiado extenso; corrígelo sin perder información.');
+      if (payload.title.length > CONFIG.limits.maxTitleLength) validation.errors.push('Acorta el título.');
+      const repeated = markImportDuplicate(payload, seen);
+      const duplicate = repeated || findImportedDuplicate(payload, context.existingBitacoras);
+      return { index, payload, errors: validation.errors,
+        warnings: [...(row.warnings || []).filter(w => !w.startsWith('Completa')), ...(duplicate ? ['Posible duplicado: se omitirá salvo que autorices duplicados.'] : [])],
+        duplicate, canSave: !validation.errors.length && !repeated,
+        saved: Boolean(row.saved), excluded: Boolean(row.excluded), aiRow: row };
+    });
+    preview.innerHTML = renderTextImportPreview(parsedItems);
+    previewValid = true;
+    setBusy(false);
+    const ready = parsedItems.filter(item => item.canSave && !item.excluded && !item.saved && (!item.duplicate || allowDuplicates.checked)).length;
+    setStatus(`${parsedItems.length} clases detectadas · ${ready} listas. Revisa fechas, docente, estudiantes y contenido antes de guardar.`, ready ? 'success' : 'warning');
+  };
+  aiBtn?.addEventListener('click', async () => {
+    if (busy) return;
+    setBusy(true); setStatus('La IA está leyendo y ordenando las clases. Todavía no se guarda ninguna bitácora.');
+    try {
+      const result = await callFunction('generateStudentReport', { operation: 'normalize-bitacoras', text: textarea.value,
+        files: pendingFiles }, { timeout: 190000 });
+      if (!modalRoot.isConnected) return;
+      aiRows = result.classes;
+      aiRows.forEach(row => {
+        row.usingDefaultStudents = !row.estudianteNombres?.length;
+        row.usingDefaultYear = !row.year && Boolean(row.day && row.month);
+        row.usingDefaultTeacher = !row.docente;
+        if (row.usingDefaultStudents) row.estudianteNombres = studentsInput.value.split('\n').map(v => v.trim()).filter(Boolean);
+        applyAiDefaults(row);
+      });
+      rebuildAiPreview();
+      if (!aiRows.length) setStatus((result.warnings || []).join(' ') || 'No se detectaron clases. Revisa el documento.', 'warning');
+      else if (result.warnings?.length) setStatus(result.warnings.join(' ') + ' Revisa la vista previa.', 'warning');
+    } catch (error) {
+      if (modalRoot.isConnected) setStatus(error?.message || 'No se pudo analizar. El contenido se conserva.', 'error');
+    } finally { if (modalRoot.isConnected) setBusy(false); }
+  });
+  preview.addEventListener('change', event => {
+    if (busy || !aiRows) return;
+    const field = event.target.dataset.importField, row = aiRows[Number(event.target.dataset.importRow)];
+    if (!row || !field) return;
+    if (field === 'excluded') row.excluded = !event.target.checked;
+    else if (field === 'estudianteNombres' || field.startsWith('componente')) {
+      row[field] = event.target.value.split('\n').map(v => v.trim()).filter(Boolean);
+      if (field === 'estudianteNombres') row.usingDefaultStudents = false;
     }
+    else {
+      row[field] = event.target.value;
+      if (field === 'fechaClase') row.usingDefaultYear = false;
+      if (field === 'docente') row.usingDefaultTeacher = false;
+    }
+    rebuildAiPreview();
+  });
+  const applyAiDefaults = row => {
+    if (row.usingDefaultTeacher) row.docente = teacherInput.value.trim();
+    if (row.usingDefaultYear) {
+      const date = `${yearInput.value}-${String(row.month).padStart(2, '0')}-${String(row.day).padStart(2, '0')}`;
+      row.fechaClase = validImportDate(date) ? date : '';
+    }
+  };
+  [yearInput, teacherInput].forEach(node => node.addEventListener('change', () => {
+    if (!aiRows || busy) return;
+    aiRows.forEach(applyAiDefaults);
+    rebuildAiPreview();
+  }));
+  processSelect.addEventListener('change', () => { if (aiRows) rebuildAiPreview(); else { previewValid = false; saveBtn.disabled = true; } });
+  studentsInput.addEventListener('change', () => {
+    if (!aiRows || busy) return;
+    aiRows.forEach(row => { if (row.usingDefaultStudents) row.estudianteNombres = studentsInput.value.split('\n').map(v => v.trim()).filter(Boolean); });
+    rebuildAiPreview();
+  });
+  textarea.addEventListener('input', () => { previewValid = false; saveBtn.disabled = true; setStatus('El texto cambió. Analízalo de nuevo antes de guardar.'); });
+  allowDuplicates.addEventListener('change', () => { if (aiRows) rebuildAiPreview(); });
+  fileInput?.addEventListener("change", async () => {
+    if (busy) return;
+    const files = Array.from(fileInput.files || []);
+    setBusy(true);
+    try {
+      const result = await readAiImportFiles(files);
+      if (result.files.length + pendingFiles.length > 4 || [...result.files, ...pendingFiles].reduce((n, f) => n + f.data.length, 0) > 7 * 1024 * 1024) throw Error('Usa hasta 4 documentos y 5 MB en total.');
+      if (result.text) textarea.value = [textarea.value, result.text].filter(Boolean).join('\n\n');
+      pendingFiles.push(...result.files);
+      fileStatus.textContent = pendingFiles.map(f => f.name).join(' · ');
+      previewValid = false;
+      setStatus('Archivos cargados. Pulsa Ordenar con IA para revisar las clases.');
+    } catch (error) { setStatus(error.message, 'error'); }
+    finally { setBusy(false); }
     fileInput.value = "";
   });
   clearBtn?.addEventListener("click", () => {
     textarea.value = "";
     if (fileInput) fileInput.value = "";
     parsedItems = [];
+    pendingFiles = []; aiRows = null; previewValid = false; fileStatus.textContent = '';
     preview.innerHTML = "";
     saveBtn.disabled = true;
     setStatus("");
@@ -6776,18 +6889,16 @@ function openTextBitacorasImportModal(student) {
     }
   });
   saveBtn?.addEventListener("click", async () => {
+    if (busy || !previewValid) return;
+    try {
     const result = await saveImportedBitacoras(student, parsedItems, {
       allowDuplicates: Boolean(allowDuplicates?.checked),
       setStatus,
       setProgress,
-      setBusy: (isBusy) => {
-        [saveBtn, analyzeBtn, clearBtn, allowDuplicates, textarea].forEach((node) => {
-          if (node) node.disabled = Boolean(isBusy);
-        });
-      },
+      setBusy,
     });
     preview.innerHTML = renderTextImportPreview(parsedItems);
-    setStatus(`${result.created} bitácoras creadas. ${result.skipped} omitidas por errores.`, "success");
+    setStatus(`${result.created} bitácoras guardadas. ${result.skipped} omitidas (sin seleccionar, errores, duplicados o ya guardadas).`, "success");
     setProgress({
       current: result.created + result.skipped,
       total: result.created + result.skipped,
@@ -6796,6 +6907,11 @@ function openTextBitacorasImportModal(student) {
       visible: true,
     });
     saveBtn.disabled = true;
+    } catch (error) {
+      preview.innerHTML = renderTextImportPreview(parsedItems);
+      setStatus(`Se detuvo el guardado: ${error.message}. Las clases ya guardadas no se repetirán al reintentar.`, 'error');
+      setBusy(false);
+    }
   });
 
   textarea?.focus();
@@ -6808,8 +6924,8 @@ function renderTextBitacorasImportModal() {
       <header class="text-bitacoras-modal__header">
         <div>
           <p class="panel-header__eyebrow">Importación administrativa</p>
-          <h2 class="panel-header__title" id="text-bitacoras-title">Agregar bitácoras desde texto</h2>
-          <p class="section-text">Pega texto de documento o filas copiadas/exportadas desde Sheets.</p>
+          <h2 class="panel-header__title" id="text-bitacoras-title">Importar bitácoras con IA</h2>
+          <p class="section-text">Sube el documento o pega el texto tal como lo escribió el docente. La IA separa y organiza las clases para que las revises antes de guardar.</p>
         </div>
         <button type="button" class="btn btn--ghost btn--sm" data-text-import-cancel>Cancelar</button>
       </header>
@@ -6822,6 +6938,13 @@ function renderTextBitacorasImportModal() {
         <small class="field__hint">Todas las bitácoras importadas quedarán asociadas a este proceso.</small>
       </label>
 
+      <div class="import-ai-defaults">
+        <label class="field"><span class="field__label">Año, si no aparece en el documento</span><input id="text-import-year" class="field__input" type="number" min="1900" max="2100" placeholder="Ej. 2026" /></label>
+        <label class="field"><span class="field__label">Docente, si no aparece en el documento</span><input id="text-import-teacher" class="field__input" placeholder="Nombre del docente" /></label>
+      </div>
+
+      <label class="field"><span class="field__label">Estudiantes, si el documento no los indica</span><textarea id="text-import-students" class="field__textarea" rows="2" placeholder="Para clases grupales: un nombre completo por línea"></textarea><small class="field__hint">Si queda vacío, se usará el estudiante del perfil abierto. Los nombres ambiguos o no encontrados deben corregirse antes de guardar.</small></label>
+
       <label class="field">
         <span class="field__label">Texto de bitácoras antiguas o datos de Sheets</span>
         <textarea
@@ -6833,15 +6956,16 @@ function renderTextBitacorasImportModal() {
       </label>
 
       <label class="field">
-        <span class="field__label">Subir archivo de texto o Sheets</span>
+        <span class="field__label">Subir documento o imagen</span>
         <input
           id="text-bitacoras-file"
           class="field__input"
           type="file"
-          accept=".txt,.csv,.tsv,text/plain,text/csv,text/tab-separated-values"
+          accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.tsv,.md,.json"
           multiple
         />
-        <small class="field__hint">Acepta .txt, .csv o .tsv. Para Google Docs o Word, copia el texto aquí o exporta como .txt.</small>
+        <small class="field__hint">PDF (incluidos escaneados), imágenes, TXT, CSV o TSV. Hasta 4 documentos y 5 MB. Para Word/Docs, pega el texto o exporta como PDF. Al pulsar Ordenar con IA se envía el contenido a la IA de Musicala para preparar la vista previa.</small>
+        <small class="field__hint" data-import-files></small>
       </label>
 
       <label class="choice-pill text-bitacoras-modal__check">
@@ -6850,6 +6974,7 @@ function renderTextBitacorasImportModal() {
       </label>
 
       <div class="text-bitacoras-modal__actions">
+        <button type="button" class="btn btn--primary" data-text-import-ai>Ordenar con IA</button>
         <button type="button" class="btn btn--ghost" data-text-import-analyze>Analizar texto</button>
         <button type="button" class="btn btn--primary" data-text-import-save disabled>Guardar bitácoras</button>
         <button type="button" class="btn btn--ghost" data-text-import-clear>Limpiar</button>
@@ -7169,6 +7294,7 @@ function buildImportFingerprint(payload = {}) {
 
   return JSON.stringify({
     fechaClase: normalizeLocalDateInput(payload.fechaClase || payload.fecha || ""),
+    horaClase: toStringSafe(payload.horaClase),
     studentIds: studentIds.sort(),
     processKey: toStringSafe(payload.processKey || payload.process?.processKey),
     docente: normalizeText(payload.docente || payload.process?.docente),
@@ -7327,7 +7453,7 @@ function buildImportedBitacoraPayload(parsed, context = {}, index = 0) {
     ...parsed,
     content: buildImportedStructuredContent(parsed),
   });
-  const docente = toStringSafe(parsed.docente || process?.docente || primaryStudent?.docente || primaryStudent?.teacher);
+  const docente = parsed.aiGenerated ? toStringSafe(parsed.docente) : toStringSafe(parsed.docente || process?.docente || primaryStudent?.docente || primaryStudent?.teacher);
   const studentIds = normalizeStudentIds(linkedStudents.map((item) => getStudentIdentity(item))).filter(Boolean);
   const studentRefs = studentIds.map((id) => {
     const matchedStudent = linkedStudents.find((item) => getStudentIdentity(item) === id) || {};
@@ -7453,11 +7579,13 @@ function findImportedDuplicate(payload, existingItems = []) {
   const targetDate = normalizeLocalDateInput(payload.fechaClase);
   const targetProcess = toStringSafe(payload.processKey || payload.process?.processKey);
   const targetTeacher = normalizeText(payload.docente || payload.process?.docente);
+  const targetTime = toStringSafe(payload.horaClase);
 
   return (existingItems || []).find((item) => {
     const itemStudents = normalizeStudentIds(item.studentIds || [item.studentId]);
     if (!itemStudents.some((id) => targetStudent.has(id))) return false;
     if (normalizeLocalDateInput(item.fechaClase) !== targetDate) return false;
+    if (targetTime && item.horaClase && targetTime !== item.horaClase) return false;
     if (toStringSafe(item.processKey || item.process?.processKey) !== targetProcess) return false;
     const itemTeacher = normalizeText(item.docente || item.process?.docente || item.teacher);
     return !targetTeacher || !itemTeacher || itemTeacher === targetTeacher;
@@ -7488,6 +7616,7 @@ function renderTextImportPreview(items = []) {
               ${escapeHtml(status)}
             </span>
           </header>
+          ${item.aiRow ? renderAiImportFields(item) : ''}
           ${payload.docente ? `<p class="text-bitacoras-preview-card__line"><strong>Docente:</strong> ${escapeHtml(payload.docente)}</p>` : ""}
           ${renderPreviewList("Estudiantes asociados", (payload.studentRefs || []).map((studentRef) => studentRef.name || studentRef.id))}
           ${renderPreviewList("Categorías detectadas", payload.etiquetas)}
@@ -7505,6 +7634,18 @@ function renderTextImportPreview(items = []) {
       `;
     })
     .join("");
+}
+
+function renderAiImportFields(item) {
+  const row = item.aiRow, index = item.index;
+  const field = (key, label, type = 'text') => `<label class="field"><span class="field__label">${label}</span><input class="field__input" type="${type}" data-import-row="${index}" data-import-field="${key}" value="${escapeHtml(row[key] || '')}" ${item.saved ? 'disabled' : ''}/></label>`;
+  const area = (key, label, value) => `<label class="field"><span class="field__label">${label}</span><textarea class="field__textarea" rows="3" data-import-row="${index}" data-import-field="${key}" ${item.saved ? 'disabled' : ''}>${escapeHtml(value || '')}</textarea></label>`;
+  return `<label class="choice-pill"><input type="checkbox" data-import-row="${index}" data-import-field="excluded" ${!item.excluded ? 'checked' : ''} ${item.saved ? 'disabled' : ''}/> ${item.saved ? 'Ya guardada' : 'Incluir esta clase'}</label>
+    <p class="field__hint">Fecha original: ${escapeHtml(row.dateText || 'No indicada')}. Si no hay nombres en el documento, se asociará al estudiante del perfil abierto.</p>
+    <div class="import-ai-defaults">${field('fechaClase', 'Fecha de clase', 'date')}${field('horaClase', 'Hora de inicio', 'time')}${field('docente', 'Docente')}${field('label', 'Título')}</div>
+    ${area('estudianteNombres', 'Estudiantes mencionados (un nombre por línea)', (row.estudianteNombres || []).join('\n'))}
+    ${area('tareas', 'Tareas / observaciones', row.tareas)}
+    <details><summary>Revisar componentes y obras</summary>${['componenteCorporal', 'componenteTecnico', 'componenteTeorico', 'componenteObras'].map((key, i) => area(key, ['Corporal', 'Técnico', 'Teórico', 'Obras'][i], (row[key] || []).join('\n'))).join('')}</details>`;
 }
 
 function renderPreviewList(label, values = []) {
@@ -7535,16 +7676,22 @@ async function saveImportedBitacoras(student, items = [], options = {}) {
   setBitacorasLoading(true);
 
   try {
+    assertProfileOnline();
+    const latest = allowDuplicates ? [] : await getBitacorasByStudentIds(normalizeStudentIds([
+      ...getStudentLinkedIds(student), ...items.flatMap(item => item.payload?.studentIds || []),
+    ]));
     for (const item of items) {
-      if (!item.canSave || (item.duplicate && !allowDuplicates)) {
+      if (item.saved || item.excluded || !item.canSave || (!allowDuplicates && (item.duplicate || findImportedDuplicate(item.payload, latest)))) {
         skipped += 1;
         processed += 1;
         options.setProgress?.({ current: processed, total, created, skipped, visible: true });
         continue;
       }
 
-      const saved = await createBitacora(item.payload);
+      const importId = allowDuplicates ? '' : await importDocumentId(item.payload);
+      const saved = await createBitacora(item.payload, { importId });
       const normalized = normalizeBitacorasResponseShared([saved])[0] || saved;
+      latest.push(normalized);
       const fallbackId = getStudentFallbackId(student);
       addBitacoraForStudents(
         normalizeStudentIds([
@@ -7554,6 +7701,7 @@ async function saveImportedBitacoras(student, items = [], options = {}) {
         normalized
       );
       item.saved = true;
+      if (item.aiRow) item.aiRow.saved = true;
       created += 1;
       processed += 1;
       options.setProgress?.({ current: processed, total, created, skipped, visible: true });
