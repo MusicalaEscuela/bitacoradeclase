@@ -2339,18 +2339,15 @@ function renderMapPianoGoalControl(goal = {}, route = {}, canUpdate = false) {
 function renderMapComponentGoals(route = {}, canUpdate = false) {
   const progress = getMapPianoProgress(route);
   const goals = (route.experiences || []).flatMap((experience) => experience.skills || []);
-  const completed = new Set(route.completedGoalIds || []);
   return `
     <p class="route-overview__text">Técnica, teoría y repertorio avanzan por separado. Cada experiencia se completa al lograr todos sus objetivos.</p>
     <div class="route-history-grid">
       ${progress.components.map((component) => {
         const active = new Set(component.activeGoalIds);
-        const recent = goals.filter((goal) => goal.component === component.id && completed.has(goal.id)).slice(-2);
         return `<article class="route-history-card">
           <p class="route-history-card__title">${escapeHtml(component.label)} · ${escapeHtml(component.isComplete ? "Completado" : `Experiencia ${component.currentExperienceOrder}`)}</p>
           <p class="route-overview__text">${component.completed}/${component.total} objetivos logrados</p>
           <div class="route-section-list">
-            ${recent.map((goal) => renderMapPianoGoalControl(goal, route, canUpdate)).join("")}
             ${goals.filter((goal) => active.has(goal.id)).sort(compareRouteGoals).map((goal) => renderMapPianoGoalControl(goal, route, canUpdate)).join("")}
           </div>
         </article>`;

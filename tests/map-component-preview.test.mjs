@@ -35,7 +35,7 @@ const route = { experiences, completedGoalIds, activeGoalIds: progress.activeGoa
 const html = context.renderMapPianoRoutePreview(route, { canUpdateRouteProgress: true });
 for (const id of ['2-tecnica', '1-teorico', '2-repertorio']) assert.ok(html.includes(`data-route-goal-check="${id}"`), id);
 for (const id of ['3-tecnica', '2-teorico', '3-repertorio']) assert.ok(!html.includes(`data-route-goal-check="${id}"`), id);
-assert.ok(html.includes('data-route-goal-undo="1-repertorio"'));
+assert.ok(!html.includes('data-route-goal-undo='));
 assert.ok(html.includes('&lt;Evidencia>'));
 assert.ok(html.includes('Experiencia 2'));
 assert.ok(html.includes('avanzan por separado'));
