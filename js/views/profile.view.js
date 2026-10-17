@@ -78,7 +78,7 @@ import {
   MAP_BATERIA_ROUTE_TEMPLATE_ID,
   MAP_PIANO_PROGRESS_EPOCH,
   MAP_PIANO_ROUTE_TEMPLATE_ID,
-} from "../utils/map-piano-route.js?v=20260918.1";
+} from "../utils/map-piano-route.js?v=20261017.1";
 import {
   escapeHtml,
   firstNonEmpty,
@@ -2319,7 +2319,7 @@ function renderMapPianoGoalControl(goal = {}, route = {}, canUpdate = false) {
           <span class="route-goal-check__title">${escapeHtml(goal.title)}</span>
           ${achievement ? `<span class="route-goal-check__text">${escapeHtml(achievement)}</span>` : ""}
           <span class="route-goal-check__meta">${escapeHtml(
-            [goal.componentLabel, goal.category].filter(Boolean).join(" · ") ||
+            [goal.componentLabel, goal.category, goal.experienceLabel || (goal.experience ? `Experiencia ${goal.experience}` : "")].filter(Boolean).join(" · ") ||
               "Meta de la experiencia"
           )}</span>
         </span>
@@ -2334,6 +2334,28 @@ function renderMapPianoGoalControl(goal = {}, route = {}, canUpdate = false) {
       ${achievement ? `<span class="route-overview__text">${escapeHtml(achievement)}</span>` : ""}
     </div>
   `;
+}
+
+function renderMapComponentGoals(route = {}, canUpdate = false) {
+  const progress = getMapPianoProgress(route);
+  const goals = (route.experiences || []).flatMap((experience) => experience.skills || []);
+  const completed = new Set(route.completedGoalIds || []);
+  return `
+    <p class="route-overview__text">Técnica, teoría y repertorio avanzan por separado. Cada experiencia se completa al lograr todos sus objetivos.</p>
+    <div class="route-history-grid">
+      ${progress.components.map((component) => {
+        const active = new Set(component.activeGoalIds);
+        const recent = goals.filter((goal) => goal.component === component.id && completed.has(goal.id)).slice(-2);
+        return `<article class="route-history-card">
+          <p class="route-history-card__title">${escapeHtml(component.label)} · ${escapeHtml(component.isComplete ? "Completado" : `Experiencia ${component.currentExperienceOrder}`)}</p>
+          <p class="route-overview__text">${component.completed}/${component.total} objetivos logrados</p>
+          <div class="route-section-list">
+            ${recent.map((goal) => renderMapPianoGoalControl(goal, route, canUpdate)).join("")}
+            ${goals.filter((goal) => active.has(goal.id)).sort(compareRouteGoals).map((goal) => renderMapPianoGoalControl(goal, route, canUpdate)).join("")}
+          </div>
+        </article>`;
+      }).join("")}
+    </div>`;
 }
 
 function renderMapPianoRoutePreview(route = {}, access = {}) {
@@ -2409,12 +2431,7 @@ function renderMapPianoRoutePreview(route = {}, access = {}) {
                     : ""
                 }
               </div>
-              <div class="route-section-list">
-                ${[...(currentExperience.skills || [])]
-                  .sort(compareRouteGoals)
-                  .map((goal) => renderMapPianoGoalControl(goal, route, canUpdate))
-                  .join("")}
-              </div>
+              ${renderMapComponentGoals(route, canUpdate)}
             `
             : `<p class="route-component-card__done">Todas las experiencias y metas de ${escapeHtml(route.routeName || "esta ruta")} están completadas.</p>`
         }
@@ -4987,7 +5004,8 @@ function renderMapPianoExperienceCard(experience = {}, route = {}, canUpdate = f
   const experienceId = toStringSafe(experience?.id);
   const skills = Array.isArray(experience?.skills) ? experience.skills : [];
   const completedGoals = skills.filter((goal) => completedIds.has(goal.id));
-  const isCurrent = experienceId === currentExperienceId;
+  const isCurrent = experienceId === currentExperienceId ||
+    skills.some((goal) => (route.activeGoalIds || []).includes(goal.id));
   const done = skills.length > 0 && completedGoals.length === skills.length;
   const repertoire = experience?.personalRepertoire || {};
   const meta = [
@@ -5077,7 +5095,7 @@ function renderMapPianoLearningRoute(route = {}, access = {}) {
           <h3 class="route-overview__title">${escapeHtml(route.routeName || "Ruta de Piano")}</h3>
           <p class="route-overview__text">${escapeHtml(
             route.routeDescription ||
-              "El docente marca manualmente cada meta dominada; la primera experiencia incompleta define el punto actual."
+              "El docente marca cada meta dominada. Técnica, teoría y repertorio avanzan por separado; cada experiencia se completa al lograr todas sus metas."
           )}</p>
         </div>
         <div class="route-overview__stats">
@@ -5103,7 +5121,7 @@ function renderMapPianoLearningRoute(route = {}, access = {}) {
       <section class="route-current">
         <header class="route-current__header">
           <div>
-            <p class="route-overview__kicker">Experiencia actual</p>
+            <p class="route-overview__kicker">Primera experiencia por completar</p>
             <h3 class="route-current__title">${escapeHtml(
               progress.isComplete
                 ? "Ruta de Piano completada"
@@ -5150,7 +5168,8 @@ function renderMapPianoLearningRoute(route = {}, access = {}) {
         }
       </section>
 
-      <section class="route-map" aria-label="Mapa dinámico de experiencias de Piano">
+      ${!progress.isComplete ? renderMapComponentGoals(route, canUpdate) : ""}
+      <section class="route-map" aria-label="Mapa dinámico de experiencias">
         ${progress.milestones
           .map(
             (milestone) => `

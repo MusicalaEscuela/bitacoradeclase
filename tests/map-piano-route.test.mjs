@@ -139,6 +139,7 @@ assert.equal(
   getMapPianoProgressIdentity({
     canonicalStudentId: "stu_legacy_123",
     identityResolutionStatus: "resolved_stu",
+    legacyAliasOf: "student_official_123",
   }).reason,
   "historical_alias"
 );
@@ -204,4 +205,50 @@ assert.equal(completeProgress.isComplete, true);
 assert.equal(completeProgress.currentExperience, null);
 assert.equal(completeProgress.percent, 100);
 
-console.log("map-piano-route: 34 assertions passed");
+// Each component advances independently, while full experience completion
+// still requires every goal (including multiple goals in one component).
+const independentRoute = {
+  experiences: [1, 2, 3].map((order) => ({
+    id: `e${order}`, order,
+    skills: ["tecnica", "teorico", "repertorio"].flatMap((component) =>
+      (component === "repertorio" && order === 2 ? ["a", "b"] : ["a"])
+        .map((suffix) => ({ id: `${order}:${component}:${suffix}`, component })))
+  }))
+};
+const independent = deriveMapPianoRouteProgress(independentRoute, [
+  "1:tecnica:a", "1:repertorio:a"
+]);
+assert.deepEqual(independent.activeGoalIds, [
+  "2:tecnica:a", "1:teorico:a", "2:repertorio:a", "2:repertorio:b"
+]);
+assert.equal(independent.currentExperienceId, "e1");
+assert.equal(independent.completedExperienceCount, 0);
+assert.equal(independent.milestones[1].unlocked, true);
+assert.equal(independent.milestones[2].unlocked, false);
+const partialRepertoire = deriveMapPianoRouteProgress(independentRoute, [
+  "1:tecnica:a", "1:repertorio:a", "2:repertorio:a"
+]);
+assert.deepEqual(partialRepertoire.components.find((c) => c.id === "repertorio").activeGoalIds, ["2:repertorio:b"]);
+const furtherRepertoire = deriveMapPianoRouteProgress(independentRoute, [
+  "1:tecnica:a", "1:repertorio:a", "2:repertorio:a", "2:repertorio:b"
+]);
+assert.ok(furtherRepertoire.activeGoalIds.includes("3:repertorio:a"));
+assert.ok(furtherRepertoire.activeGoalIds.includes("1:teorico:a"));
+assert.equal(furtherRepertoire.currentExperienceId, "e1");
+const completedFirst = deriveMapPianoRouteProgress(independentRoute, [
+  "1:tecnica:a", "1:teorico:a", "1:repertorio:a", "2:repertorio:a", "2:repertorio:b"
+]);
+assert.equal(completedFirst.currentExperienceId, "e2");
+assert.equal(completedFirst.completedExperienceCount, 1);
+assert.ok(completedFirst.activeGoalIds.includes("3:repertorio:a"));
+// Undo restores only the corresponding component's pending objectives.
+const undone = deriveMapPianoRouteProgress(independentRoute, ["1:tecnica:a"]);
+assert.ok(undone.activeGoalIds.includes("1:repertorio:a"));
+assert.ok(undone.activeGoalIds.includes("2:tecnica:a"));
+const finished = deriveMapPianoRouteProgress(independentRoute,
+  independentRoute.experiences.flatMap((e) => e.skills.map((g) => g.id)));
+assert.equal(finished.isComplete, true);
+assert.deepEqual(finished.activeGoalIds, []);
+assert.ok(finished.components.every((c) => c.isComplete));
+assert.deepEqual(deriveMapPianoRouteProgress({}, []).components, []);
+console.log("map-piano-route: all assertions passed, including independent components");

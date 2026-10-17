@@ -472,9 +472,37 @@ export function deriveMapPianoRouteProgress(route = {}, completedGoalIds = []) {
   const currentExperience = isComplete
     ? null
     : experiences[currentIndex >= 0 ? currentIndex : 0] || null;
-  const currentSkills = Array.isArray(currentExperience?.skills)
-    ? currentExperience.skills
-    : [];
+  // Cada componente tiene su propia primera experiencia pendiente. La lectura
+  // no bloquea técnica/repertorio; los hitos globales conservan todos sus objetivos.
+  const byComponent = new Map();
+  experiences.forEach((experience) => {
+    (Array.isArray(experience?.skills) ? experience.skills : []).forEach((goal) => {
+      const component = componentDetails(goal?.component);
+      if (!byComponent.has(component.id)) {
+        byComponent.set(component.id, { ...component, entries: [] });
+      }
+      byComponent.get(component.id).entries.push({ goal, experience });
+    });
+  });
+  const components = [...byComponent.values()].map(({ entries, ...component }) => {
+    const pending = entries.filter(({ goal }) => !completed.has(text(goal?.id)));
+    const nextExperience = pending[0]?.experience || null;
+    return {
+      ...component,
+      currentExperienceId: text(nextExperience?.id),
+      currentExperienceOrder: Number(nextExperience?.order) || 0,
+      activeGoalIds: pending
+        .filter(({ experience }) => experience === nextExperience)
+        .map(({ goal }) => text(goal?.id)).filter(Boolean),
+      completed: entries.length - pending.length,
+      total: entries.length,
+      isComplete: pending.length === 0,
+    };
+  });
+  const activeGoalIds = components.flatMap((component) => component.activeGoalIds);
+  const activeExperienceIds = new Set(
+    components.map((component) => component.currentExperienceId).filter(Boolean)
+  );
   const allGoals = experiences.flatMap((experience) =>
     Array.isArray(experience?.skills) ? experience.skills : []
   );
@@ -485,9 +513,8 @@ export function deriveMapPianoRouteProgress(route = {}, completedGoalIds = []) {
     currentExperience,
     currentExperienceId: text(currentExperience?.id),
     currentExperienceOrder: Number(currentExperience?.order) || 0,
-    activeGoalIds: currentSkills
-      .map((goal) => text(goal?.id))
-      .filter((goalId) => goalId && !completed.has(goalId)),
+    activeGoalIds,
+    components,
     completedExperienceCount: milestones.filter((milestone) => milestone.done).length,
     totalExperiences: experiences.length,
     completedGoals,
@@ -495,7 +522,8 @@ export function deriveMapPianoRouteProgress(route = {}, completedGoalIds = []) {
     percent: allGoals.length ? Math.round((completedGoals / allGoals.length) * 100) : 0,
     milestones: milestones.map((milestone, index) => ({
       ...milestone,
-      unlocked: isComplete || index <= (currentIndex < 0 ? milestones.length - 1 : currentIndex),
+      unlocked: milestone.done || activeExperienceIds.has(milestone.experienceId) ||
+        isComplete || index <= (currentIndex < 0 ? milestones.length - 1 : currentIndex),
     })),
   };
 }
