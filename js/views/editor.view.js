@@ -719,7 +719,17 @@ function bindEditorEvents(student) {
       if (!button) return;
 
       const studentId = button.getAttribute("data-group-add-student");
-      await addStudentToGroupDraft(student, studentId);
+      const previousSearch = groupSearchInput?.value;
+      const added = await addStudentToGroupDraft(student, studentId);
+      // No borrar una búsqueda nueva escrita mientras se cargaba el perfil.
+      if (added && groupSearchInput && groupSearchInput.value === previousSearch) {
+        groupSearchInput.value = "";
+        if (groupSearchDebounceTimer) {
+          clearTimeout(groupSearchDebounceTimer);
+          groupSearchDebounceTimer = null;
+        }
+        groupSearchInput.focus();
+      }
       renderGroupSelectionBlocks(student);
       renderDraftMetaBlock(student);
     });
@@ -4439,6 +4449,7 @@ async function addStudentToGroupDraft(primaryStudent, studentId) {
 
   currentEditorMode = CONFIG.modes.group;
   syncModeInputs();
+  return true;
 }
 
 function removeStudentFromGroupDraft(primaryStudent, studentId) {
