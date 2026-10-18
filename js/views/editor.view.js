@@ -579,7 +579,6 @@ function buildEditorMarkup({
                   class="field__input"
                   multiple
                   accept="image/*,video/*,application/pdf,audio/*"
-                  capture="environment"
                 />
                 <small class="field__hint">
                   Seleccionen imágenes, fotos, videos, audios o PDF desde el dispositivo.
@@ -5339,7 +5338,6 @@ function buildMusicalaEditorMarkup({
                     class="field__input"
                     multiple
                     accept="image/*,application/pdf,audio/*"
-                    capture="environment"
                   />
                   <small class="field__hint">Aquí puedes subir fotos, imágenes, archivos PDF o audios que ya tengas guardados.</small>
                 </label>
@@ -5352,7 +5350,6 @@ function buildMusicalaEditorMarkup({
                     class="field__input"
                     multiple
                     accept="video/*"
-                    capture="environment"
                   />
                   <small class="field__hint">Aquí puedes subir videos desde tu celular o computador.</small>
                 </label>
