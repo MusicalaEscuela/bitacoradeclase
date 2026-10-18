@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { deriveMapPianoRouteProgress } from '../js/utils/map-piano-route.js';
+import { getWeeklyReview } from '../js/utils/weekly-review.js';
 const source = fs.readFileSync(new URL('../js/views/profile.view.js', import.meta.url), 'utf8');
 function implementation(name) {
   const start = source.indexOf(`function ${name}(`);
@@ -11,6 +12,7 @@ function implementation(name) {
 }
 const context = vm.createContext({
   Set,
+  getWeeklyReview,
   escapeHtml: value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
   firstNonEmpty: (...values) => values.find(Boolean) || '',
   toStringSafe: value => String(value ?? ''),
@@ -19,7 +21,7 @@ const context = vm.createContext({
   getMapPianoCurrentExperience: route => deriveMapPianoRouteProgress(route, route.completedGoalIds).currentExperience,
   renderMapPianoIdentityNotice: () => '',
 });
-for (const name of ['renderMapPianoGoalControl', 'renderMapComponentGoals', 'renderMapPianoRoutePreview', 'renderMapPianoExperienceCard']) {
+for (const name of ['renderMapPianoGoalControl', 'renderWeeklyReview', 'renderMapComponentGoals', 'renderMapPianoRoutePreview', 'renderMapPianoExperienceCard']) {
   vm.runInContext(implementation(name), context);
 }
 const experiences = [1, 2, 3].map(order => ({
@@ -47,3 +49,9 @@ assert.ok(future.includes('is-active'));
 assert.ok(future.includes('data-route-goal-check="2-repertorio"'));
 assert.ok(!future.includes('data-route-goal-check="2-teorico"'));
 console.log('map-component-preview: all renderer assertions passed');
+const withReview = context.renderMapPianoRoutePreview({...route, weeklyReviewStudentId:'student-test', routeTemplateId:'violin', customGoals:experiences.flatMap(e=>e.skills)}, {canUpdateRouteProgress:true});
+assert.ok(withReview.includes('Repaso de esta semana'));
+const reviewCard=withReview.match(/<aside[\s\S]*?<\/aside>/)?.[0];
+assert.ok(reviewCard);
+assert.ok(!reviewCard.includes('type="checkbox"'));
+assert.ok(!reviewCard.includes('data-route-goal-undo='));

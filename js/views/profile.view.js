@@ -1,4 +1,5 @@
 // js/views/profile.view.js
+import { getWeeklyReview } from "../utils/weekly-review.js?v=20261018.2";
 import { readAiImportFiles, validImportDate, matchImportStudents, importDocumentId } from "../utils/ai-bitacoras-import.js?v=20261013.1";
 
 import { CONFIG } from "../config.js?v=20261009.1";
@@ -2336,6 +2337,24 @@ function renderMapPianoGoalControl(goal = {}, route = {}, canUpdate = false) {
   `;
 }
 
+function renderWeeklyReview(route = {}, goals = route.customGoals || []) {
+  const review = getWeeklyReview({
+    studentId: route.weeklyReviewStudentId || route.studentId,
+    routeKey: [route.routeTemplateId || route.presetId, route.processKey || "", route.progressEpoch || ""].join(":"),
+    goals,
+    completedGoalIds: route.completedGoalIds || [],
+  });
+  if (!review) return "";
+  const goal = review.goal;
+  return `<aside class="route-history-card route-history-card--wide" aria-label="Repaso de esta semana">
+    <p class="route-history-card__title">🔄 Repaso de esta semana</p>
+    <p class="route-focus-item__title">${escapeHtml(goal.title)}</p>
+    <p class="route-overview__text">${escapeHtml(firstNonEmpty(goal.achievement, goal.description, "Vuelve a practicar este objetivo que ya lograste."))}</p>
+    <p class="route-log-item__meta">${escapeHtml([goal.componentLabel, goal.category].filter(Boolean).join(" · "))}</p>
+    <p class="route-overview__text">Un objetivo que ya lograste para mantenerlo fresco. El repaso se conserva durante la semana y no cambia tu avance.</p>
+  </aside>`;
+}
+
 function renderMapComponentGoals(route = {}, canUpdate = false) {
   const progress = getMapPianoProgress(route);
   const goals = (route.experiences || []).flatMap((experience) => experience.skills || []);
@@ -2369,6 +2388,7 @@ function renderMapPianoRoutePreview(route = {}, access = {}) {
   return `
     <div class="profile-route-summary">
       ${renderMapPianoIdentityNotice(route)}
+      ${renderWeeklyReview(route)}
       <section class="route-current">
         <header class="route-current__header">
           <div>
@@ -4398,6 +4418,7 @@ function buildDefaultRouteState(student, baseRoute = {}) {
     activeGoalIds: nextByComponent.map((goal) => goal.id),
     milestones: progress.milestones,
     recommendations: buildRouteRecommendations(nextByComponent, routeComponents),
+    weeklyReviewStudentId: getStudentIdentity(student),
     updatedAt: getTimestamp(new Date().toISOString()) ? new Date().toISOString() : null,
   };
 }
@@ -4483,6 +4504,7 @@ function buildMapPianoRouteState(student, baseRoute = {}, activeProcess = null) 
     activeGoalIds: progress.activeGoalIds,
     milestones: progress.milestones,
     recommendations: activeGoals.slice(0, 4).map((goal) => goal.title),
+    weeklyReviewStudentId: getStudentIdentity(student),
     routeProgress: progress,
     updatedAt: baseRoute?.updatedAt || null,
   };
@@ -5086,6 +5108,7 @@ function renderMapPianoLearningRoute(route = {}, access = {}) {
   return `
     <div class="route-overview">
       ${renderMapPianoIdentityNotice(route)}
+      ${renderWeeklyReview(route)}
       <section class="route-overview__hero route-overview__hero--compact">
         <div>
           <p class="route-overview__kicker">Ruta oficial · Mapa de Experiencias</p>
@@ -5230,6 +5253,7 @@ function renderCurrentRouteGoals(route = {}, preset = {}, components = [], permi
     .filter((item) => item.total);
 
   return `
+    ${renderWeeklyReview(route, preset.goals || [])}
     <section class="route-current">
       <header class="route-current__header">
         <div>
