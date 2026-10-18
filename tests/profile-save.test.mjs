@@ -57,13 +57,15 @@ await test("repertorio se confirma con lectura del servidor", async () => {
 });
 await test("reintentar una importación no crea otra bitácora y confirma servidor", async () => {
   const { context, calls } = apiContext("../js/api/bitacoras.api.js");
-  const payload = { studentIds: ['s1'], content: 'Clase de postura corporal', fechaClase: '2026-02-07' };
+  const payload = { studentIds: ['s1'], content: 'Se dio continuidad al trabajo postural incorpor', fechaClase: '2026-02-07', metadata: { importWarnings: ['Descripción truncada en el original.'] } };
   const importId = 'import_' + 'a'.repeat(64);
   const first = await context.createBitacora(payload, { importId });
   const second = await context.createBitacora(payload, { importId });
   assert.equal(first.id, second.id);
   assert.equal(calls.writes.length, 1);
   assert.equal(calls.reads.length, 2);
+  assert.equal(first.content, payload.content);
+  assert.equal(first.metadata.importWarnings[0], payload.metadata.importWarnings[0]);
 });
 await test("alias y canónico deben confirmar ambos el repertorio", async () => {
   const { context, calls } = apiContext("../js/api/students.api.js", { "students/alias": { canonicalStudentId: "canonico" }, "students/canonico": {} });

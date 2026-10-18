@@ -6817,7 +6817,7 @@ function openTextBitacorasImportModal(student) {
       payload.title = row.label || payload.title;
       payload.horaClase = row.horaClase || '';
       payload.source = 'ai-document-import';
-      payload.metadata = { ...payload.metadata, aiNormalized: true, originalDate: row.dateText, sourceFiles: pendingFiles.map(f => f.name) };
+      payload.metadata = { ...payload.metadata, aiNormalized: true, originalDate: row.dateText, sourceFiles: pendingFiles.map(f => f.name), importWarnings: [...(row.warnings || [])].filter(w => !w.startsWith('Completa')) };
       const validation = validateImportedBitacora(payload, context);
       if (!validImportDate(payload.fechaClase)) validation.errors.push('Completa una fecha válida, incluido el año.');
       if (!payload.docente) validation.errors.push('Completa el docente.');
@@ -7641,8 +7641,10 @@ function renderTextImportPreview(items = []) {
       const structured = parseStructuredContent(payload.content || "");
       const status = item.errors.length
         ? "No se guardará por errores"
+        : item.duplicate
+        ? "Posible duplicado: revisar"
         : item.warnings.length
-        ? "Tiene advertencias"
+        ? "Lista para guardar con observaciones"
         : "Lista para guardar";
 
       return `
@@ -7668,7 +7670,7 @@ function renderTextImportPreview(items = []) {
           ])}
           ${renderPreviewList("Canciones/obras detectadas", structured.componenteObras)}
           ${renderPreviewList("Adjuntos detectados", (payload.attachments || []).map((attachment) => attachment.name || attachment.url))}
-          ${item.warnings.length ? `<p class="text-bitacoras-preview-card__warning">${escapeHtml(item.warnings.join(". "))}</p>` : ""}
+          ${item.warnings.length ? `<p class="text-bitacoras-preview-card__warning">${escapeHtml(item.warnings.join(". "))}</p>${!item.errors.length && !item.duplicate ? '<p class="field__hint">Estas observaciones no bloquean el guardado. Puedes conservar el texto original aunque esté incompleto; no hace falta inventar lo que falta.</p>' : ''}` : ""}
           ${item.errors.length ? `<p class="text-bitacoras-preview-card__error">${escapeHtml(item.errors.join(". "))}</p>` : ""}
         </article>
       `;
