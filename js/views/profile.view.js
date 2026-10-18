@@ -30,7 +30,8 @@ import {
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20261013.1";
+  synchronizeBitacoraRepertoire,
+} from "../api/bitacoras.api.js?v=20261018.7";
 import {
   getStudentProfile,
   updateStudentTeacher,
@@ -6512,6 +6513,7 @@ async function ensureStudentBitacorasLoaded(student) {
       setBitacorasForStudent(linkedStudentId, items);
     });
     syncAcademicRecordFromHistory(student, items);
+    if (canEditProfileFields()) await synchronizeBitacoraRepertoire(items, getStudentAcademicRecordId(getStudentFromState(getState(), getStudentIdentity(student)) || student));
   } catch (error) {
     console.error("Error cargando bitácoras en profile:", error);
     setAppError(
@@ -6540,6 +6542,7 @@ async function reloadHistory(student) {
       setBitacorasForStudent(linkedStudentId, items);
     });
     syncAcademicRecordFromHistory(student, items);
+    if (canEditProfileFields()) await synchronizeBitacoraRepertoire(items, getStudentAcademicRecordId(getStudentFromState(getState(), getStudentIdentity(student)) || student));
   } catch (error) {
     console.error("Error recargando historial en profile:", error);
     setAppError(error?.message || "No se pudo recargar el historial.");

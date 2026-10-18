@@ -30,7 +30,7 @@ import {
   createBitacora,
   updateBitacora,
   deleteBitacora,
-} from "../api/bitacoras.api.js?v=20261013.1";
+} from "../api/bitacoras.api.js?v=20261018.7";
 
 import { getStudentProfile } from "../api/students.api.js?v=20261010.1";
 

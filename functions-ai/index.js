@@ -16,6 +16,7 @@ const logger = require("firebase-functions/logger");
 const { GoogleGenAI } = require("@google/genai");
 const report = require("./report");
 const bitacoraImport = require("./import");
+const repertoireSync = require("./repertoire-sync");
 
 initializeApp();
 const db = getFirestore();
@@ -61,6 +62,22 @@ exports.generateStudentReport = onCall(
     maxInstances: 10,
   },
   async (request) => {
+    if (request.data?.operation === "sync-bitacora-repertoire") {
+      const email = String(request.auth?.token?.email || '').toLowerCase();
+      if (!request.auth || !email) throw new HttpsError('unauthenticated','Inicia sesión.');
+      const profile = await db.collection('users').doc(email).get();
+      const role = profile.exists ? String(profile.data().role || '').toLowerCase() : '';
+      const admin = ['admin','administrator','administrador','administradora','administrative','administrativo','administrativa','direction','direccion','dirección'].includes(role);
+      if (!profile.exists || profile.data().active === false || (!admin && !['teacher','docente','profesor','profesora'].includes(role))) {
+        throw new HttpsError('permission-denied','Solo el equipo activo puede sincronizar obras.');
+      }
+      const ids = request.data.bitacoraIds;
+      const studentId = request.data.studentId || '';
+      if (!Array.isArray(ids) || ids.length > 40 || !ids.length || ids.some(id=>typeof id!=='string'||!id||id.includes('/')) || typeof studentId!=='string'||studentId.includes('/')) {
+        throw new HttpsError('invalid-argument','Selecciona hasta 40 bitácoras válidas.');
+      }
+      return repertoireSync.syncFromBitacoras(db,FieldValue,{bitacoraIds:[...new Set(ids)],studentId,isAdmin:admin});
+    }
     if (request.data?.operation === "normalize-bitacoras") return prepareBitacoraImport(request);
     const email = String(request.auth?.token?.email || "").toLowerCase();
     if (!request.auth || !email) {

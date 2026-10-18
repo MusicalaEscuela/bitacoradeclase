@@ -207,4 +207,23 @@ await test("renombrar canción conserva logros y bloquea duplicados", async () =
   assert.equal(writes.length,1);
   assert.equal(errors.length,2);
 });
+await test("guardar obras sincroniza sin perder perfil; un fallo no duplica la bitácora", async () => {
+  const {context,calls}=apiContext('../js/api/bitacoras.api.js');
+  let requests=[], updated=[], errors=[];
+  context.callFunction=async (name,input)=>{requests.push(input);return {students:[{id:'s1',repertoire:['Obra']}],warnings:[]}};
+  context.getState=()=>({students:{byId:{s1:{id:'s1',nombre:'Ana',documento:'intacto'}}}});
+  context.updateStudentProfile=profile=>updated.push(profile);
+  context.setAppError=message=>errors.push(message);
+  const payload={studentIds:['s1'],content:'COMPONENTE DE OBRAS: Obra',fechaClase:'2026-10-18'};
+  const importId='import_'+'b'.repeat(64);
+  await context.createBitacora(payload,{importId});
+  assert.equal(requests.length,1);
+  assert.equal(requests[0].bitacoraIds[0],importId);
+  assert.equal(updated[0].nombre,'Ana');
+  assert.equal(updated[0].documento,'intacto');
+  context.callFunction=async()=>{throw Error('sin conexión')};
+  await context.createBitacora(payload,{importId});
+  assert.equal(calls.writes.length,1);
+  assert.match(errors[0],/bitácoras están guardadas/);
+});
 console.log(`${passed} pruebas de guardado aprobadas.`);

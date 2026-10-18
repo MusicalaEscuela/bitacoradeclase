@@ -24,6 +24,7 @@ import {
   serverTimestamp,
   normalizeTimestamps,
   getCurrentUser,
+  callFunction,
 } from "../firebase.client.js?v=20261009.1";
 
 import {
@@ -35,6 +36,27 @@ import {
   getTimestamp,
 } from "../utils/shared.js";
 import { getBitacoraParticipantIds } from "../utils/bitacora-coverage.js?v=20260731.2";
+import { getState, updateStudentProfile, setAppError } from "../state.js?v=20260815.2";
+
+export async function synchronizeBitacoraRepertoire(records = [], studentId = '') {
+  const ids = [...new Set(records.filter(record =>
+    /COMPONENTE\s+(?:DE\s+)?OBRAS\s*:\s*\S/i.test(record.content || record.contenido || '') ||
+    record.componenteObras?.length || Object.values(record.studentOverrides || {}).some(value => value?.enabled && value.componenteObras?.length)
+  ).map(record => record.id).filter(Boolean))];
+  try {
+    for (let start = 0; start < ids.length; start += 40) {
+      const result = await callFunction('generateStudentReport', {operation:'sync-bitacora-repertoire',bitacoraIds:ids.slice(start,start+40),studentId}, {timeout:190000});
+      for (const updated of result.students || []) {
+        const current = getState()?.students?.byId?.[updated.id];
+        if (current) updateStudentProfile({...current,...updated});
+      }
+      if (result.warnings?.length) setAppError(result.warnings.join(' '));
+    }
+  } catch (error) {
+    console.error('Bitácoras conservadas; sincronización de obras pendiente:',error);
+    setAppError('Las bitácoras están guardadas, pero no se pudo actualizar el repertorio. Se volverá a intentar al abrir el perfil. ' + (error?.message || ''));
+  }
+}
 
 const BITACORAS_COLLECTION = getBitacorasCollectionName();
 const DEFAULT_LIMIT = 50;
@@ -690,7 +712,9 @@ export async function createBitacora(bitacoraData, options = {}) {
     });
     const confirmed = await getDocFromServer(ref);
     if (!confirmed.exists()) throw createApiError('No se pudo confirmar la bitácora importada en Firebase. Reintenta.', { code: 'IMPORT_CONFIRMATION_FAILED' });
-    return normalizeBitacoraRecord(confirmed);
+    const record = normalizeBitacoraRecord(confirmed);
+    await synchronizeBitacoraRepertoire([record]);
+    return record;
   }
 
   const docRef = await addDoc(bitacorasRef, {
@@ -699,7 +723,9 @@ export async function createBitacora(bitacoraData, options = {}) {
     updatedAt: serverTimestamp(),
   });
 
-  return { id: docRef.id, ...payload, createdAt: new Date(), updatedAt: new Date() };
+  const record = { id: docRef.id, ...payload, createdAt: new Date(), updatedAt: new Date() };
+  await synchronizeBitacoraRepertoire([record]);
+  return record;
 }
 
 /**
@@ -744,7 +770,9 @@ export async function updateBitacora(bitacoraId, updates = {}, options = {}) {
     normalized = normalizeBitacoraPayload(merged, options);
     transaction.update(ref, { ...normalized, updatedAt: serverTimestamp() });
   });
-  return { id: safeBitacoraId, ...normalized, createdAt: current?.createdAt || null, updatedAt: new Date() };
+  const record = { id: safeBitacoraId, ...normalized, createdAt: current?.createdAt || null, updatedAt: new Date() };
+  await synchronizeBitacoraRepertoire([record]);
+  return record;
 }
 
 /**
