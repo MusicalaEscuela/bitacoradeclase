@@ -287,6 +287,22 @@ export async function resolveStudentWorkSuggestion(suggestionId, status = "acept
   });
 }
 
+export async function updateStudentWorkSuggestion(suggestionId, values = {}) {
+  const id = normalizeScalar(suggestionId);
+  const nombre = normalizeScalar(values.nombre);
+  const notas = normalizeScalar(values.notas);
+  if (!id || !nombre || nombre.length > 300 || notas.length > 1000) {
+    throw createApiError("Escribe un nombre de hasta 300 caracteres y notas de hasta 1.000 caracteres.");
+  }
+  const ref = doc(db, "student_work_suggestions", id);
+  await updateDoc(ref, { nombre, notas, updatedAt: serverTimestamp() });
+  const snapshot = await getDocFromServer(ref);
+  if (!snapshot.exists() || snapshot.data().nombre !== nombre || snapshot.data().notas !== notas) {
+    throw createApiError("No se pudo confirmar la edición de la sugerencia. Revisa y vuelve a intentar.");
+  }
+  return { id, ...normalizeTimestamps(snapshot.data()) };
+}
+
 function normalizeRepertoireForWrite(repertoire = []) {
   const items = Array.isArray(repertoire) ? repertoire : [repertoire];
   const byName = new Map();

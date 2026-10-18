@@ -170,4 +170,41 @@ await test("flujo de proceso comunica rechazo y habilita reintento", async () =>
   assert.match(fixture.errors[0], /rechazó/);
   assert.equal(fixture.context.profileSaveFeedback.begin("ana", "process:clase"), true);
 });
+await test("editar sugerencia confirma servidor y conserva estudiante y estado", async () => {
+  const { context, records, calls } = apiContext("../js/api/students.api.js", {
+    "student_work_suggestions/sug1": { nombre: "Nombre viejo", notas: "", studentId: "ana", estado: "pendiente" },
+  });
+  const updated = await context.updateStudentWorkSuggestion("sug1", { nombre: "Nombre corregido", notas: "Versión acústica" });
+  assert.equal(updated.nombre, "Nombre corregido");
+  assert.equal(records["student_work_suggestions/sug1"].estado, "pendiente");
+  assert.equal(records["student_work_suggestions/sug1"].studentId, "ana");
+  assert.deepEqual(calls.reads, ["student_work_suggestions/sug1"]);
+  await assert.rejects(context.updateStudentWorkSuggestion("sug1", { nombre: "", notas: "" }));
+  context.getDocFromServer = async () => ({ exists: () => true, data: () => ({nombre:"anterior",notas:""}) });
+  await assert.rejects(context.updateStudentWorkSuggestion("sug1", { nombre: "Otro", notas: "" }), /confirmar/);
+});
+await test("renombrar canción conserva logros y bloquea duplicados", async () => {
+  const source = fs.readFileSync(new URL('../js/views/profile.view.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async function updateProfileRepertoireItem(');
+  const end = source.indexOf('\nfunction renderAllBitacorasPanel', start);
+  const original = { ...song, nombre:'Original', estado:'lograda', fechaLogro:'2026-10-01', notas:'Conservar' };
+  let writes = [], errors = [];
+  const context = vm.createContext({
+    getStudentFromState: () => ({}), getState: () => ({}), getStudentIdentity: () => 'ana',
+    toStringSafe: v => String(v ?? '').trim(), normalizeText: v => String(v).toLowerCase(),
+    normalizeRepertoireStatus: v => v, normalizeRepertoirePriority: v => v, normalizeLocalDateInput: v => v,
+    viewRoot: null, getStudentRepertoireItems: () => [original, {...song,nombre:'Otra'}],
+    setAppError: message => errors.push(message), saveProfileRepertoire: async (_,items) => writes.push(items),
+  });
+  vm.runInContext(source.slice(start,end),context);
+  await context.updateProfileRepertoireItem({}, 'Original', {nombre:'Corregida'});
+  assert.equal(writes[0][0].nombre,'Corregida');
+  assert.equal(writes[0][0].estado,'lograda');
+  assert.equal(writes[0][0].fechaLogro,'2026-10-01');
+  assert.equal(writes[0][0].notas,'Conservar');
+  await context.updateProfileRepertoireItem({}, 'Original', {nombre:'Otra'});
+  await context.updateProfileRepertoireItem({}, 'Original', {nombre:''});
+  assert.equal(writes.length,1);
+  assert.equal(errors.length,2);
+});
 console.log(`${passed} pruebas de guardado aprobadas.`);

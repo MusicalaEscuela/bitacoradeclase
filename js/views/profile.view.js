@@ -37,11 +37,12 @@ import {
   updateStudentRepertoire,
   listStudentWorkSuggestions,
   resolveStudentWorkSuggestion,
+  updateStudentWorkSuggestion,
   updateStudentProfileFields,
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20261010.1";
+} from "../api/students.api.js?v=20261018.6";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -831,17 +832,32 @@ export async function render({
     target.addEventListener("click", async (event) => {
       const accept = event.target.closest("[data-work-suggestion-accept]");
       const dismiss = event.target.closest("[data-work-suggestion-dismiss]");
-      if (!accept && !dismiss) return;
-      const id = (accept || dismiss).getAttribute(accept ? "data-work-suggestion-accept" : "data-work-suggestion-dismiss");
+      const save = event.target.closest("[data-work-suggestion-save]");
+      if ((!accept && !dismiss && !save) || !canEditProfileFields()) return;
+      const button = accept || dismiss || save;
+      if (target.dataset.saving === "true") return;
+      target.dataset.saving = "true";
+      button.disabled = true;
+      const id = button.getAttribute(accept ? "data-work-suggestion-accept" : dismiss ? "data-work-suggestion-dismiss" : "data-work-suggestion-save");
       try {
-        if (accept) {
-          await saveProfileRepertoire(student, [...getStudentRepertoireItems(student), { nombre: accept.getAttribute("data-work-suggestion-name"), estado: "quiere", prioridad: "media", notas: "", fechaInicio: "", fechaLogro: "" }]);
+        if (save) {
+          const card = save.closest("[data-work-suggestion-card]");
+          await updateStudentWorkSuggestion(id, { nombre: card.querySelector('[data-suggestion-name]').value, notas: card.querySelector('[data-suggestion-notes]').value });
+          showSuccess("Sugerencia actualizada y verificada en Firebase.");
+        } else if (accept) {
+          const currentStudent = getStudentFromState(getState(), getStudentIdentity(student)) || student;
+          const repertoire = getStudentRepertoireItems(currentStudent);
+          const nombre = accept.getAttribute("data-work-suggestion-name");
+          const alreadyAdded = repertoire.some((item) => normalizeText(item.nombre) === normalizeText(nombre));
+          const added = alreadyAdded || await saveProfileRepertoire(currentStudent, [...repertoire, { nombre, estado: "quiere", prioridad: "media", notas: accept.getAttribute("data-work-suggestion-notes") || "", fechaInicio: "", fechaLogro: "" }]);
+          if (!added) return;
           await resolveStudentWorkSuggestion(id, "aceptada");
         } else {
           await resolveStudentWorkSuggestion(id, "descartada");
         }
         target.innerHTML = await renderStudentWorkSuggestions(student);
       } catch (error) { setAppError(error?.message || "No se pudo revisar la sugerencia."); }
+      finally { delete target.dataset.saving; button.disabled = false; }
     });
   });
   applyProfileFocusLayout(student);
@@ -3119,7 +3135,22 @@ async function renderStudentWorkSuggestions(student) {
   if (!studentId) return "";
   const suggestions = await listStudentWorkSuggestions(studentId).catch(() => []);
   const pending = suggestions.filter((item) => item.estado === "pendiente");
-  return `<article class="card profile-repertoire-card"><header class="panel-header"><div><p class="panel-header__eyebrow">Desde Estudiantes HUB</p><h2 class="panel-header__title">Obras sugeridas por el estudiante</h2></div></header><div class="profile-repertoire">${pending.length ? pending.map((item) => `<article class="profile-repertoire-item"><div class="profile-repertoire-item__main"><strong>${escapeHtml(toStringSafe(item.nombre))}</strong><span>${escapeHtml(toStringSafe(item.notas) || "Sin nota adicional")}</span></div><div class="profile-repertoire-item__actions"><button class="profile-repertoire-action" data-work-suggestion-accept="${escapeHtml(item.id)}" data-work-suggestion-name="${escapeHtml(toStringSafe(item.nombre))}">Aceptar en Obras</button><button class="profile-repertoire-chip__remove" data-work-suggestion-dismiss="${escapeHtml(item.id)}">Descartar</button></div></article>`).join("") : `<p class="field__hint">No hay sugerencias pendientes.</p>`}</div></article>`;
+  const canEdit = canEditProfileFields();
+  return `<article class="card profile-repertoire-card"><header class="panel-header"><div><p class="panel-header__eyebrow">Desde Estudiantes HUB</p><h2 class="panel-header__title">Obras sugeridas por el estudiante</h2></div></header><div class="profile-repertoire">${pending.length ? pending.map((item) => `
+    <article class="profile-repertoire-item" data-work-suggestion-card>
+      <div class="profile-repertoire-item__main"><strong>${escapeHtml(toStringSafe(item.nombre))}</strong><span>${escapeHtml(toStringSafe(item.notas) || "Sin nota adicional")}</span></div>
+      ${canEdit ? `<div class="profile-repertoire-item__actions">
+        <details class="profile-repertoire-edit"><summary>Editar sugerencia</summary>
+          <div class="profile-repertoire-item__controls">
+            <label class="field"><span class="field__label">Nombre de la canción</span><input class="field__input" data-suggestion-name maxlength="300" value="${escapeHtml(toStringSafe(item.nombre))}" /></label>
+            <label class="field"><span class="field__label">Notas</span><textarea class="field__input" data-suggestion-notes maxlength="1000">${escapeHtml(toStringSafe(item.notas))}</textarea></label>
+            <button type="button" class="btn btn--ghost btn--sm" data-work-suggestion-save="${escapeHtml(item.id)}">Guardar cambios</button>
+          </div>
+        </details>
+        <button type="button" class="profile-repertoire-action" data-work-suggestion-accept="${escapeHtml(item.id)}" data-work-suggestion-name="${escapeHtml(toStringSafe(item.nombre))}" data-work-suggestion-notes="${escapeHtml(toStringSafe(item.notas))}">Aceptar en Obras</button>
+        <button type="button" class="profile-repertoire-chip__remove" data-work-suggestion-dismiss="${escapeHtml(item.id)}">Descartar</button>
+      </div>` : ""}
+    </article>`).join("") : `<p class="field__hint">No hay sugerencias pendientes.</p>`}</div></article>`;
 }
 
 function renderRepertoireColumn(status, items = [], canEdit = false) {
@@ -3167,6 +3198,7 @@ function renderRepertoireItemCard(item, canEdit = false) {
               <details class="profile-repertoire-edit">
                 <summary>Editar</summary>
                 <div class="profile-repertoire-item__controls">
+                  <label class="field"><span class="field__label">Nombre de la canción</span><input class="field__input" data-repertoire-name="${safeName}" value="${safeName}" maxlength="300" /></label>
                   <select class="field__input" data-repertoire-status="${safeName}" aria-label="Estado de ${safeName}">
                     ${REPERTOIRE_STATUSES.map(
                       (status) => `<option value="${status.id}" ${status.id === item.estado ? "selected" : ""}>${escapeHtml(status.label)}</option>`
@@ -3405,11 +3437,18 @@ async function updateProfileRepertoireItem(student, value, overrides = {}) {
   const card = [...(viewRoot?.querySelectorAll("[data-repertoire-item]") || [])].find(
     (node) => normalizeText(node.getAttribute("data-repertoire-item")) === normalizeText(safeValue)
   );
+  const nombre = toStringSafe(overrides.nombre ?? card?.querySelector("[data-repertoire-name]")?.value ?? safeValue);
+  const repertoire = getStudentRepertoireItems(currentStudent);
+  if (!nombre || nombre.length > 300 || repertoire.some((item) => normalizeText(item.nombre) !== normalizeText(safeValue) && normalizeText(item.nombre) === normalizeText(nombre))) {
+    setAppError(!nombre ? "Escribe el nombre de la canción." : nombre.length > 300 ? "El nombre admite hasta 300 caracteres." : "Ya existe otra canción con ese nombre en el repertorio.");
+    return;
+  }
   const nextValues = getStudentRepertoireItems(currentStudent).map((item) => {
     if (normalizeText(item.nombre) !== normalizeText(safeValue)) return item;
 
     return {
       ...item,
+      nombre,
       estado: normalizeRepertoireStatus(
         overrides.estado || card?.querySelector("[data-repertoire-status]")?.value || item.estado
       ),
