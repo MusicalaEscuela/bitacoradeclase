@@ -3,6 +3,21 @@ export function validImportDate(value) {
   const date = new Date(value + 'T00:00:00Z');
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
+export function resolveImportDate(row = {}, fallbackYear = '') {
+  const raw = String(row.dateText || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const iso = raw.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+  const numeric = raw.match(/\b(\d{1,2})[/.\-](\d{1,2})(?:[/.\-](\d{4}))?\b/);
+  const spanish = raw.match(/\b(\d{1,2})\s+(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b(?:\s+(?:de[l]?\s+)?(\d{4})\b)?/);
+  const months = {enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
+  const day = Number(row.day) || Number(iso?.[3] || numeric?.[1] || spanish?.[1]);
+  const month = Number(row.month) || Number(iso?.[2] || numeric?.[2] || months[spanish?.[2]]);
+  const explicitYear = Number(row.year) || Number(iso?.[1] || numeric?.[3] || spanish?.[3]);
+  if (!day || !month) return validImportDate(row.fechaClase) ? row.fechaClase : '';
+  const year = explicitYear || Number(fallbackYear);
+  if (!Number.isInteger(year) || year < 1900 || year > 2100) return '';
+  const value = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  return validImportDate(value) ? value : '';
+}
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 export function matchImportStudents(names, students, currentStudent, getId, getName) {
   if (!names.length) return { linkedStudents: [currentStudent], unresolvedStudents: [] };

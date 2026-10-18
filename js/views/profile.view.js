@@ -1,6 +1,6 @@
 // js/views/profile.view.js
 import { getWeeklyReview } from "../utils/weekly-review.js?v=20261018.2";
-import { readAiImportFiles, validImportDate, matchImportStudents, importDocumentId } from "../utils/ai-bitacoras-import.js?v=20261013.1";
+import { readAiImportFiles, validImportDate, resolveImportDate, matchImportStudents, importDocumentId } from "../utils/ai-bitacoras-import.js?v=20261018.3";
 
 import { CONFIG } from "../config.js?v=20261009.1";
 import { canViewStudent, resolveUserAccess } from "../authz.js";
@@ -6841,12 +6841,12 @@ function openTextBitacorasImportModal(student) {
     setBusy(true); setStatus('La IA está leyendo y ordenando las clases. Todavía no se guarda ninguna bitácora.');
     try {
       const result = await callFunction('generateStudentReport', { operation: 'normalize-bitacoras', text: textarea.value,
-        files: pendingFiles }, { timeout: 190000 });
+        files: pendingFiles, year: yearInput.value }, { timeout: 190000 });
       if (!modalRoot.isConnected) return;
       aiRows = result.classes;
       aiRows.forEach(row => {
         row.usingDefaultStudents = !row.estudianteNombres?.length;
-        row.usingDefaultYear = !row.year && Boolean(row.day && row.month);
+        row.usingDefaultYear = !row.year && Boolean(resolveImportDate({ ...row, fechaClase: '' }, 2000));
         row.usingDefaultTeacher = !row.docente;
         if (row.usingDefaultStudents) row.estudianteNombres = studentsInput.value.split('\n').map(v => v.trim()).filter(Boolean);
         applyAiDefaults(row);
@@ -6875,13 +6875,13 @@ function openTextBitacorasImportModal(student) {
     rebuildAiPreview();
   });
   const applyAiDefaults = row => {
+    if (row.saved) return;
     if (row.usingDefaultTeacher) row.docente = teacherInput.value.trim();
     if (row.usingDefaultYear) {
-      const date = `${yearInput.value}-${String(row.month).padStart(2, '0')}-${String(row.day).padStart(2, '0')}`;
-      row.fechaClase = validImportDate(date) ? date : '';
+      row.fechaClase = resolveImportDate(row, yearInput.value);
     }
   };
-  [yearInput, teacherInput].forEach(node => node.addEventListener('change', () => {
+  [yearInput, teacherInput].forEach(node => node.addEventListener('input', () => {
     if (!aiRows || busy) return;
     aiRows.forEach(applyAiDefaults);
     rebuildAiPreview();
@@ -6979,7 +6979,7 @@ function renderTextBitacorasImportModal() {
       </label>
 
       <div class="import-ai-defaults">
-        <label class="field"><span class="field__label">Año, si no aparece en el documento</span><input id="text-import-year" class="field__input" type="number" min="1900" max="2100" placeholder="Ej. 2026" /></label>
+        <label class="field"><span class="field__label">Año para las fechas que vienen sin año</span><input id="text-import-year" class="field__input" type="number" min="1900" max="2100" value="${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Bogota', year: 'numeric' }).format(new Date())}" /><small class="field__hint">Se propone el año actual. Cámbialo si estas clases son de otro año: se completarán todas sus fechas automáticamente. Las fechas con año explícito se conservan.</small></label>
         <label class="field"><span class="field__label">Docente, si no aparece en el documento</span><input id="text-import-teacher" class="field__input" placeholder="Nombre del docente" /></label>
       </div>
 
