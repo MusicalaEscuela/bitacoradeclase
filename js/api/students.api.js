@@ -14,6 +14,7 @@ import {
   updateDoc,
   where,
   writeBatch,
+  callFunction,
 } from "../firebase.client.js?v=20261009.1";
 import {
   isPlainObject,
@@ -264,6 +265,18 @@ export async function updateStudentRepertoire(studentId, repertoire = []) {
     repertorioProceso,
     repertoireProgress: repertorioProceso,
   };
+}
+
+export async function removeStudentRepertoireItem(studentId, name) {
+  const safeStudentId = normalizeStudentIdentifier(studentId);
+  const nombre = normalizeScalar(name);
+  if (!safeStudentId || !nombre) throw createApiError('Selecciona una canción para eliminar.');
+  const result = await callFunction('generateStudentReport', {operation:'remove-repertoire-work',studentId:safeStudentId,name:nombre});
+  const updated = result.students?.find(student => student.id === safeStudentId);
+  if (!updated || !Array.isArray(updated.repertorioProceso) || updated.repertorioProceso.some(item => normalizeText(item.nombre) === normalizeText(nombre))) {
+    throw createApiError('No se pudo confirmar la eliminación. Recarga el perfil antes de reintentar.');
+  }
+  return updated;
 }
 
 export async function listStudentWorkSuggestions(studentId) {

@@ -36,6 +36,7 @@ import {
   getStudentProfile,
   updateStudentTeacher,
   updateStudentRepertoire,
+  removeStudentRepertoireItem,
   listStudentWorkSuggestions,
   resolveStudentWorkSuggestion,
   updateStudentWorkSuggestion,
@@ -43,7 +44,7 @@ import {
   updateStudentProcesses,
   getStudentPrivateNotes,
   saveStudentPrivateNotes,
-} from "../api/students.api.js?v=20261018.6";
+} from "../api/students.api.js?v=20261019.2";
 import {
   getCatalogs,
   getEmptyCatalogs,
@@ -3244,10 +3245,10 @@ function renderRepertoireItemCard(item, canEdit = false) {
                     <button type="button" class="btn btn--ghost btn--sm" data-repertoire-save="${safeName}">
                       Guardar
                     </button>
-                    <button type="button" class="profile-repertoire-chip__remove" data-repertoire-remove="${safeName}" aria-label="Quitar ${safeName}">x</button>
                   </div>
                 </div>
               </details>
+              <button type="button" class="btn btn--ghost btn--sm" data-repertoire-remove="${safeName}" aria-label="Eliminar ${safeName} del repertorio">Eliminar</button>
             </div>
           `
           : ""
@@ -3364,7 +3365,9 @@ async function saveProfileRepertoire(student, values = [], options = {}) {
 
   try {
     assertProfileOnline();
-    const updated = await updateStudentRepertoire(studentId, values);
+    const updated = options.removeName
+      ? await removeStudentRepertoireItem(studentId, options.removeName)
+      : await updateStudentRepertoire(studentId, values);
     // The original element may have been replaced while Firebase was saving.
     if (options.clearEntry && currentProfileStudentKey === feedbackStudentId) {
       const entry = viewRoot?.querySelector("[data-repertoire-input]");
@@ -3435,7 +3438,7 @@ async function removeProfileRepertoireItem(student, value) {
   const nextValues = getStudentRepertoireItems(currentStudent).filter(
     (item) => normalizeText(item.nombre) !== normalizeText(safeValue)
   );
-  await saveProfileRepertoire(currentStudent, nextValues);
+  await saveProfileRepertoire(currentStudent, nextValues, {removeName:safeValue});
 }
 
 async function updateProfileRepertoireItem(student, value, overrides = {}) {

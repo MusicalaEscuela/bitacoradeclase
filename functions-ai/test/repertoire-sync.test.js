@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {extractWorks,mergeRepertoire,teacherVisible,syncFromBitacoras}=require('../repertoire-sync');
+const {extractWorks,mergeRepertoire,teacherVisible,syncFromBitacoras,removeRepertoireWork}=require('../repertoire-sync');
 const original={nombre:'Canción A',estado:'lograda',prioridad:'alta',notas:'Conservar',fechaInicio:'2026-01-01',fechaLogro:'2026-02-01'};
 assert.deepEqual(extractWorks({content:'COMPONENTE DE OBRAS:\n\nCOMPONENTE TEORICO: Lectura'}),[]);
 assert.deepEqual(extractWorks({content:'TAREAS / OBSERVACIONES: no es una canción\n\nCOMPONENTE DE OBRAS: Canción A, Cancion a; Obra B\n\nCOMPONENTE TEORICO: lectura'}),['Cancion a','Obra B']);
@@ -55,5 +55,22 @@ const db={collection:name=>({doc:id=>({path:name+'/'+id,get:async()=>snapshot({p
  records['students/canonical'].rip.showInTeacherLists=false;
  result=await syncFromBitacoras(db,{serverTimestamp:()=> 'server'},{...options,isAdmin:false,studentId:'canonical'});
  assert.ok(result.warnings.length);
+ await assert.rejects(removeRepertoireWork(db,{serverTimestamp:()=> 'server'},{studentId:'canonical',name:'Solo A'}),/habilitado/);
+ records['students/canonical'].rip.showInTeacherLists=true;
+ await removeRepertoireWork(db,{serverTimestamp:()=> 'server'},{studentId:'stu_ana',name:'Solo A',isAdmin:true});
+ assert.ok(!records['students/canonical'].repertoire.includes('Solo A'));
+ assert.deepEqual(records['students/canonical'].repertorioProceso,records['students/stu_ana'].repertorioProceso);
+ // Deletion before the first synchronization still prevents resurrection.
+ records['bitacoras/old']={studentIds:['stu_ana'],content:'COMPONENTE DE OBRAS: Borrar antes del primer sync'};
+ await removeRepertoireWork(db,{serverTimestamp:()=> 'server'},{studentId:'stu_ana',name:'Borrar antes del primer sync',isAdmin:true});
+ await syncFromBitacoras(db,{serverTimestamp:()=> 'server'},{bitacoraIds:['old'],isAdmin:true});
+ assert.ok(!records['students/canonical'].repertoire.includes('Borrar antes del primer sync'));
+ assert.deepEqual(records['students/canonical'].repertorioProceso[0],original);
+ assert.equal(records['students/canonical'].nombre,'Ana');
+ for(const item of [...records['students/canonical'].repertorioProceso]) {
+   await removeRepertoireWork(db,{serverTimestamp:()=> 'server'},{studentId:'canonical',name:item.nombre,isAdmin:true});
+ }
+ assert.deepEqual(records['students/canonical'].repertorioProceso,[]);
+ assert.deepEqual(records['students/stu_ana'].repertoire,[]);
  console.log('PASS repertoire synchronization: common/individual works, duplicates, mirrors, retries, renames, permissions and capacity');
 })();

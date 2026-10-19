@@ -62,7 +62,7 @@ exports.generateStudentReport = onCall(
     maxInstances: 10,
   },
   async (request) => {
-    if (request.data?.operation === "sync-bitacora-repertoire") {
+    if (["sync-bitacora-repertoire","remove-repertoire-work"].includes(request.data?.operation)) {
       const email = String(request.auth?.token?.email || '').toLowerCase();
       if (!request.auth || !email) throw new HttpsError('unauthenticated','Inicia sesión.');
       const profile = await db.collection('users').doc(email).get();
@@ -73,6 +73,14 @@ exports.generateStudentReport = onCall(
       }
       const ids = request.data.bitacoraIds;
       const studentId = request.data.studentId || '';
+      if (request.data.operation === 'remove-repertoire-work') {
+        const name = typeof request.data.name === 'string' ? request.data.name.trim() : '';
+        if (typeof studentId!=='string'||!studentId||studentId.includes('/')||!name||name.length>300) {
+          throw new HttpsError('invalid-argument','Selecciona un estudiante y una canción válidos.');
+        }
+        try { return await repertoireSync.removeRepertoireWork(db,FieldValue,{studentId,name,isAdmin:admin}); }
+        catch(error) { throw new HttpsError(['permission-denied','not-found'].includes(error.code)?error.code:'internal',error.message); }
+      }
       if (!Array.isArray(ids) || ids.length > 40 || !ids.length || ids.some(id=>typeof id!=='string'||!id||id.includes('/')) || typeof studentId!=='string'||studentId.includes('/')) {
         throw new HttpsError('invalid-argument','Selecciona hasta 40 bitácoras válidas.');
       }

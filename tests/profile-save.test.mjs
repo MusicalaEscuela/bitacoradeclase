@@ -241,4 +241,15 @@ await test("historial sin cambios y llamadas simultáneas no repiten sincronizac
   const changed=context.synchronizeBitacoraRepertoire([{...records[0],content:'COMPONENTE DE OBRAS: Obra B'}],'ana');
   assert.equal(calls,2);resolve({students:[],warnings:[]});await changed;
 });
+await test("eliminar repertorio exige confirmación y permite borrar la última canción", async () => {
+  const {context}=apiContext('../js/api/students.api.js');
+  context.callFunction=async(name,data)=>{
+    assert.equal(data.operation,'remove-repertoire-work');
+    return {students:[{id:'ana',repertorioProceso:[],repertoireProgress:[],repertorioEscogido:[],repertoire:[]}]};
+  };
+  const updated=await context.removeStudentRepertoireItem('ana','Última canción');
+  assert.equal(updated.repertorioProceso.length,0);
+  context.callFunction=async()=>({students:[{id:'ana',repertorioProceso:[{nombre:'Última canción'}]}]});
+  await assert.rejects(context.removeStudentRepertoireItem('ana','Última canción'),/confirmar/);
+});
 console.log(`${passed} pruebas de guardado aprobadas.`);

@@ -47,6 +47,47 @@ function teacherVisible(data = {}) {
   return status === 'activo' || /^activo (?:no registro|en pausa)/.test(status) || /^inactivo en pausa \(1(?:-|–| a )3 meses\)/.test(status);
 }
 
+async function repertoireContext(db, tx, participantId) {
+  const sourceRef = db.collection('students').doc(participantId);
+  const source = await tx.get(sourceRef);
+  if (!source.exists) return null;
+  const canonicalId = source.data().canonicalStudentId || participantId;
+  const canonicalRef = db.collection('students').doc(canonicalId);
+  const canonical = canonicalId === participantId ? source : await tx.get(canonicalRef);
+  if (!canonical.exists) return null;
+  const link = await tx.get(db.collection('student_identity_links').doc(canonicalId));
+  const academicId = link.exists && link.data().status === 'confirmed' && link.data().canonicalStudentId === canonicalId
+    ? link.data().academicRecordId : '';
+  const refs = new Map([[canonicalId,{ref:canonicalRef,snap:canonical}],[participantId,{ref:sourceRef,snap:source}]]);
+  if (academicId && !refs.has(academicId)) {
+    const ref = db.collection('students').doc(academicId), snap = await tx.get(ref);
+    if (snap.exists && snap.data().canonicalStudentId === canonicalId) refs.set(academicId,{ref,snap});
+  }
+  return {canonicalId,canonical,refs};
+}
+
+async function removeRepertoireWork(db, FieldValue, {studentId,name,isAdmin=false}) {
+  return db.runTransaction(async tx => {
+    const context = await repertoireContext(db,tx,studentId);
+    if (!context) throw Object.assign(new Error('No se encontró la ficha del estudiante.'),{code:'not-found'});
+    const {canonicalId,canonical,refs} = context;
+    if (!isAdmin && !teacherVisible(canonical.data())) {
+      throw Object.assign(new Error('Este estudiante no está habilitado para edición docente.'),{code:'permission-denied'});
+    }
+    const ledgerRef = db.collection('bitacora_repertoire_sync').doc(canonicalId);
+    const ledger = await tx.get(ledgerRef);
+    const seen = new Set(ledger.exists ? ledger.data().seen || [] : []);
+    seen.add(token(name));
+    const merged = mergeRepertoire([...refs.values()].map(v=>v.snap.data()),[],[]);
+    const items = merged.items.filter(item=>key(item.nombre)!==key(name));
+    const names = items.map(item=>item.nombre);
+    const payload = {repertorioProceso:items,repertoireProgress:items,repertorioEscogido:names,repertoire:names};
+    for (const {ref} of refs.values()) tx.update(ref,{...payload,updatedBy:'profile_repertoire',updatedAt:FieldValue.serverTimestamp()});
+    tx.set(ledgerRef,{seen:[...seen],updatedAt:FieldValue.serverTimestamp()},{merge:true});
+    return {students:[...refs.keys()].map(id=>({id,...payload}))};
+  });
+}
+
 async function syncFromBitacoras(db, FieldValue, { bitacoraIds, studentId = '', isAdmin = false }) {
   const results = new Map(), warnings = [];
   for (const id of bitacoraIds) {
@@ -56,21 +97,9 @@ async function syncFromBitacoras(db, FieldValue, { bitacoraIds, studentId = '', 
     const participants = [...new Set([...(record.studentIds || []), record.studentId, record.primaryStudentId].filter(Boolean))];
     for (const participantId of studentId ? [studentId] : participants) {
       const result = await db.runTransaction(async tx => {
-        const sourceRef = db.collection('students').doc(participantId);
-        const source = await tx.get(sourceRef);
-        if (!source.exists) return null;
-        const canonicalId = source.data().canonicalStudentId || participantId;
-        const canonicalRef = db.collection('students').doc(canonicalId);
-        const canonical = canonicalId === participantId ? source : await tx.get(canonicalRef);
-        if (!canonical.exists) return null;
-        const link = await tx.get(db.collection('student_identity_links').doc(canonicalId));
-        const academicId = link.exists && link.data().status === 'confirmed' && link.data().canonicalStudentId === canonicalId
-          ? link.data().academicRecordId : '';
-        const refs = new Map([[canonicalId, {ref:canonicalRef,snap:canonical}], [participantId,{ref:sourceRef,snap:source}]]);
-        if (academicId && !refs.has(academicId)) {
-          const ref = db.collection('students').doc(academicId), snap = await tx.get(ref);
-          if (snap.exists && snap.data().canonicalStudentId === canonicalId) refs.set(academicId,{ref,snap});
-        }
+        const context = await repertoireContext(db,tx,participantId);
+        if (!context) return null;
+        const {canonicalId,canonical,refs} = context;
         const ids = [...refs.keys()];
         if (!participants.some(p => ids.includes(p))) return null;
         if (!isAdmin && !teacherVisible(canonical.data())) return {warning:'Hay estudiantes no habilitados para edición docente; su repertorio no se modificó.'};
@@ -101,4 +130,4 @@ async function syncFromBitacoras(db, FieldValue, { bitacoraIds, studentId = '', 
   }
   return {students:[...results.values()],warnings:[...new Set(warnings)]};
 }
-module.exports = { extractWorks, mergeRepertoire, teacherVisible, syncFromBitacoras };
+module.exports = { extractWorks, mergeRepertoire, teacherVisible, syncFromBitacoras, removeRepertoireWork };
