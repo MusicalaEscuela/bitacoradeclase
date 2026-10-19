@@ -9,7 +9,12 @@ export function getWeeklyReview({ studentId, routeKey, goals = [], completedGoal
   if (!studentId || !routeKey) return null;
   const completed = new Set(completedGoalIds);
   const candidates = [...new Map(goals
-    .filter((goal) => goal?.id && goal?.title && completed.has(goal.id))
+    .filter((goal) => {
+      const component = String(goal?.component || goal?.componentLabel || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      return goal?.id && goal?.title && completed.has(goal.id) &&
+        ['tecnica','tecnico','teoria','teorico'].includes(component);
+    })
     .map((goal) => [goal.id, goal])).values()];
   if (!candidates.length) return null;
   const now = options.now || new Date();

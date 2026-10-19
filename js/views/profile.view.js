@@ -1,5 +1,5 @@
 // js/views/profile.view.js
-import { getWeeklyReview } from "../utils/weekly-review.js?v=20261018.2";
+import { getWeeklyReview } from "../utils/weekly-review.js?v=20261019.3";
 import { readAiImportFiles, validImportDate, resolveImportDate, matchImportStudents, importDocumentId } from "../utils/ai-bitacoras-import.js?v=20261018.3";
 
 import { CONFIG } from "../config.js?v=20261009.1";

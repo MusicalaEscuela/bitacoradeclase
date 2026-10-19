@@ -30,4 +30,14 @@ assert.equal(pick(input,{now:new Date('2026-10-19T05:00:00Z')}).week,'2026-10-19
 assert.equal(pick({...input,completedGoalIds:['g1']}).goal.id,'g1');
 assert.ok(pick(input,{storage:{getItem(){throw Error('disabled');},setItem(){throw Error('full');}}}));
 assert.deepEqual(input,snapshot,'review does not mutate goals or progress');
+const mixed = {studentId:'mixed',routeKey:'violin',goals:[
+  {id:'rep',title:'Melodías',component:'repertorio'},
+  {id:'obra',title:'Canción',component:'obras'},
+  {id:'tech',title:'Postura',component:'Técnico'},
+  {id:'theory',title:'Lectura',component:'Teórico'},
+],completedGoalIds:['rep','obra','tech','theory']};
+const cachedRepertoire={getItem:()=> 'rep',setItem:()=>{}};
+assert.ok(['tech','theory'].includes(pick(mixed,{storage:cachedRepertoire}).goal.id),'replace cached repertoire review immediately');
+assert.equal(pick({...mixed,completedGoalIds:['rep','obra']},{storage:null}),null);
+assert.equal(pick({...mixed,completedGoalIds:['theory']},{storage:null}).goal.id,'theory');
 console.log('weekly-review: all assertions passed');
