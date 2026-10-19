@@ -31,7 +31,7 @@ import {
   updateBitacora,
   deleteBitacora,
   synchronizeBitacoraRepertoire,
-} from "../api/bitacoras.api.js?v=20261019.1";
+} from "../api/bitacoras.api.js?v=20261019.2";
 import {
   getStudentProfile,
   updateStudentTeacher,

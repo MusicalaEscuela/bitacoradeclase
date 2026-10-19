@@ -57,10 +57,13 @@ export async function synchronizeBitacoraRepertoire(records = [], studentId = ''
   ids.forEach(id => repertoireSyncPending.add(candidates.get(id).token));
   try {
     for (let start = 0; start < ids.length; start += 40) {
+      const requestedAt = Date.now();
       const result = await callFunction('generateStudentReport', {operation:'sync-bitacora-repertoire',bitacoraIds:ids.slice(start,start+40),studentId}, {timeout:190000});
       for (const updated of result.students || []) {
         const current = getState()?.students?.byId?.[updated.id];
-        if (current) updateStudentProfile({...current,...updated});
+        const canonical = getState()?.students?.byId?.[current?.canonicalStudentId];
+        // Una respuesta antigua no debe deshacer en pantalla una edición posterior.
+        if (current && Math.max(getTimestamp(current.updatedAt),getTimestamp(canonical?.updatedAt)) <= requestedAt) updateStudentProfile({...current,...updated});
       }
       if (result.warnings?.length) setAppError(result.warnings.join(' '));
       else for (const id of ids.slice(start,start+40)) {

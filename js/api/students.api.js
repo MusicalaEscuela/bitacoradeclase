@@ -276,7 +276,7 @@ export async function removeStudentRepertoireItem(studentId, name) {
   if (!updated || !Array.isArray(updated.repertorioProceso) || updated.repertorioProceso.some(item => normalizeText(item.nombre) === normalizeText(nombre))) {
     throw createApiError('No se pudo confirmar la eliminación. Recarga el perfil antes de reintentar.');
   }
-  return updated;
+  return {...updated,updatedAt:new Date().toISOString()};
 }
 
 export async function listStudentWorkSuggestions(studentId) {

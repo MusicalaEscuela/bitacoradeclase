@@ -252,4 +252,13 @@ await test("eliminar repertorio exige confirmación y permite borrar la última 
   context.callFunction=async()=>({students:[{id:'ana',repertorioProceso:[{nombre:'Última canción'}]}]});
   await assert.rejects(context.removeStudentRepertoireItem('ana','Última canción'),/confirmar/);
 });
+await test("una sincronización antigua no revive una canción eliminada del perfil o su alias", async () => {
+  const {context}=apiContext('../js/api/bitacoras.api.js');
+  let applied=0;
+  context.getState=()=>({students:{byId:{ana:{id:'ana',updatedAt:new Date(Date.now()+1000).toISOString()},alias:{id:'alias',canonicalStudentId:'ana'}}}});
+  context.callFunction=async()=>({students:[{id:'ana',repertoire:['Borrada']},{id:'alias',repertoire:['Borrada']}],warnings:[]});
+  context.updateStudentProfile=()=>{applied++};context.setAppError=()=>{};
+  await context.synchronizeBitacoraRepertoire([{id:'antigua',content:'COMPONENTE DE OBRAS: Borrada'}]);
+  assert.equal(applied,0);
+});
 console.log(`${passed} pruebas de guardado aprobadas.`);
