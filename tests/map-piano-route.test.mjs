@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  resolveMapRouteTemplateId,
   adaptPublishedPianoCurriculum,
   adaptPublishedBateriaCurriculum,
   adaptPublishedViolinCurriculum,
@@ -252,3 +253,13 @@ assert.deepEqual(finished.activeGoalIds, []);
 assert.ok(finished.components.every((c) => c.isComplete));
 assert.deepEqual(deriveMapPianoRouteProgress({}, []).components, []);
 console.log("map-piano-route: all assertions passed, including independent components");
+
+// Juan Felipe: current RIP is Piano, legacy process lists several instruments.
+const legacyMixed = { instrumento: "Piano, Guitarra Acústica o eléctrica, Teoría musical" };
+const staleGuitar = { managedByMap: true, routeTemplateId: "mapa-guitarra" };
+assert.equal(resolveMapRouteTemplateId(legacyMixed, { instrumento: "Piano", instrumentos: ["Piano"], tecnicas: ["Piano"] }, staleGuitar), "mapa-piano");
+assert.equal(resolveMapRouteTemplateId({ detalle: "Piano" }, {}, staleGuitar), "mapa-piano");
+assert.equal(resolveMapRouteTemplateId({ detalle: "Guitarra" }, { instrumento: "Piano" }, {}), "mapa-guitarra");
+assert.equal(resolveMapRouteTemplateId({ detalle: "Violín" }, {}, staleGuitar), "mapa-violin");
+assert.equal(resolveMapRouteTemplateId({ detalle: "Batería" }, {}, staleGuitar), "mapa-bateria");
+assert.equal(resolveMapRouteTemplateId(null, {}, staleGuitar), "mapa-guitarra");

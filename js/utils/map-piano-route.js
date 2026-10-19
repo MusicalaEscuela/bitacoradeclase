@@ -97,6 +97,28 @@ export function isMapViolinProcess(process = null) {
 }
 export function isMapBateriaProcess(process = null) { return isMapCurriculumProcess(process, MAP_BATERIA_CONFIG); }
 
+// A mixed legacy process needs the current registration to disambiguate it.
+// A single selected process always wins, including multi-instrument students.
+export function resolveMapRouteTemplateId(process = null, rip = {}, route = {}) {
+  const candidates = [
+    [MAP_PIANO_ROUTE_TEMPLATE_ID, isMapPianoProcess],
+    [MAP_GUITAR_ROUTE_TEMPLATE_ID, isMapGuitarProcess],
+    [MAP_VIOLIN_ROUTE_TEMPLATE_ID, isMapViolinProcess],
+    [MAP_BATERIA_ROUTE_TEMPLATE_ID, isMapBateriaProcess],
+  ];
+  const matches = candidates.filter(([, matchesProcess]) => matchesProcess(process));
+  if (matches.length === 1) return matches[0][0];
+  if (matches.length > 1) {
+    const current = { instrumento: [rip?.instrumento, ...(rip?.instrumentos || []), ...(rip?.tecnicas || [])].join(" ") };
+    const currentMatches = matches.filter(([, matchesProcess]) => matchesProcess(current));
+    if (currentMatches.length === 1) return currentMatches[0][0];
+  }
+  if (route?.managedByMap === true && candidates.some(([id]) => id === route.routeTemplateId)) {
+    return route.routeTemplateId;
+  }
+  return matches[0]?.[0] || MAP_PIANO_ROUTE_TEMPLATE_ID;
+}
+
 function isMapCurriculumProcess(process = null, config = {}) {
   if (!process || typeof process !== "object") return false;
   const hint = [
