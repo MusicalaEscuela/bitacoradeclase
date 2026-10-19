@@ -224,6 +224,21 @@ await test("guardar obras sincroniza sin perder perfil; un fallo no duplica la b
   context.callFunction=async()=>{throw Error('sin conexión')};
   await context.createBitacora(payload,{importId});
   assert.equal(calls.writes.length,1);
+  await context.synchronizeBitacoraRepertoire([{...payload,id:'otra-bitacora'}]);
   assert.match(errors[0],/bitácoras están guardadas/);
+});
+await test("historial sin cambios y llamadas simultáneas no repiten sincronización", async () => {
+  const {context}=apiContext('../js/api/bitacoras.api.js');
+  let calls=0, resolve;
+  context.getState=()=>({});context.updateStudentProfile=()=>{};context.setAppError=()=>{};
+  context.callFunction=()=>{calls++;return new Promise(done=>{resolve=done})};
+  const records=[{id:'clase',content:'COMPONENTE DE OBRAS: Obra A'}];
+  const first=context.synchronizeBitacoraRepertoire(records,'ana');
+  await context.synchronizeBitacoraRepertoire(records,'ana');
+  assert.equal(calls,1);
+  resolve({students:[],warnings:[]});await first;
+  await context.synchronizeBitacoraRepertoire(records,'ana');assert.equal(calls,1);
+  const changed=context.synchronizeBitacoraRepertoire([{...records[0],content:'COMPONENTE DE OBRAS: Obra B'}],'ana');
+  assert.equal(calls,2);resolve({students:[],warnings:[]});await changed;
 });
 console.log(`${passed} pruebas de guardado aprobadas.`);

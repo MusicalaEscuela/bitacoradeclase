@@ -38,11 +38,23 @@ import {
 import { getBitacoraParticipantIds } from "../utils/bitacora-coverage.js?v=20260731.2";
 import { getState, updateStudentProfile, setAppError } from "../state.js?v=20260815.2";
 
+const repertoireSyncCompleted = new Map();
+const repertoireSyncPending = new Set();
+
 export async function synchronizeBitacoraRepertoire(records = [], studentId = '') {
-  const ids = [...new Set(records.filter(record =>
+  const candidates = new Map(records.filter(record =>
     /COMPONENTE\s+(?:DE\s+)?OBRAS\s*:\s*\S/i.test(record.content || record.contenido || '') ||
     record.componenteObras?.length || Object.values(record.studentOverrides || {}).some(value => value?.enabled && value.componenteObras?.length)
-  ).map(record => record.id).filter(Boolean))];
+  ).filter(record => record.id).map(record => {
+    const scope = JSON.stringify([getCurrentUser()?.uid,studentId,record.id]);
+    const version = JSON.stringify([record.content || record.contenido || '',record.componenteObras,record.studentOverrides,record.studentIds]);
+    return [record.id,{scope,version,token:JSON.stringify([scope,version])}];
+  }));
+  const ids = [...candidates.keys()].filter(id => {
+    const entry = candidates.get(id);
+    return repertoireSyncCompleted.get(entry.scope) !== entry.version && !repertoireSyncPending.has(entry.token);
+  });
+  ids.forEach(id => repertoireSyncPending.add(candidates.get(id).token));
   try {
     for (let start = 0; start < ids.length; start += 40) {
       const result = await callFunction('generateStudentReport', {operation:'sync-bitacora-repertoire',bitacoraIds:ids.slice(start,start+40),studentId}, {timeout:190000});
@@ -51,10 +63,17 @@ export async function synchronizeBitacoraRepertoire(records = [], studentId = ''
         if (current) updateStudentProfile({...current,...updated});
       }
       if (result.warnings?.length) setAppError(result.warnings.join(' '));
+      else for (const id of ids.slice(start,start+40)) {
+        const entry = candidates.get(id);
+        repertoireSyncCompleted.set(entry.scope,entry.version);
+        if (repertoireSyncCompleted.size > 1000) repertoireSyncCompleted.delete(repertoireSyncCompleted.keys().next().value);
+      }
     }
   } catch (error) {
     console.error('Bitácoras conservadas; sincronización de obras pendiente:',error);
     setAppError('Las bitácoras están guardadas, pero no se pudo actualizar el repertorio. Se volverá a intentar al abrir el perfil. ' + (error?.message || ''));
+  } finally {
+    ids.forEach(id => repertoireSyncPending.delete(candidates.get(id).token));
   }
 }
 

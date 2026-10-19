@@ -31,7 +31,7 @@ import {
   updateBitacora,
   deleteBitacora,
   synchronizeBitacoraRepertoire,
-} from "../api/bitacoras.api.js?v=20261018.7";
+} from "../api/bitacoras.api.js?v=20261019.1";
 import {
   getStudentProfile,
   updateStudentTeacher,
@@ -754,8 +754,6 @@ export async function beforeEnter({ payload, navigateTo } = {}) {
   currentProfileProcessKey =
     resolveStudentProcess(student, requestedProcessRef)?.processKey || "";
   await ensureCatalogsLoaded();
-  await ensureStudentBitacorasLoaded(student);
-  await ensureLearningRouteLoaded(student);
 }
 
 async function ensureStudentLoadedForProfile(studentRef) {
@@ -871,6 +869,14 @@ export async function afterEnter() {
   if (focusTarget) {
     focusTarget.setAttribute("tabindex", "-1");
     focusTarget.focus();
+  }
+  // El historial y la ruta no deben mantener el router en "Abriendo Perfil".
+  const student = getStudentFromState(getState(), currentProfileStudentKey);
+  if (student) {
+    void Promise.allSettled([
+      ensureStudentBitacorasLoaded(student),
+      ensureLearningRouteLoaded(student),
+    ]);
   }
 }
 
@@ -2258,6 +2264,9 @@ function getMapPianoProgress(route = {}) {
 }
 
 function renderMapPianoUnavailable(route = {}, { compact = false } = {}) {
+  if (getState()?.profile?.loading) {
+    return '<div class="route-history-card route-history-card--wide" role="status"><p class="route-history-card__title">Cargando objetivos…</p><p class="route-overview__text">Puedes consultar el perfil mientras se actualiza la ruta.</p></div>';
+  }
   const routeLabel = toStringSafe(route?.routeName)
     .replace(/^Ruta de\s+/i, "") || "Mapa de Experiencias";
   return `
@@ -6512,8 +6521,8 @@ async function ensureStudentBitacorasLoaded(student) {
     linkedStudentIds.forEach((linkedStudentId) => {
       setBitacorasForStudent(linkedStudentId, items);
     });
-    syncAcademicRecordFromHistory(student, items);
-    if (canEditProfileFields()) await synchronizeBitacoraRepertoire(items, getStudentAcademicRecordId(getStudentFromState(getState(), getStudentIdentity(student)) || student));
+    if (currentProfileStudentKey === studentRef) syncAcademicRecordFromHistory(student, items);
+    if (canEditProfileFields()) void synchronizeBitacoraRepertoire(items, getStudentAcademicRecordId(getStudentFromState(getState(), getStudentIdentity(student)) || student));
   } catch (error) {
     console.error("Error cargando bitácoras en profile:", error);
     setAppError(
@@ -6541,8 +6550,8 @@ async function reloadHistory(student) {
     linkedStudentIds.forEach((linkedStudentId) => {
       setBitacorasForStudent(linkedStudentId, items);
     });
-    syncAcademicRecordFromHistory(student, items);
-    if (canEditProfileFields()) await synchronizeBitacoraRepertoire(items, getStudentAcademicRecordId(getStudentFromState(getState(), getStudentIdentity(student)) || student));
+    if (currentProfileStudentKey === studentRef) syncAcademicRecordFromHistory(student, items);
+    if (canEditProfileFields()) void synchronizeBitacoraRepertoire(items, getStudentAcademicRecordId(getStudentFromState(getState(), getStudentIdentity(student)) || student));
   } catch (error) {
     console.error("Error recargando historial en profile:", error);
     setAppError(error?.message || "No se pudo recargar el historial.");
