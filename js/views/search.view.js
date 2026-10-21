@@ -18,7 +18,7 @@ import {
 import {
   getStudents,
   getTeacherListStudents,
-} from "../api/students.api.js?v=20261010.1";
+} from "../api/students.api.js?v=20261021.1";
 import { getBitacorasByStudentIds } from "../api/bitacoras.api.js?v=20261013.1";
 import {
   getCachedStudentIdentityLinkRecords,
@@ -1198,11 +1198,8 @@ function renderBadge(value) {
 }
 
 async function safeLoadStudents(options = {}) {
-  // La carga inicial no puede leer toda la colección histórica: además de
-  // demorar la pantalla, un expediente que el docente no puede consultar hace
-  // que Firestore rechace toda la consulta y el buscador quede bloqueado.
-  // RIP publica la lista operativa permitida; los históricos se consultan
-  // únicamente al buscar una coincidencia concreta en appendInactiveMatches.
+  // El equipo necesita el directorio histórico completo. La API comparte
+  // la carga y resuelve los alias para evitar consultas y fichas duplicadas.
   const response = await getTeacherListStudents(options);
   const students = normalizeStudentsResponse(response);
 

@@ -128,19 +128,11 @@ export function isStudentAllowedToLogIn(studentOrStatus) {
 }
 
 /*
-  Criterio central para listas docentes: primero el permiso publicado por RIP
-  (showInTeacherLists); si el estudiante aún no fue sincronizado, se usa la
-  política heredada equivalente.
+  El equipo consulta también expedientes inactivos para cargar historia.
+  Esto no concede acceso al estudiante: isStudentAllowedToLogIn mantiene RIP.
 */
 export function isStudentVisibleForTeachers(student) {
-  const rip = getRipPermissions(student);
-  if (rip && typeof rip.showInTeacherLists === "boolean") {
-    return rip.showInTeacherLists;
-  }
-  if (isPlainObject(student) && typeof student.showInTeacherLists === "boolean") {
-    return student.showInTeacherLists;
-  }
-  return legacyStatusAllows(student);
+  return isPlainObject(student);
 }
 
 export async function updateStudentTeacher(studentId, teacherName = "") {
@@ -1002,78 +994,18 @@ async function listStudentsFromFirestore() {
   }
 }
 
-/**
- * Lista inicial del HUB docente. RIP ya publica esta señal como un campo
- * indexable; usarla evita descargar el directorio histórico completo antes
- * de que el docente pueda escribir en el buscador.
- */
+/** Directorio del equipo, incluidos los expedientes históricos e inactivos. */
 async function listTeacherStudentsFromFirestore(options = {}) {
-  if (options.refresh === true) {
-    teacherStudentsCache = [];
-  }
+  if (options.refresh === true) teacherStudentsCache = [];
   if (teacherStudentsCache.length) return teacherStudentsCache;
   if (teacherStudentsLoadPromise) return teacherStudentsLoadPromise;
 
-  teacherStudentsLoadPromise = (async () => {
-    const snapshot = await getDocs(
-      query(
-        collection(db, STUDENTS_COLLECTION),
-        where("rip.showInTeacherLists", "==", true)
-      )
-    );
-
-    const visibleRecords = snapshot.docs.map((docSnap) => ({
-      ...docSnap.data(),
-      __documentId: docSnap.id,
-      id: docSnap.id,
-    }));
-    const visibleIds = new Set(visibleRecords.map((record) => record.id));
-
-    /*
-      RIP publica el canónico visible, pero sus procesos pueden estar en un
-      expediente académico confirmado. La búsqueda rápida no puede renderizar
-      ese canónico aislado: se hidratan exclusivamente los miembros de los
-      vínculos confirmados de los estudiantes ya visibles, sin descargar el
-      directorio histórico completo.
-    */
-    const identityLinks = await listStudentIdentityLinkRecords({ includeReviews: false });
-    const relevantLinks = identityLinks.filter((record) =>
-      record?.kind === "link" &&
-      normalizeText(record?.status) === "confirmed" &&
-      Array.isArray(record?.linkedStudentIds) &&
-      record.linkedStudentIds.some((id) => visibleIds.has(normalizeStudentIdentifier(id)))
-    );
-    const loadedIds = new Set(visibleRecords.map((record) => record.id));
-    const linkedIds = Array.from(
-      new Set(
-        relevantLinks
-          .flatMap((record) => record.linkedStudentIds || [])
-          .map(normalizeStudentIdentifier)
-          .filter((id) => id && !loadedIds.has(id))
-      )
-    );
-    const linkedRecords = (await Promise.all(
-      linkedIds.map(async (id) => {
-        const linkedSnapshot = await getDoc(doc(db, STUDENTS_COLLECTION, id));
-        return linkedSnapshot.exists()
-          ? { ...linkedSnapshot.data(), __documentId: linkedSnapshot.id, id: linkedSnapshot.id }
-          : null;
-      })
-    )).filter(Boolean);
-
-    teacherStudentsCache = resolveLogicalStudents(
-      [...visibleRecords, ...linkedRecords],
-      relevantLinks
-    )
-      .filter((student) =>
-        getLogicalStudentLinkedIds(student).some((id) => visibleIds.has(id))
-      )
-      .map((record) => normalizeStudentRecord(record))
-      .filter(Boolean);
-
-    return teacherStudentsCache;
-  })();
-
+  // Una lectura compartida, resuelta por identidad: no descargamos cada alias
+  // por separado ni repetimos la consulta al escribir en el buscador.
+  teacherStudentsLoadPromise = listStudentsFromFirestore().then((students) => {
+    teacherStudentsCache = students;
+    return students;
+  });
   try {
     return await teacherStudentsLoadPromise;
   } finally {
@@ -1210,13 +1142,12 @@ async function getStudentByEmailFromFirestore(email) {
 }
 
 /*
-  Lista operativa para docentes usando la consulta indexable publicada por RIP
-  (rip.showInTeacherLists == true). Esta es la ruta rápida de búsqueda.
+  Directorio docente independiente del acceso del estudiante al HUB.
 */
 export async function getTeacherListStudents(options = {}) {
   const filters = normalizeStudentQueryOptions({
     ...options,
-    includeInactive: false,
+    includeInactive: true,
   });
   const students = await listTeacherStudentsFromFirestore({
     refresh: options.refresh === true,

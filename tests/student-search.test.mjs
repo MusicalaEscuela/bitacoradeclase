@@ -74,7 +74,7 @@ test("La API histórica encuentra nombres abreviados, invertidos y con tildes", 
   }
   assert.equal((await api.getStudents({ q: "santiago iregui", includeInactive: true })).length, 0);
   assert.equal((await api.getStudents({ q: "felipe inexistente", includeInactive: true })).length, 0);
-  assert.equal((await api.getStudents({ q: "felipe iregui", includeInactive: false })).length, 0);
+  assert.equal((await api.getStudents({ q: "felipe iregui", includeInactive: false })).length, 1);
 });
 
 test("La lista local y el histórico aplican el mismo criterio, incluidos procesos e IDs", () => {
@@ -144,4 +144,28 @@ test("La búsqueda pendiente se distingue de una consulta terminada sin coincide
   finish([]);
   await pending;
   assert.match(context.renderEmptyResultsState(state), /Sin resultados/);
+});
+
+
+test("El equipo encuentra inactivos aunque RIP oculte su lista; no cambia el acceso HUB", async () => {
+  const api = apiHarness();
+  const inactive = { ...historical, active: false, rip: {
+    statusCode: "inactivo_lejano_3_6_meses", showInTeacherLists: false,
+    canAccessHub: false, canReceiveBitacoras: false,
+  }};
+  assert.equal(api.isStudentAllowedToLogIn(inactive), false);
+  assert.equal(api.isStudentVisibleForTeachers(inactive), true);
+  let reads = 0;
+  api.getDocs = async () => { reads++; return { docs: [{ id: inactive.id, data: () => inactive }] }; };
+  const [first, concurrent] = await Promise.all([api.getTeacherListStudents(), api.getTeacherListStudents()]);
+  assert.equal(reads, 1);
+  assert.equal(first.length, 1);
+  assert.equal(concurrent[0].id, inactive.id);
+  assert.equal(first[0].rip.canAccessHub, false);
+  const matches = await api.getTeacherListStudents({ q: "felipe iregui" });
+  assert.equal(matches.length, 1);
+  assert.equal(reads, 1, "Escribir en el buscador reutiliza el directorio");
+  await api.getTeacherListStudents({ refresh: true });
+  assert.equal(reads, 2);
+  assert.equal(api.isStudentAllowedToLogIn(inactive), false);
 });
